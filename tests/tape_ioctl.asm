@@ -90,6 +90,61 @@ start:
         cmp     byte ptr [status+4], 00h
         fail_if_not_equal failed_close
 
+        mov     byte ptr [stage], 'R'
+        mov     bx, word ptr [handle]
+        mov     cx, 16
+        mov     dx, offset read_buffer
+        mov     ah, 3Fh
+        int     21h
+        fail_if_carry failed_close
+ifdef NO_RESIDUAL
+        cmp     ax, 16
+else
+        cmp     ax, 12
+endif
+        fail_if_not_equal failed_close
+        push    ds
+        pop     es
+        mov     si, offset expected_payload
+        mov     di, offset read_buffer
+        mov     cx, READ_EXPECTED_SIZE
+        repe    cmpsb
+        fail_if_not_equal failed_close
+        call    get_status
+        fail_if_carry failed_close
+        cmp     byte ptr [status+4], 10h
+        fail_if_not_equal failed_close
+ifdef NO_RESIDUAL
+        cmp     word ptr [status+0Ah], 0808h
+else
+        cmp     word ptr [status+0Ah], 0C08h
+endif
+        fail_if_not_equal failed_close
+ifdef NO_RESIDUAL
+        cmp     word ptr [status+0Ch], 0
+else
+        cmp     word ptr [status+0Ch], 4
+endif
+        fail_if_not_equal failed_close
+
+        mov     byte ptr [stage], 'Z'
+        mov     bx, word ptr [handle]
+        xor     cx, cx
+        mov     dx, offset read_buffer
+        mov     ah, 3Fh
+        int     21h
+        fail_if_carry failed_close
+        or      ax, ax
+        fail_if_not_equal failed_close
+
+        mov     byte ptr [stage], 'W'
+        mov     bx, word ptr [handle]
+        mov     cx, 1
+        mov     dx, offset expected_payload
+        mov     ah, 40h
+        int     21h
+        fail_if_no_carry failed_close
+
         mov     byte ptr [stage], '7'
         mov     cl, 01h                 ; mtop: MTNOP
         mov     dx, offset control
@@ -255,6 +310,14 @@ control:
         dw      7                       ; MTNOP
         dd      1
 status          db      14 dup (0)
+ifdef NO_RESIDUAL
+READ_EXPECTED_SIZE equ  16
+expected_payload db     '0123456789ABCDEF'
+else
+READ_EXPECTED_SIZE equ  12
+expected_payload db     'TAPE-READ-OK'
+endif
+read_buffer     db      16 dup (0)
 success_message db      'OpenASPI tape IOCTL smoke test passed', 13, 10, '$'
 failure_message db      'OpenASPI tape IOCTL smoke test FAILED at stage $'
 newline         db      13, 10, '$'

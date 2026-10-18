@@ -40,3 +40,12 @@ errors and real hardware.
 Compatibility behavior still requiring verification against the historical
 binary includes DOS error mapping, EOF/EOM read semantics, buffering, partial
 transfer reporting, raw-mode enforcement, and exact close/rewind timing.
+
+## Current read subset
+
+One DOS character-device read maps to one variable-block SCSI `READ(6)`.
+Managers advertising ASPI extension flag `0002h` return a residual count, so
+short records produce the correct DOS byte count. With older managers, such as
+the tested Tekram 1.60 manager, an exact-size record can be read but a short
+record remains an error until fixed-sense ILI handling is complete. Fixed-block
+mode and EOF/EOM completion are not enabled yet. DOS writes remain rejected.

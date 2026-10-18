@@ -94,6 +94,11 @@ host_inquiry:
         mov     byte ptr es:[bx+HA_Count], 1
         mov     byte ptr es:[bx+HA_SCSI_ID], 7
         mov     byte ptr es:[bx+HA_Unique+3], 1
+ifdef NO_RESIDUAL
+        mov     word ptr es:[bx+HA_ExtFlags], 0
+else
+        mov     word ptr es:[bx+HA_ExtFlags], HA_EXT_RESIDUAL
+endif
         mov     byte ptr es:[bx+SRB_Status], SS_COMP
         jmp     aspi_done
 
@@ -110,16 +115,18 @@ no_device:
         jmp     aspi_done
 
 execute_scsi:
+        cmp     byte ptr es:[bx+SRB_CDB], 08h
+        je      execute_read
         cmp     byte ptr es:[bx+SRB_Flags], SRB_DIR_NONE
-        jne     bad_scsi
+        jne     control_bad_scsi
         cmp     byte ptr es:[bx+SRB_CDBLen], 6
-        jne     bad_scsi
+        jne     control_bad_scsi
         cmp     byte ptr es:[bx+SRB_SenseLen], 32
-        jne     bad_scsi
+        jne     control_bad_scsi
         xor     ax, ax
         mov     al, byte ptr cs:[expected_index]
         cmp     al, EXPECTED_COUNT
-        jae     bad_scsi
+        jae     control_bad_scsi
         mov     si, ax
         shl     si, 1
         mov     ax, si
@@ -131,11 +138,67 @@ execute_scsi:
 check_cdb:
         mov     al, byte ptr cs:[si]
         cmp     al, byte ptr es:[bx+di+SRB_CDB]
-        jne     bad_scsi
+        jne     control_bad_scsi
         inc     si
         inc     di
         loop    check_cdb
         inc     byte ptr cs:[expected_index]
+        mov     byte ptr es:[bx+SRB_HaStat], 0
+        mov     byte ptr es:[bx+SRB_TargStat], 0
+        mov     byte ptr es:[bx+SRB_Status], SS_COMP
+        jmp     aspi_done
+
+control_bad_scsi:
+        jmp     bad_scsi
+
+execute_read:
+        cmp     byte ptr cs:[read_seen], 0
+        jne     bad_scsi
+ifdef NO_RESIDUAL
+        cmp     byte ptr es:[bx+SRB_Flags], SRB_DIR_IN
+else
+        cmp     byte ptr es:[bx+SRB_Flags], SRB_DIR_IN or SRB_RESIDUAL
+endif
+        jne     bad_scsi
+        cmp     byte ptr es:[bx+SRB_CDBLen], 6
+        jne     bad_scsi
+        cmp     byte ptr es:[bx+SRB_SenseLen], 32
+        jne     bad_scsi
+        cmp     word ptr es:[bx+SRB_BufLen], 16
+        jne     bad_scsi
+        cmp     word ptr es:[bx+SRB_BufLen+2], 0
+        jne     bad_scsi
+        xor     di, di
+        mov     si, offset read_cdb
+        mov     cx, 6
+check_read_cdb:
+        mov     al, byte ptr cs:[si]
+        cmp     al, byte ptr es:[bx+di+SRB_CDB]
+        jne     bad_scsi
+        inc     si
+        inc     di
+        loop    check_read_cdb
+
+        push    ds
+        push    es
+        push    bx
+        mov     ax, word ptr es:[bx+SRB_BufPointer+2]
+        mov     di, word ptr es:[bx+SRB_BufPointer]
+        mov     es, ax
+        push    cs
+        pop     ds
+        mov     si, offset read_payload
+        mov     cx, READ_PAYLOAD_SIZE
+        rep     movsb
+        pop     bx
+        pop     es
+        pop     ds
+
+        mov     byte ptr cs:[read_seen], 1
+ifndef NO_RESIDUAL
+        mov     word ptr es:[bx+SRB_BufLen], 16-READ_PAYLOAD_SIZE
+endif
+        mov     word ptr es:[bx+SRB_BufLen+2], 0
         mov     byte ptr es:[bx+SRB_HaStat], 0
         mov     byte ptr es:[bx+SRB_TargStat], 0
         mov     byte ptr es:[bx+SRB_Status], SS_COMP
@@ -156,6 +219,15 @@ aspi_entry endp
 
 EXPECTED_COUNT equ     7
 expected_index db      0
+read_seen      db      0
+read_cdb       db      08h, 00h, 00h, 00h, 10h, 00h
+ifdef NO_RESIDUAL
+READ_PAYLOAD_SIZE equ  16
+read_payload   db      '0123456789ABCDEF'
+else
+READ_PAYLOAD_SIZE equ  12
+read_payload   db      'TAPE-READ-OK'
+endif
 expected_cdbs:
         db      00h, 00h, 00h, 00h, 00h, 00h ; MTNOP / TEST UNIT READY
         db      11h, 01h, 00h, 00h, 03h, 00h ; MTFSF 3

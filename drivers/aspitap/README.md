@@ -8,8 +8,11 @@ available.
 
 The non-writing category `07h` control subset supports `mtget`, enable/ignore
 EOT policy, `MTNOP` (TEST UNIT READY), forward/backward file and record spacing,
-rewind, and rewind/unload. Data reads, data writes, `MTWEOF`, and rewind-on-close
-are still rejected, so the driver must not yet be used for backup or restore.
+rewind, and rewind/unload. Variable-block reads use the ASPI manager's residual
+count to return short record lengths to DOS when available; exact-length reads
+also work with older managers without that extension. Fixed-block reads, data
+writes, `MTWEOF`, and rewind-on-close are still rejected, so the driver must
+not yet be used for backup or restore.
 
 Implementation order:
 
@@ -17,7 +20,9 @@ Implementation order:
 2. [done] enumerate sequential-access devices (SCSI peripheral type `01h`);
 3. [partial] create the compatible `RMTx`/`NRMTx` device-header set (`RMT0`
    and `NRMT0` are present; units 1 through 3 follow multi-device discovery);
-4. implement open, close, raw mode, read and write request handling;
+4. [partial] implement open, close, raw mode, read and write request handling
+   (variable-block reads are present; fixed-block reads, close semantics and
+   writes remain);
 5. [partial] implement category `07h` generic IOCTL functions (all documented
    non-writing operations are present; `MTWEOF` remains safety-gated);
 6. translate CHECK CONDITION and fixed/descriptor sense data;

@@ -13,6 +13,7 @@ HA_ManagerId            equ     0Ah
 HA_Identifier           equ     1Ah
 HA_Unique               equ     2Ah
 HA_ExtFlags             equ     3Ah
+HA_EXT_RESIDUAL         equ     0002h
 
 SRB_Target              equ     08h
 SRB_Lun                 equ     09h

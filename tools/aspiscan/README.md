@@ -25,6 +25,9 @@ class exists, one when it does not, and two when ASPI itself is unavailable.
 media such as LS-120 or ZIP. The distinction uses the SCSI INQUIRY removable
 media bit rather than product-name tables.
 
+The adapter line includes the ASPI extension flags. Bit `0002h` reports the
+residual-count facility used for short variable-block tape reads.
+
 The final line also reports whether the `RMT0` character device is resident,
 which verifies whether `ASPITAP.SYS` accepted or rejected installation.
 

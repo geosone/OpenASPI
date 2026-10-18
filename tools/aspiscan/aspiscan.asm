@@ -92,7 +92,11 @@ targets_known:
         mov     si, offset srb+HA_Identifier
         mov     cx, 16
         call    print_fixed
-        call    print_quote_crlf
+        mov     dx, offset msg_extensions
+        call    print_string
+        mov     ax, word ptr [srb+HA_ExtFlags]
+        call    print_hex16
+        call    print_crlf
 
         mov     byte ptr [target], 0
 target_loop:
@@ -466,6 +470,15 @@ print_hex8 proc near
         ret
 print_hex8 endp
 
+print_hex16 proc near
+        push    ax
+        mov     al, ah
+        call    print_hex8
+        pop     ax
+        call    print_hex8
+        ret
+print_hex16 endp
+
 print_nibble proc near
         and     al, 0Fh
         add     al, '0'
@@ -502,6 +515,7 @@ msg_no_devices      db  'No ASPI devices', 13, 10, '$'
 msg_adapter         db  'HA $'
 msg_manager         db  ' manager="$'
 msg_ident           db  '" adapter="$'
+msg_extensions      db  '" extensions=$'
 msg_device          db  '  device $'
 msg_type            db  ' type=$'
 msg_tape            db  ' TAPE$'

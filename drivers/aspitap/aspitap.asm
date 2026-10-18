@@ -3,7 +3,9 @@
 ; The driver locates SCSIMGR$, claims the first ASPI sequential-access device,
 ; and exposes the historical RMT0/NRMT0 names.  The non-destructive generic
 ; IOCTL interface provides status, EOT policy, spacing, rewind, unload and
-; readiness operations.  Data I/O and media-writing controls remain disabled.
+; readiness operations. Variable-block reads use residual counts when the ASPI
+; manager provides them and retain exact-length compatibility with older
+; managers. Data writes remain disabled.
 
         .8086
         option casemap:none
@@ -20,6 +22,8 @@ REQ_STATUS      equ     03h
 REQ_CATEGORY    equ     0Dh
 REQ_FUNCTION    equ     0Eh
 REQ_PARAMETER   equ     13h
+REQ_TRANSFER    equ     0Eh
+REQ_COUNT       equ     12h
 
 CMD_INIT        equ     00h
 CMD_READ        equ     04h
@@ -43,6 +47,7 @@ MTNOP           equ     07h
 
 SCSI_TUR        equ     00h
 SCSI_REWIND     equ     01h
+SCSI_READ       equ     08h
 SCSI_SPACE      equ     11h
 SCSI_LOAD       equ     1Bh
 SPACE_BLOCKS    equ     00h
@@ -50,6 +55,7 @@ SPACE_FILEMARKS equ     01h
 
 MT_PARAM_ASPI   equ     080h
 MT_STATE_REWIND equ     004h
+MT_STATE_READ   equ     010h
 MT_STATE_EOM_EOF equ    040h
 
 driver_start:
@@ -104,10 +110,17 @@ interrupt proc far
         cmp     al, CMD_GEN_IOCTL
         je      generic_ioctl
         cmp     al, CMD_READ
-        je      unsupported
+        je      read_request_dispatch
         cmp     al, CMD_WRITE
         je      unsupported
         jmp     short unsupported
+
+read_request_dispatch:
+        call    read_request
+        jnc     read_request_success
+        jmp     request_error
+read_request_success:
+        jmp     request_success
 
 init_request:
         call    discover_tape
@@ -226,6 +239,116 @@ fill_mtget proc near
         mov     word ptr es:[di+0Ch], ax
         ret
 fill_mtget endp
+
+; Process a DOS character-device input request as one variable-length SCSI
+; tape record. The manager's residual-count extension lets DOS see a short
+; record's actual length; older managers can still complete exact-size reads.
+read_request proc near
+        les     bx, [request_ptr]
+        mov     ax, word ptr es:[bx+REQ_COUNT]
+        mov     word ptr [requested_bytes], ax
+        mov     word ptr es:[bx+REQ_COUNT], 0
+        or      ax, ax
+        jnz     read_nonempty
+        clc
+        ret
+
+read_nonempty:
+        call    clear_srb
+        mov     byte ptr [srb+SRB_Cmd], SC_EXEC_SCSI_CMD
+        mov     al, byte ptr [tape_ha]
+        mov     byte ptr [srb+SRB_HaId], al
+        mov     byte ptr [srb+SRB_Flags], SRB_DIR_IN
+        test    word ptr [adapter_ext_flags], HA_EXT_RESIDUAL
+        jz      read_flags_ready
+        or      byte ptr [srb+SRB_Flags], SRB_RESIDUAL
+read_flags_ready:
+        mov     al, byte ptr [tape_target]
+        mov     byte ptr [srb+SRB_Target], al
+        mov     al, byte ptr [tape_lun]
+        mov     byte ptr [srb+SRB_Lun], al
+        mov     ax, word ptr [requested_bytes]
+        mov     word ptr [srb+SRB_BufLen], ax
+        mov     word ptr [srb+SRB_BufLen+2], 0
+        les     bx, [request_ptr]
+        mov     ax, word ptr es:[bx+REQ_TRANSFER]
+        mov     word ptr [srb+SRB_BufPointer], ax
+        mov     ax, word ptr es:[bx+REQ_TRANSFER+2]
+        mov     word ptr [srb+SRB_BufPointer+2], ax
+        mov     byte ptr [srb+SRB_SenseLen], 32
+        mov     byte ptr [srb+SRB_CDBLen], 6
+        mov     byte ptr [srb+SRB_CDB], SCSI_READ
+        mov     ax, word ptr [requested_bytes]
+        mov     byte ptr [srb+SRB_CDB+3], ah
+        mov     byte ptr [srb+SRB_CDB+4], al
+
+        xor     ax, ax
+        mov     al, byte ptr [srb+SRB_CDB]
+        mov     ah, byte ptr [srb+SRB_Flags]
+        mov     word ptr [last_scsi_opcode], ax
+        call    call_aspi
+
+        mov     al, byte ptr [srb+SRB_TargStat]
+        mov     byte ptr [last_scsi_status], al
+        mov     byte ptr [last_sense_key], 0
+        cmp     byte ptr [srb+SRB_Status], SS_COMP
+        jne     read_scsi_failed
+        call    finish_read_count
+        jc      read_bad_residual
+        or      byte ptr [device_state], MT_STATE_READ
+        clc
+        ret
+
+read_bad_residual:
+        call    zero_read_count
+        jmp     short read_remember_sense
+read_scsi_failed:
+        test    byte ptr [srb+SRB_Flags], SRB_RESIDUAL
+        jz      read_error_without_residual
+        call    finish_read_count
+        jnc     read_remember_sense
+read_error_without_residual:
+        call    zero_read_count
+read_remember_sense:
+        call    remember_sense_key
+        stc
+        ret
+read_request endp
+
+zero_read_count proc near
+        les     bx, [request_ptr]
+        mov     word ptr es:[bx+REQ_COUNT], 0
+        mov     ax, word ptr [requested_bytes]
+        mov     word ptr [residual_bytes], ax
+        ret
+zero_read_count endp
+
+; Convert ASPI's returned residual count to the DOS request's transferred
+; byte count. Reject a manager result that cannot fit this 16-bit DOS request
+; or that exceeds the original buffer length.
+finish_read_count proc near
+        test    byte ptr [srb+SRB_Flags], SRB_RESIDUAL
+        jnz     finish_read_residual
+        xor     ax, ax
+        jmp     short finish_read_apply
+finish_read_residual:
+        cmp     word ptr [srb+SRB_BufLen+2], 0
+        jne     finish_read_invalid
+        mov     ax, word ptr [srb+SRB_BufLen]
+        cmp     ax, word ptr [requested_bytes]
+        ja      finish_read_invalid
+finish_read_apply:
+        mov     word ptr [residual_bytes], ax
+        mov     dx, word ptr [requested_bytes]
+        sub     dx, ax
+        les     bx, [request_ptr]
+        mov     word ptr es:[bx+REQ_COUNT], dx
+        clc
+        ret
+finish_read_invalid:
+        stc
+        ret
+finish_read_count endp
 
 ; Translate the documented ASPITAPE mtop operations to six-byte sequential-
 ; access CDBs.  The four-byte count in mtop must fit the signed or unsigned
@@ -466,6 +589,8 @@ scan_adapter:
         je      adapter_inquiry_ready
         jmp     next_adapter
 adapter_inquiry_ready:
+        mov     ax, word ptr [srb+HA_ExtFlags]
+        mov     word ptr [adapter_ext_flags], ax
         mov     al, byte ptr [srb+HA_SCSI_ID]
         mov     byte ptr [adapter_scsi_id], al
         mov     al, byte ptr [srb+HA_Unique+3]
@@ -606,12 +731,13 @@ print_nibble endp
 
 manager_name        db  'SCSIMGR$', 0
 banner_found        db  'OpenASPI ASPITAP: tape found at $'
-banner_tail         db  '; RMT0 and NRMT0 ready (control only)', 13, 10, '$'
+banner_tail         db  '; RMT0 and NRMT0 ready (read-only)', 13, 10, '$'
 banner_missing      db  'OpenASPI ASPITAP: no ASPI tape; not installed', 13, 10, '$'
 
 aspi_entry          dd  0
 adapter_count       db  0
 adapter_scsi_id     db  0
+adapter_ext_flags   dw  0
 target_count        db  8
 scan_ha             db  0
 scan_target         db  0
@@ -624,6 +750,7 @@ last_scsi_status    db  0
 last_sense_key      db  0
 last_scsi_opcode    dw  0
 residual_bytes      dw  0
+requested_bytes     dw  0
 srb                  db  ASPI_SRB_SIZE dup (0)
 
 resident_end label byte
