@@ -199,14 +199,15 @@ DOS installer and its NE part is the native Win16 frontend, built directly on
 the Windows 3.1 API without MFC. Both read the same `INSTALL.INI`, and the
 Windows frontend distinguishes Windows 3.x from 9x/ME.
 
-Registry changes will use GDI's package-defined `[Registry]` transaction
-format. Its strict parser, family validation, typed-data conversion and
-lossless old-value journal records are implemented and host-tested. GDI also
-waits for an explicit result from the DOS file/configuration transaction,
-which provides the required ordering. The remaining mutation stage will use
-separate Windows 3.1 and Windows 9x backends and must flush each journal record
-before changing a value; OpenASPI will add package entries only after those
-backends can roll back failures and restore values during uninstall.
+Registry changes use GDI's package-defined `[Registry]` transaction format.
+Its strict parser, family validation, typed-data conversion and lossless
+old-value journal records are implemented and host-tested. GDI also waits for
+an explicit result from the DOS file/configuration transaction, which provides
+the required ordering. The Windows 3.1 backend is active and VM-tested: it
+flushes every journal record before changing the registration database, rolls
+back failed installs, and restores the journal during uninstall. The Windows
+9x backend remains to be implemented against the same plan and journal format;
+active 9x registry entries are rejected before package files are changed.
 
 The first replacement milestone covers the paired ASPI bridge and DLLs.  A
 compatible replacement for `SCSIPORT.PDR`, the Windows type-specific drivers
