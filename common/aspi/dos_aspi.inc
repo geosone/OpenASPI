@@ -55,4 +55,6 @@ SRB_DIR_OUT             equ     10h
 SRB_DIR_NONE            equ     18h
 
 ASPI_SRB_SIZE           equ     SRB_CDB + 16 + 32
+ASPI_DEV_DISK           equ     00h
 ASPI_DEV_TAPE           equ     01h
+ASPI_DEV_CDA            equ     05h

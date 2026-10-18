@@ -35,6 +35,25 @@ adapter and implemented adapter discovery, initialization, interrupt handling,
 request start/completion and bus reset.  Windows supplied the upper disk and
 CD-ROM behavior, filesystems, drive letters and shell operations.
 
+## Open source implementation references
+
+ReactOS contains an open `scsiport.sys`-compatible NT storage port in
+`drivers/storage/port/scsiport`. Microsoft publishes the StorAHCI Storport
+miniport in its Windows Driver Samples. Both are valuable implementation
+references for SRB handling, DMA, interrupts, timeouts and AHCI recovery.
+
+They are not drop-in Windows 9x components. ReactOS targets the NT kernel
+driver contract, while Microsoft's sample targets the newer Storport API.
+Windows 9x uses IOS, `SCSIPORT.PDR` and `.MPD` miniports with different loading
+and service interfaces. OpenASPI may reuse algorithms and structure, but the
+9x glue must be implemented against the 9x DDK contracts and tested with the
+original vendor `.MPD` binaries.
+
+References:
+
+- <https://github.com/reactos/reactos/tree/master/drivers/storage/port/scsiport>
+- <https://github.com/microsoft/Windows-driver-samples/tree/main/storage/miniports/storahci>
+
 ASPI was a second client of the same storage stack, not a layer between the
 miniport and the Windows filesystems:
 

@@ -35,11 +35,36 @@ printf '%s\r\n' \
 printf '%s\r\n' \
     '@ECHO OFF' \
     'ASPISCAN > AUX' \
+    'ASPISCAN /Q /CDA' \
+    'IF ERRORLEVEL 1 GOTO CDAFAIL' \
+    'ECHO CDA DETECT PASSED > AUX' \
+    'GOTO CDADONE' \
+    ':CDAFAIL' \
+    'ECHO CDA DETECT FAILED > AUX' \
+    ':CDADONE' \
+    'ASPISCAN /Q /DISK' \
+    'IF ERRORLEVEL 1 GOTO DISKABSENT' \
+    'ECHO DISK DETECT FALSE POSITIVE > AUX' \
+    'GOTO DISKDONE' \
+    ':DISKABSENT' \
+    'ECHO DISK DETECT ABSENT > AUX' \
+    ':DISKDONE' \
+    'WINCHECK.COM /Q /DOS' \
+    'IF ERRORLEVEL 1 GOTO ENVFAIL' \
+    'WINCHECK.COM /Q /9X' \
+    'IF ERRORLEVEL 1 GOTO ENVPASS' \
+    ':ENVFAIL' \
+    'ECHO ENVIRONMENT DETECT FAILED > AUX' \
+    'GOTO ENVDONE' \
+    ':ENVPASS' \
+    'ECHO DOS ENVIRONMENT DETECT PASSED > AUX' \
+    ':ENVDONE' \
     'QEXIT' > "$OUT/AUTOEXEC.BAT"
 
 mcopy -o -i "$OUT/boot.img" \
     "$OUT/CONFIG.SYS" "$OUT/AUTOEXEC.BAT" "$OUT/AHCIASPI.SYS" \
     "$ROOT/build/dos/ASPITAP.SYS" "$ROOT/build/dos/ASPISCAN.COM" \
+    "$ROOT/build/dos/WINCHECK.COM" \
     "$OUT/QEXIT.COM" ::/
 
 printf 'OpenASPI read-only scan test\r\n' > "$OUT/cdroot/README.TXT"
@@ -67,5 +92,10 @@ tr -d '\r' < "$OUT/serial.log"
 grep -q 'type=05' "$OUT/serial.log"
 grep -q 'tapes: 00' "$OUT/serial.log"
 grep -q 'ASPITAP RMT0 absent' "$OUT/serial.log"
+grep -q 'CDA DETECT PASSED' "$OUT/serial.log"
+grep -q 'DISK DETECT ABSENT' "$OUT/serial.log"
+! grep -q 'FALSE POSITIVE' "$OUT/serial.log"
+grep -q 'DOS ENVIRONMENT DETECT PASSED' "$OUT/serial.log"
+! grep -q 'ENVIRONMENT DETECT FAILED' "$OUT/serial.log"
 
 echo 'OpenASPI DOS scan smoke test passed'

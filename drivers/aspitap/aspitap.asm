@@ -1,8 +1,9 @@
-; ASPITAP.SYS bootstrap driver for OpenASPI.
+; ASPITAP.SYS read-only bootstrap driver for OpenASPI.
 ;
-; The driver now locates SCSIMGR$ and claims the first ASPI sequential-access
-; device during INIT.  It deliberately rejects runtime I/O until the compatible
-; raw read and generic-IOCTL paths are implemented.
+; The driver locates SCSIMGR$, claims the first ASPI sequential-access device,
+; and exposes the historical RMT0/NRMT0 names.  The non-destructive generic
+; IOCTL subset (mtget, EOT policy and MTNOP) is available; data I/O and tape
+; positioning remain disabled.
 
         .8086
         option casemap:none
@@ -13,20 +14,60 @@
 
         include common/aspi/dos_aspi.inc
 
+DEV_ATTR        equ     08040h          ; character device + generic IOCTL
+REQ_COMMAND     equ     02h
+REQ_STATUS      equ     03h
+REQ_CATEGORY    equ     0Dh
+REQ_FUNCTION    equ     0Eh
+REQ_PARAMETER   equ     13h
+
+CMD_INIT        equ     00h
+CMD_READ        equ     04h
+CMD_WRITE       equ     08h
+CMD_GEN_IOCTL   equ     13h
+
+IOCTL_TAPE      equ     07h
+IOCTL_MTOP      equ     01h
+IOCTL_MTGET     equ     02h
+IOCTL_IGNORE_EOT equ    03h
+IOCTL_ENABLE_EOT equ    04h
+
+MTNOP           equ     07h
+
+MT_PARAM_ASPI   equ     080h
+MT_STATE_REWIND equ     004h
+MT_STATE_EOM_EOF equ    040h
+
 driver_start:
-        dd      0FFFFFFFFh              ; end of DOS device chain
-        dw      08000h                  ; character device, no I/O yet
-        dw      strategy
+        dw      offset nrmt_header, 0   ; second header is in this segment
+        dw      DEV_ATTR
+        dw      strategy_rmt
         dw      interrupt
         db      'RMT0    '
 
-request_ptr     dd      0
+nrmt_header:
+        dd      0FFFFFFFFh              ; end of DOS device chain
+        dw      DEV_ATTR
+        dw      strategy_nrmt
+        dw      interrupt
+        db      'NRMT0   '
 
-strategy proc far
+request_ptr     dd      0
+request_rewind  db      0
+
+strategy_rmt proc far
+        mov     byte ptr cs:[request_rewind], MT_STATE_REWIND
         mov     word ptr cs:[request_ptr], bx
         mov     word ptr cs:[request_ptr+2], es
         ret
-strategy endp
+strategy_rmt endp
+
+strategy_nrmt proc far
+        mov     byte ptr cs:[request_rewind], 0
+        mov     word ptr cs:[request_ptr], bx
+        mov     word ptr cs:[request_ptr+2], es
+        ret
+strategy_nrmt endp
 
 interrupt proc far
         push    ax
@@ -39,20 +80,29 @@ interrupt proc far
         push    ds
         push    es
 
-        les     bx, cs:[request_ptr]
-        cmp     byte ptr es:[bx+2], 0   ; INIT request?
-        jne     unsupported
-
         push    cs
         pop     ds
         cld
+        les     bx, [request_ptr]
+        mov     al, byte ptr es:[bx+REQ_COMMAND]
+        cmp     al, CMD_INIT
+        je      init_request
+        cmp     al, CMD_GEN_IOCTL
+        je      generic_ioctl
+        cmp     al, CMD_READ
+        je      unsupported
+        cmp     al, CMD_WRITE
+        je      unsupported
+        jmp     short unsupported
+
+init_request:
         call    discover_tape
         jc      init_failed
 
-        les     bx, cs:[request_ptr]
+        les     bx, [request_ptr]
         mov     word ptr es:[bx+0Eh], offset resident_end
         mov     word ptr es:[bx+10h], cs
-        mov     word ptr es:[bx+3], 0100h
+        mov     word ptr es:[bx+REQ_STATUS], 0100h
 
         mov     dx, offset banner_found
         mov     ah, 09h
@@ -73,17 +123,55 @@ interrupt proc far
         jmp     short request_done
 
 init_failed:
-        les     bx, cs:[request_ptr]
+        les     bx, [request_ptr]
         mov     word ptr es:[bx+0Eh], 0
         mov     word ptr es:[bx+10h], cs
-        mov     word ptr es:[bx+3], 810Ch ; done + error + general failure
+        mov     word ptr es:[bx+REQ_STATUS], 810Ch
         mov     dx, offset banner_missing
         mov     ah, 09h
         int     21h
         jmp     short request_done
 
 unsupported:
-        mov     word ptr es:[bx+3], 8103h ; done + error + unknown command
+        mov     word ptr es:[bx+REQ_STATUS], 8103h
+        jmp     short request_done
+
+generic_ioctl:
+        cmp     byte ptr es:[bx+REQ_CATEGORY], IOCTL_TAPE
+        jne     unsupported
+        mov     al, byte ptr es:[bx+REQ_FUNCTION]
+        cmp     al, IOCTL_MTGET
+        je      ioctl_mtget
+        cmp     al, IOCTL_IGNORE_EOT
+        je      ioctl_ignore_eot
+        cmp     al, IOCTL_ENABLE_EOT
+        je      ioctl_enable_eot
+        cmp     al, IOCTL_MTOP
+        jne     unsupported
+        call    ioctl_mtop
+        jc      request_error
+        jmp     short request_success
+
+ioctl_mtget:
+        call    fill_mtget
+        jmp     short request_success
+
+ioctl_ignore_eot:
+        or      byte ptr [device_state], MT_STATE_EOM_EOF
+        jmp     short request_success
+
+ioctl_enable_eot:
+        and     byte ptr [device_state], not MT_STATE_EOM_EOF
+        jmp     short request_success
+
+request_error:
+        les     bx, [request_ptr]
+        mov     word ptr es:[bx+REQ_STATUS], 810Ch
+        jmp     short request_done
+
+request_success:
+        les     bx, [request_ptr]
+        mov     word ptr es:[bx+REQ_STATUS], 0100h
 
 request_done:
         pop     es
@@ -97,6 +185,96 @@ request_done:
         pop     ax
         ret
 interrupt endp
+
+; Fill the byte-exact fourteen-byte ASPITAPE mtget structure.
+fill_mtget proc near
+        les     bx, [request_ptr]
+        les     di, dword ptr es:[bx+REQ_PARAMETER]
+        mov     al, byte ptr [tape_ha]
+        mov     byte ptr es:[di+0], al
+        mov     al, byte ptr [tape_target]
+        mov     byte ptr es:[di+1], al
+        mov     al, byte ptr [tape_lun]
+        mov     byte ptr es:[di+2], al
+        mov     byte ptr es:[di+3], MT_PARAM_ASPI
+        mov     al, byte ptr [device_state]
+        or      al, byte ptr [request_rewind]
+        mov     byte ptr es:[di+4], al
+        mov     byte ptr es:[di+5], 0
+        mov     word ptr es:[di+6], 0
+        mov     al, byte ptr [last_scsi_status]
+        mov     byte ptr es:[di+8], al
+        mov     al, byte ptr [last_sense_key]
+        mov     byte ptr es:[di+9], al
+        mov     ax, word ptr [last_scsi_opcode]
+        mov     word ptr es:[di+0Ah], ax
+        mov     ax, word ptr [residual_bytes]
+        mov     word ptr es:[di+0Ch], ax
+        ret
+fill_mtget endp
+
+; The first safe mtop operation is MTNOP, translated to TEST UNIT READY.
+ioctl_mtop proc near
+        les     bx, [request_ptr]
+        les     di, dword ptr es:[bx+REQ_PARAMETER]
+        cmp     word ptr es:[di], MTNOP
+        jne     mtop_unsupported
+
+        call    clear_srb
+        mov     byte ptr [srb+SRB_Cmd], SC_EXEC_SCSI_CMD
+        mov     al, byte ptr [tape_ha]
+        mov     byte ptr [srb+SRB_HaId], al
+        mov     byte ptr [srb+SRB_Flags], SRB_DIR_NONE
+        mov     al, byte ptr [tape_target]
+        mov     byte ptr [srb+SRB_Target], al
+        mov     al, byte ptr [tape_lun]
+        mov     byte ptr [srb+SRB_Lun], al
+        mov     byte ptr [srb+SRB_SenseLen], 32
+        mov     byte ptr [srb+SRB_CDBLen], 6
+        mov     byte ptr [srb+SRB_CDB], 0 ; TEST UNIT READY
+        mov     word ptr [last_scsi_opcode], 1800h
+        mov     word ptr [residual_bytes], 0
+        call    call_aspi
+
+        mov     al, byte ptr [srb+SRB_TargStat]
+        mov     byte ptr [last_scsi_status], al
+        mov     byte ptr [last_sense_key], 0
+        cmp     byte ptr [srb+SRB_Status], SS_COMP
+        je      mtop_complete
+        call    remember_sense_key
+        stc
+        ret
+mtop_complete:
+        clc
+        ret
+mtop_unsupported:
+        stc
+        ret
+ioctl_mtop endp
+
+remember_sense_key proc near
+        mov     al, byte ptr [srb+SRB_CDB+16]
+        and     al, 7Fh
+        cmp     al, 70h
+        je      fixed_sense
+        cmp     al, 71h
+        je      fixed_sense
+        cmp     al, 72h
+        je      descriptor_sense
+        cmp     al, 73h
+        jne     sense_done
+descriptor_sense:
+        mov     al, byte ptr [srb+SRB_CDB+17]
+        and     al, 0Fh
+        mov     byte ptr [last_sense_key], al
+        ret
+fixed_sense:
+        mov     al, byte ptr [srb+SRB_CDB+18]
+        and     al, 0Fh
+        mov     byte ptr [last_sense_key], al
+sense_done:
+        ret
+remember_sense_key endp
 
 ; Locate SCSIMGR$, query each adapter and find the first peripheral type 01h.
 ; CF is clear with tape_ha:tape_target:tape_lun filled in.
@@ -291,7 +469,7 @@ print_nibble endp
 
 manager_name        db  'SCSIMGR$', 0
 banner_found        db  'OpenASPI ASPITAP: tape found at $'
-banner_tail         db  '; runtime I/O not enabled yet', 13, 10, '$'
+banner_tail         db  '; RMT0 and NRMT0 ready (read-only control)', 13, 10, '$'
 banner_missing      db  'OpenASPI ASPITAP: no ASPI tape; not installed', 13, 10, '$'
 
 aspi_entry          dd  0
@@ -304,6 +482,11 @@ scan_lun            db  0
 tape_ha             db  0
 tape_target         db  0
 tape_lun            db  0
+device_state        db  0
+last_scsi_status    db  0
+last_sense_key      db  0
+last_scsi_opcode    dw  0
+residual_bytes      dw  0
 srb                  db  ASPI_SRB_SIZE dup (0)
 
 resident_end label byte

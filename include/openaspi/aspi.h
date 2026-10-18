@@ -31,6 +31,11 @@
 #define OA_ASPI_DIRECTION_OUT    0x10u
 #define OA_ASPI_DIRECTION_NONE   0x18u
 
+/* SCSI peripheral device types used by the DOS component detectors. */
+#define OA_ASPI_DEVICE_DISK      0x00u
+#define OA_ASPI_DEVICE_TAPE      0x01u
+#define OA_ASPI_DEVICE_CDA       0x05u
+
 #define OA_ASPI_MANAGER_ID_SIZE  16u
 #define OA_ASPI_IDENTIFIER_SIZE  16u
 #define OA_ASPI_UNIQUE_SIZE      16u

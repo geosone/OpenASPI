@@ -14,10 +14,18 @@ these drivers in CONFIG.SYS. Run INSTALL.EXE to install or update OpenASPI.
 Run INSTALL /U from the installation directory to remove it.
 
 ASPISCAN.COM lists the active ASPI adapters and devices and identifies tape
-devices without reading or changing their media.
+devices without reading or changing their media. During setup it is also run
+quietly to preselect Tape, Disk, removable-media and CD/DVD components from
+the devices actually reported by the active ASPI manager. You can change every
+suggested selection before installation.
 
-The current ASPITAP.SYS finds the first ASPI tape and installs RMT0, but still
-rejects runtime I/O. It must not yet be used with valuable media.
+WINCHECK.COM distinguishes DOS, a Windows 3.x DOS box and Windows 9x/ME for
+conditional setup choices. WINCHECK.EXE is the companion 16-bit Windows probe
+and the starting point for the later graphical Windows setup.
+
+The current ASPITAP.SYS finds the first ASPI tape and installs RMT0 and NRMT0.
+Status and TEST UNIT READY controls work, but data I/O and positioning are
+still rejected. It must not yet be used for backup or restore.
 
 The installer is the GeosOne DOS Installer: https://github.com/geosone/gdi
 License: GNU General Public License version 3.

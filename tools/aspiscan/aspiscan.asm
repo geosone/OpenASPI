@@ -2,8 +2,9 @@
 ;
 ; Opens SCSIMGR$, obtains the ASPI entry point, enumerates host/target/LUN
 ; addresses and issues only the SCSI INQUIRY command to devices reported by
-; SC_GET_DEV_TYPE.  Exit status: 0 = at least one tape, 1 = no tape,
-; 2 = manager/adapter error.
+; SC_GET_DEV_TYPE.  With no filter, exit status 0 means at least one tape;
+; /TAPE, /DISK, /FDD, /CDA and /ANY select another device class.  /Q makes
+; the program suitable as a package-defined installer detector.
 
         .8086
         option  casemap:none
@@ -20,6 +21,8 @@ start:
         push    cs
         pop     es
         cld
+
+        call    parse_command_line
 
         mov     dx, offset msg_title
         call    print_string
@@ -130,8 +133,11 @@ report_tapes:
         mov     al, byte ptr [tape_count]
         call    print_hex8
         call    print_crlf
+        cmp     byte ptr [quiet], 0
+        jne     check_result
         call    report_driver
-        cmp     byte ptr [tape_count], 0
+check_result:
+        cmp     byte ptr [match_count], 0
         jne     exit_success
         mov     ax, 4C01h
         int     21h
@@ -192,6 +198,7 @@ device_present:
 
 run_inquiry:
         call    scsi_inquiry
+        call    count_match
         mov     dx, offset msg_device
         call    print_string
         mov     al, byte ptr [adapter]
@@ -233,6 +240,106 @@ inquiry_failed:
 probe_done:
         ret
 probe_device endp
+
+; Count a device selected by the command-line filter.  DISK and FDD are both
+; direct-access devices (type 00); the INQUIRY removable-media bit separates
+; fixed disks from LS-120, ZIP and similar removable devices.
+count_match proc near
+        mov     al, byte ptr [filter]
+        cmp     al, FILTER_ANY
+        je      match_found
+        cmp     al, FILTER_TAPE
+        jne     match_not_tape
+        cmp     byte ptr [device_type], ASPI_DEV_TAPE
+        je      match_found
+        ret
+match_not_tape:
+        cmp     al, FILTER_CDA
+        jne     match_direct
+        cmp     byte ptr [device_type], ASPI_DEV_CDA
+        je      match_found
+        ret
+match_direct:
+        cmp     byte ptr [device_type], ASPI_DEV_DISK
+        jne     match_done
+        cmp     byte ptr [srb+SRB_Status], SS_COMP
+        jne     match_done
+        test    byte ptr [inquiry_data+1], 80h
+        jnz     match_removable
+        cmp     al, FILTER_DISK
+        je      match_found
+        ret
+match_removable:
+        cmp     al, FILTER_FDD
+        jne     match_done
+match_found:
+        inc     byte ptr [match_count]
+match_done:
+        ret
+count_match endp
+
+; Switch names are deliberately readable in INSTALL.INI.  The first letter
+; after '/' or '-' is sufficient: /TAPE, /DISK, /FDD, /CDA, /ANY and /Q.
+parse_command_line proc near
+        push    ax
+        push    cx
+        push    si
+        mov     si, 81h
+        xor     ch, ch
+        mov     cl, byte ptr [80h]
+parse_next:
+        jcxz    parse_done
+        lodsb
+        dec     cx
+        cmp     al, '/'
+        je      parse_switch
+        cmp     al, '-'
+        jne     parse_next
+parse_switch:
+        jcxz    parse_done
+        lodsb
+        dec     cx
+        cmp     al, 'a'
+        jb      parse_upper
+        cmp     al, 'z'
+        ja      parse_upper
+        sub     al, 20h
+parse_upper:
+        cmp     al, 'Q'
+        jne     parse_tape
+        mov     byte ptr [quiet], 1
+        jmp     parse_next
+parse_tape:
+        cmp     al, 'T'
+        jne     parse_disk
+        mov     byte ptr [filter], FILTER_TAPE
+        jmp     parse_next
+parse_disk:
+        cmp     al, 'D'
+        jne     parse_fdd
+        mov     byte ptr [filter], FILTER_DISK
+        jmp     parse_next
+parse_fdd:
+        cmp     al, 'F'
+        jne     parse_cda
+        mov     byte ptr [filter], FILTER_FDD
+        jmp     parse_next
+parse_cda:
+        cmp     al, 'C'
+        jne     parse_any
+        mov     byte ptr [filter], FILTER_CDA
+        jmp     parse_next
+parse_any:
+        cmp     al, 'A'
+        jne     parse_next
+        mov     byte ptr [filter], FILTER_ANY
+        jmp     parse_next
+parse_done:
+        pop     si
+        pop     cx
+        pop     ax
+        ret
+parse_command_line endp
 
 ; Issue the read-only six-byte SCSI INQUIRY command.
 scsi_inquiry proc near
@@ -315,14 +422,20 @@ driver_absent:
 report_driver endp
 
 print_string proc near
+        cmp     byte ptr [quiet], 0
+        jne     print_string_done
         mov     ah, 09h
         int     21h
+print_string_done:
         ret
 print_string endp
 
 print_char proc near
+        cmp     byte ptr [quiet], 0
+        jne     print_char_done
         mov     ah, 02h
         int     21h
+print_char_done:
         ret
 print_char endp
 
@@ -414,5 +527,15 @@ device_count        db  0
 tape_count          db  0
 srb                 db  ASPI_SRB_SIZE dup (0)
 inquiry_data        db  36 dup (0)
+
+FILTER_TAPE         equ 1
+FILTER_DISK         equ 2
+FILTER_FDD          equ 3
+FILTER_CDA          equ 4
+FILTER_ANY          equ 5
+
+filter              db  FILTER_TAPE
+quiet               db  0
+match_count         db  0
 
         end     start

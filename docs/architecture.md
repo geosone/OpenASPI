@@ -15,7 +15,8 @@ OpenASPI/
 |   |-- aspicda/       CD/DVD plus digital audio support
 |   `-- aspitap/       sequential-access tape devices
 |-- tools/
-|   `-- tapectl/       planned diagnostic/control utility
+|   |-- tapectl/       planned diagnostic/control utility
+|   `-- wincheck/      DOS and Win16 environment probes
 `-- tests/             host-side protocol tests
 ```
 
