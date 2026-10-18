@@ -92,17 +92,23 @@ controller.
 
 ## Compatibility with official vendor drivers
 
-Preserving the official Windows 9x storage drivers is a hard requirement, not
-an optional migration path.  Installing OpenASPI must not patch, replace or
-require rebuilding an existing vendor `.MPD`.  In particular, an Adaptec
-`AIC78XX.MPD` continues to bind to the Windows `SCSIPORT.PDR` exactly as it did
-before OpenASPI was installed.
+Binary and behavioral compatibility with the official Windows 9x storage
+drivers is a hard requirement.  Keeping every original Microsoft or Adaptec
+binary active forever is not.  The first implementation preserves the
+installed files to establish a known-good baseline; later free OpenASPI
+components may replace them after they pass the same compatibility tests.
 
-OpenASPI integrates above the standard SCSI port/miniport boundary.  Its ASPI
-frontend enumerates and submits requests to devices already owned by the
-Windows storage stack.  `OAHCI.MPD` is simply an additional standard miniport;
-it does not change the contract used by Adaptec, BusLogic or other official
-miniports.
+An unchanged Adaptec `AIC78XX.MPD`, BusLogic miniport or other official `.MPD`
+must continue to bind to `SCSIPORT.PDR` or to a future compatible OpenASPI port
+manager without being rebuilt.  OpenASPI's ASPI frontend likewise implements
+the published `WINASPI.DLL` and `WNASPI32.DLL` application ABI so existing
+ASPI programs do not need modification.
+
+`OAHCI.MPD` is an additional standard miniport and does not change the contract
+used by official miniports.  A future free AIC-78xx miniport may optionally
+replace `AIC78XX.MPD`, but only one of them may own a particular controller.
+That optional hardware replacement is independent of the common OpenASPI
+runtime.
 
 The compatibility target is:
 
@@ -118,15 +124,17 @@ The compatibility target is:
 
 The following are release acceptance criteria:
 
-- official miniport INF files and binaries remain unmodified;
+- original miniport packages remain usable and require no source changes;
+- unchanged official `.MPD` binaries load through the selected compatible port
+  manager;
 - native disk and CD access behind an official miniport works before and after
   installing the OpenASPI frontend;
 - ASPI clients can enumerate both official-miniport and OpenASPI-miniport
   devices;
 - an AHCI controller and an Adaptec controller can coexist without duplicate
   claims or host-adapter-number collisions;
-- uninstall restores the previously selected ASPI frontend without disturbing
-  vendor miniports or native Windows storage.
+- the installer backs up displaced components and uninstall restores the
+  previously selected stack without disturbing native Windows storage.
 
 ## Which ASPI files OpenASPI must provide
 
@@ -164,21 +172,23 @@ The components have distinct purposes:
 Using the installed runtime is a compatibility mode, not the final ownership
 model.  OpenASPI packages must not copy proprietary Windows or Adaptec files.
 The installer will probe the installed components and versions, preserve a
-working system ASPI stack, and install the OpenASPI replacements only when the
-user selects them or no suitable runtime exists.
+recoverable copy of a working system stack, and install OpenASPI replacements
+only when the user selects them or no suitable runtime exists.
 
-Replacing the ASPI frontend means replacing only the paired ASPI bridge and
-DLLs.  It does not mean replacing `SCSIPORT.PDR`, the Windows type-specific
-drivers, or any official hardware miniport.  Until the free frontend passes
-the official-miniport compatibility tests, the installer defaults to the
-working system ASPI runtime.
+The first replacement milestone covers the paired ASPI bridge and DLLs.  A
+compatible replacement for `SCSIPORT.PDR`, the Windows type-specific drivers
+or an official hardware miniport is allowed as a later milestone; none is
+required to deliver the OpenASPI frontend or `OAHCI.MPD`.  Until a replacement
+passes the official-miniport and application compatibility tests, the
+installer defaults to the working system component.
 
 ## One-owner rule
 
 One controller has exactly one hardware owner:
 
 - an AHCI controller supported by OpenASPI is owned by `OAHCI.MPD`;
-- an Adaptec controller remains owned by its `AIC78XX.MPD` or related miniport;
+- an Adaptec controller is owned by either its official miniport or one selected
+  compatible replacement, never both;
 - a USB mass-storage device remains owned by the installed USB storage stack.
 
 Native Windows and ASPI frontends submit requests through that owner.  An ASPI

@@ -39,7 +39,7 @@ boundary.  Its preferred design follows the Adaptec miniport model: an
 `OAHCI.MPD` hardware miniport is shared by native Windows storage and the ASPI
 application interface through the installed Windows SCSI/IOS stack.  See
 [windows9x-storage.md](windows9x-storage.md) for the component split, staged
-ASPI-runtime plan, preservation of official vendor miniports and the
+ASPI-runtime plan, compatibility with official vendor miniports and the
 controller-ownership rule.
 
 ## Compatibility boundary
