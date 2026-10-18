@@ -1,0 +1,187 @@
+# Windows 9x storage and ASPI architecture
+
+This document records the planned Windows 95/98/98SE/ME architecture.  It is
+separate from the DOS driver suite: the DOS drivers remain clients of a DOS
+ASPI manager, while Windows uses IOS, the SCSI port manager, miniports and an
+optional ASPI application interface.
+
+## Adaptec reference model
+
+Adaptec's Windows 95/98 drivers did not contain one hardware driver for every
+disk, CD-ROM, removable drive or tape unit.  An AIC-78xx adapter used one
+hardware-specific miniport, `AIC78XX.MPD`, below the Microsoft SCSI and IOS
+layers.  Adaptec documented the same miniport for a family of AHA-29xx and
+AIC-78xx adapters:
+
+- <https://storage.microsemi.com/en-us/support/scsi/2930/aha-2930cu/install_sw/7800_fms_for_98.htm>
+- <https://techshelps.github.io/MSDN/DNWIN95/HTML/S6564.HTM>
+
+The native Windows path was conceptually:
+
+```text
+VFAT / CDFS / Windows shell
+             |
+   DISKTSD.VXD / CDTSD.VXD and other type-specific layers
+             |
+        SCSIPORT.PDR
+             |
+         AIC78XX.MPD
+             |
+       Adaptec controller
+```
+
+`SCSIPORT.PDR` supplied the common SCSI port services.  The miniport owned the
+adapter and implemented adapter discovery, initialization, interrupt handling,
+request start/completion and bus reset.  Windows supplied the upper disk and
+CD-ROM behavior, filesystems, drive letters and shell operations.
+
+ASPI was a second client of the same storage stack, not a layer between the
+miniport and the Windows filesystems:
+
+```text
+16-bit or 32-bit ASPI application
+             |
+ WINASPI.DLL / WNASPI32.DLL
+             |
+          APIX.VXD
+             |
+ SCSI port/miniport and IOS devices
+```
+
+Consequently, native filesystem requests and ASPI requests reached the same
+controller owner.  No second driver accessed the adapter concurrently.
+
+## Proposed OpenASPI model
+
+The preferred AHCI experiment is a SCSI miniport named `OAHCI.MPD`, rather
+than beginning with a monolithic clone of R. Loew's `AHCI.PDR`.
+
+```text
+Windows native storage                 ASPI applications / OpenTape
+          |                                        |
+   Windows IOS/TSDs                      WINASPI.DLL/WNASPI32.DLL
+          |                                        |
+   Windows SCSIPORT.PDR <--------- APIX.VXD or OASPI.VXD
+          |
+       OAHCI.MPD
+          |
+       AHCI hardware
+```
+
+`OAHCI.MPD` will map Windows SCSI request blocks to AHCI operations:
+
+- SCSI disk CDBs are translated to ATA commands and AHCI FIS structures;
+- ATAPI CDBs are transported as AHCI ATAPI packets;
+- each AHCI port is exposed as a target visible to the standard Windows
+  type-specific drivers;
+- DMA, interrupts, timeouts, recovery and controller ownership stay in one
+  miniport;
+- unsupported commands complete with accurate SCSI status and sense data.
+
+This design should let Windows handle normal disks, CD/DVD devices and common
+removable media.  ASPI remains useful for tape software, burning software,
+scanners, diagnostics and raw device commands.  Real floppy-controller
+semantics and device-specific formatting may still require a special adapter;
+they must not be promised merely because a device can be enumerated through
+ASPI.
+
+Existing SCSI miniports do not register with an OpenASPI-private HBA ABI.
+OpenASPI must interoperate through the standard Windows SCSI/IOS path so that
+an installed Adaptec or other vendor miniport can remain the sole owner of its
+controller.
+
+## Compatibility with official vendor drivers
+
+Preserving the official Windows 9x storage drivers is a hard requirement, not
+an optional migration path.  Installing OpenASPI must not patch, replace or
+require rebuilding an existing vendor `.MPD`.  In particular, an Adaptec
+`AIC78XX.MPD` continues to bind to the Windows `SCSIPORT.PDR` exactly as it did
+before OpenASPI was installed.
+
+OpenASPI integrates above the standard SCSI port/miniport boundary.  Its ASPI
+frontend enumerates and submits requests to devices already owned by the
+Windows storage stack.  `OAHCI.MPD` is simply an additional standard miniport;
+it does not change the contract used by Adaptec, BusLogic or other official
+miniports.
+
+The compatibility target is:
+
+```text
+                         Windows IOS / SCSI port
+                            /              \
+              official AIC78XX.MPD       OAHCI.MPD
+                       |                      |
+              Adaptec controller        AHCI controller
+                            \              /
+                     one ASPI-visible device set
+```
+
+The following are release acceptance criteria:
+
+- official miniport INF files and binaries remain unmodified;
+- native disk and CD access behind an official miniport works before and after
+  installing the OpenASPI frontend;
+- ASPI clients can enumerate both official-miniport and OpenASPI-miniport
+  devices;
+- an AHCI controller and an Adaptec controller can coexist without duplicate
+  claims or host-adapter-number collisions;
+- uninstall restores the previously selected ASPI frontend without disturbing
+  vendor miniports or native Windows storage.
+
+## Which ASPI files OpenASPI must provide
+
+Windows 95 and Windows 98 installations commonly provide the classic ASPI
+runtime (`WINASPI.DLL`, `WNASPI32.DLL` and `APIX.VXD`).  The local original
+Windows 98 SE medium also contains these files together with `SCSIPORT.PDR`,
+`DISKTSD.VXD`, `CDTSD.VXD` and `AIC78XX.MPD`.  Presence and version must still
+be detected at installation time; the design must not assume that every 9x/ME
+installation has an intact compatible ASPI runtime.
+
+The implementation is therefore staged:
+
+1. Bring up `OAHCI.MPD` with the Windows-supplied `SCSIPORT.PDR` and
+   type-specific drivers.
+2. Test ASPI access through an already installed compatible Windows ASPI
+   runtime.  OpenASPI does not redistribute those Microsoft or Adaptec
+   binaries.
+3. Implement the free OpenASPI runtime for a complete, reproducible install:
+   `OASPI.VXD`, `WINASPI.DLL` and `WNASPI32.DLL`.
+4. Add enumeration support equivalent to `ASPIENUM.VXD` only if compatibility
+   testing shows that clients require it.
+
+The components have distinct purposes:
+
+| Component | Purpose | Initial requirement |
+| --- | --- | --- |
+| `OAHCI.MPD` | AHCI hardware miniport for Windows SCSI port | Required |
+| `SCSIPORT.PDR` and Windows TSDs | Native Windows storage stack | Use installed Windows files |
+| `APIX.VXD` | Existing Windows kernel ASPI bridge | May be used for bring-up |
+| `OASPI.VXD` | Free OpenASPI kernel bridge/replacement | Required for standalone release |
+| `WINASPI.DLL` | 16-bit Windows ASPI API | Required for Win16 compatibility |
+| `WNASPI32.DLL` | 32-bit Windows ASPI API | Required for Win32 clients/OpenTape |
+| `ASPIENUM.VXD` equivalent | Optional ASPI/PnP enumeration compatibility | Defer until proven necessary |
+
+Using the installed runtime is a compatibility mode, not the final ownership
+model.  OpenASPI packages must not copy proprietary Windows or Adaptec files.
+The installer will probe the installed components and versions, preserve a
+working system ASPI stack, and install the OpenASPI replacements only when the
+user selects them or no suitable runtime exists.
+
+Replacing the ASPI frontend means replacing only the paired ASPI bridge and
+DLLs.  It does not mean replacing `SCSIPORT.PDR`, the Windows type-specific
+drivers, or any official hardware miniport.  Until the free frontend passes
+the official-miniport compatibility tests, the installer defaults to the
+working system ASPI runtime.
+
+## One-owner rule
+
+One controller has exactly one hardware owner:
+
+- an AHCI controller supported by OpenASPI is owned by `OAHCI.MPD`;
+- an Adaptec controller remains owned by its `AIC78XX.MPD` or related miniport;
+- a USB mass-storage device remains owned by the installed USB storage stack.
+
+Native Windows and ASPI frontends submit requests through that owner.  An ASPI
+component must never bypass an active miniport and touch the same controller
+directly.
+

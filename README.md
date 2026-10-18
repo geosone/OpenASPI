@@ -58,6 +58,8 @@ See [docs/architecture.md](docs/architecture.md) and
 [docs/aspitape-compat.md](docs/aspitape-compat.md).  The complete driver split
 is defined in [docs/driver-suite.md](docs/driver-suite.md), and local reference
 material is catalogued in [docs/reference-material.md](docs/reference-material.md).
+The planned Windows 95/98/98SE/ME miniport and ASPI-runtime architecture is
+documented in [docs/windows9x-storage.md](docs/windows9x-storage.md).
 
 OpenASPI command-line tools follow the shared Open386MAX UI language described
 by OpenTape. Installation and removal are delegated to GDI rather than being

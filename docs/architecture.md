@@ -34,6 +34,14 @@ client, just as it is a client of an Adaptec or other compatible manager.  The
 driver suite must never depend on manager-specific identity strings for normal
 operation.
 
+The planned Windows 9x port uses a different operating-system integration
+boundary.  Its preferred design follows the Adaptec miniport model: an
+`OAHCI.MPD` hardware miniport is shared by native Windows storage and the ASPI
+application interface through the installed Windows SCSI/IOS stack.  See
+[windows9x-storage.md](windows9x-storage.md) for the component split, staged
+ASPI-runtime plan, preservation of official vendor miniports and the
+controller-ownership rule.
+
 ## Compatibility boundary
 
 The portable ABI header describes byte-exact parameter blocks.  DOS interrupt
