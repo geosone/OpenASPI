@@ -36,7 +36,9 @@ GDI supplies one dual-mode `INSTALL.EXE`: DOS runs its MZ text installer while
 Windows 3.1/9x loads its native Win16 NE component-selection frontend. It reads
 the same `INSTALL.INI`, preserves detector-controlled choices as three-state
 automatic selections, and starts its embedded transactional DOS engine with
-the explicit choices. No MFC or other GUI framework is required.
+the explicit choices. The frontend waits for an explicit success, cancellation
+or failure result before later native Windows stages can run. No MFC or other
+GUI framework is required.
 
 ## Build
 

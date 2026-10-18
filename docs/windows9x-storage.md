@@ -200,9 +200,10 @@ the Windows 3.1 API without MFC. Both read the same `INSTALL.INI`, and the
 Windows frontend distinguishes Windows 3.x from 9x/ME.
 
 Registry changes will use GDI's planned package-defined `[Registry]`
-transaction format. That feature must back up and restore previous values and
-use separate Windows 3.1 and Windows 9x backends before OpenASPI adds any
-registry entries to its package.
+transaction format. GDI now waits for an explicit result from the DOS
+file/configuration transaction, which provides the required ordering. The
+registry stage must still back up and restore previous values and use separate
+Windows 3.1 and Windows 9x backends before OpenASPI adds entries to its package.
 
 The first replacement milestone covers the paired ASPI bridge and DLLs.  A
 compatible replacement for `SCSIPORT.PDR`, the Windows type-specific drivers
