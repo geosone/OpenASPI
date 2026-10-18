@@ -33,7 +33,9 @@ The byte-exact structures and flags are declared in
 
 The baseline operations are write filemark, forward/backward space file,
 forward/backward space record, rewind, rewind-and-unload, and no-op/Test Unit
-Ready.
+Ready. OpenASPI currently enables all of these except write filemark; `MTWEOF`
+remains rejected until destructive-operation tests cover write protection,
+errors and real hardware.
 
 Compatibility behavior still requiring verification against the historical
 binary includes DOS error mapping, EOF/EOM read semantics, buffering, partial

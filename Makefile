@@ -66,15 +66,15 @@ dist: all gdi-install LICENSE
 gdi-install:
 	$(MAKE) -C $(GDI)
 
-$(DOSDRV): drivers/aspitap/aspitap.asm common/aspi/dos_aspi.inc
+$(DOSDRV): drivers/aspitap/aspitap.asm common/aspi/dos_aspi.inc | $(JWASM)
 	mkdir -p $(@D)
 	$(JWASM) -q -bin -0 -W4 -WX -Fl=$(BUILD)/dos/ASPITAP.lst -Fw$(BUILD)/dos/ASPITAP.err -Fo=$@ $<
 
-$(DOSSCAN): tools/aspiscan/aspiscan.asm common/aspi/dos_aspi.inc
+$(DOSSCAN): tools/aspiscan/aspiscan.asm common/aspi/dos_aspi.inc | $(JWASM)
 	mkdir -p $(@D)
 	$(JWASM) -q -bin -0 -W4 -WX -Fl=$(BUILD)/dos/ASPISCAN.lst -Fw$(BUILD)/dos/ASPISCAN.err -Fo=$@ $<
 
-$(DOSWINCHECK): tools/wincheck/wincheck.asm
+$(DOSWINCHECK): tools/wincheck/wincheck.asm | $(JWASM)
 	mkdir -p $(@D)
 	$(JWASM) -q -bin -0 -W4 -WX -Fl=$(BUILD)/dos/WINCHECK.lst -Fw$(BUILD)/dos/WINCHECK.err -Fo=$@ $<
 

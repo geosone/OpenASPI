@@ -1,9 +1,9 @@
-; ASPITAP.SYS read-only bootstrap driver for OpenASPI.
+; ASPITAP.SYS bootstrap driver for OpenASPI.
 ;
 ; The driver locates SCSIMGR$, claims the first ASPI sequential-access device,
 ; and exposes the historical RMT0/NRMT0 names.  The non-destructive generic
-; IOCTL subset (mtget, EOT policy and MTNOP) is available; data I/O and tape
-; positioning remain disabled.
+; IOCTL interface provides status, EOT policy, spacing, rewind, unload and
+; readiness operations.  Data I/O and media-writing controls remain disabled.
 
         .8086
         option casemap:none
@@ -32,7 +32,21 @@ IOCTL_MTGET     equ     02h
 IOCTL_IGNORE_EOT equ    03h
 IOCTL_ENABLE_EOT equ    04h
 
+MTWEOF          equ     00h
+MTFSF           equ     01h
+MTBSF           equ     02h
+MTFSR           equ     03h
+MTBSR           equ     04h
+MTREW           equ     05h
+MTOFFL          equ     06h
 MTNOP           equ     07h
+
+SCSI_TUR        equ     00h
+SCSI_REWIND     equ     01h
+SCSI_SPACE      equ     11h
+SCSI_LOAD       equ     1Bh
+SPACE_BLOCKS    equ     00h
+SPACE_FILEMARKS equ     01h
 
 MT_PARAM_ASPI   equ     080h
 MT_STATE_REWIND equ     004h
@@ -213,26 +227,95 @@ fill_mtget proc near
         ret
 fill_mtget endp
 
-; The first safe mtop operation is MTNOP, translated to TEST UNIT READY.
+; Translate the documented ASPITAPE mtop operations to six-byte sequential-
+; access CDBs.  The four-byte count in mtop must fit the signed or unsigned
+; 24-bit field used by the corresponding SCSI command.
 ioctl_mtop proc near
         les     bx, [request_ptr]
         les     di, dword ptr es:[bx+REQ_PARAMETER]
-        cmp     word ptr es:[di], MTNOP
-        jne     mtop_unsupported
+        mov     ax, word ptr es:[di]
+        cmp     ax, MTNOP
+        jbe     mtop_operation_valid
+        stc
+        ret
+mtop_operation_valid:
+        shl     ax, 1
+        mov     si, ax
+        jmp     word ptr cs:[si+mtop_operations]
 
-        call    clear_srb
-        mov     byte ptr [srb+SRB_Cmd], SC_EXEC_SCSI_CMD
-        mov     al, byte ptr [tape_ha]
-        mov     byte ptr [srb+SRB_HaId], al
-        mov     byte ptr [srb+SRB_Flags], SRB_DIR_NONE
-        mov     al, byte ptr [tape_target]
-        mov     byte ptr [srb+SRB_Target], al
-        mov     al, byte ptr [tape_lun]
-        mov     byte ptr [srb+SRB_Lun], al
-        mov     byte ptr [srb+SRB_SenseLen], 32
-        mov     byte ptr [srb+SRB_CDBLen], 6
-        mov     byte ptr [srb+SRB_CDB], 0 ; TEST UNIT READY
-        mov     word ptr [last_scsi_opcode], 1800h
+mtop_operations:
+        dw      mtop_unsupported
+        dw      mtop_forward_filemarks
+        dw      mtop_backward_filemarks
+        dw      mtop_forward_records
+        dw      mtop_backward_records
+        dw      mtop_rewind
+        dw      mtop_offline
+        dw      mtop_nop
+
+mtop_nop:
+        call    prepare_control_srb
+        mov     byte ptr [srb+SRB_CDB], SCSI_TUR
+        jmp     short mtop_execute
+
+mtop_forward_filemarks:
+        call    prepare_control_srb
+        mov     byte ptr [srb+SRB_CDB], SCSI_SPACE
+        mov     byte ptr [srb+SRB_CDB+1], SPACE_FILEMARKS
+        call    encode_forward_count
+        jnc     mtop_fsf_ready
+        stc
+        ret
+mtop_fsf_ready:
+        jmp     short mtop_execute
+
+mtop_backward_filemarks:
+        call    prepare_control_srb
+        mov     byte ptr [srb+SRB_CDB], SCSI_SPACE
+        mov     byte ptr [srb+SRB_CDB+1], SPACE_FILEMARKS
+        call    encode_backward_count
+        jnc     mtop_bsf_ready
+        stc
+        ret
+mtop_bsf_ready:
+        jmp     short mtop_execute
+
+mtop_forward_records:
+        call    prepare_control_srb
+        mov     byte ptr [srb+SRB_CDB], SCSI_SPACE
+        mov     byte ptr [srb+SRB_CDB+1], SPACE_BLOCKS
+        call    encode_forward_count
+        jnc     mtop_fsr_ready
+        stc
+        ret
+mtop_fsr_ready:
+        jmp     short mtop_execute
+
+mtop_backward_records:
+        call    prepare_control_srb
+        mov     byte ptr [srb+SRB_CDB], SCSI_SPACE
+        mov     byte ptr [srb+SRB_CDB+1], SPACE_BLOCKS
+        call    encode_backward_count
+        jnc     mtop_bsr_ready
+        stc
+        ret
+mtop_bsr_ready:
+        jmp     short mtop_execute
+
+mtop_rewind:
+        call    prepare_control_srb
+        mov     byte ptr [srb+SRB_CDB], SCSI_REWIND
+        jmp     short mtop_execute
+
+mtop_offline:
+        call    prepare_control_srb
+        mov     byte ptr [srb+SRB_CDB], SCSI_LOAD
+
+mtop_execute:
+        xor     ax, ax
+        mov     al, byte ptr [srb+SRB_CDB]
+        mov     ah, byte ptr [srb+SRB_Flags]
+        mov     word ptr [last_scsi_opcode], ax
         mov     word ptr [residual_bytes], 0
         call    call_aspi
 
@@ -251,6 +334,60 @@ mtop_unsupported:
         stc
         ret
 ioctl_mtop endp
+
+prepare_control_srb proc near
+        call    clear_srb
+        mov     byte ptr [srb+SRB_Cmd], SC_EXEC_SCSI_CMD
+        mov     al, byte ptr [tape_ha]
+        mov     byte ptr [srb+SRB_HaId], al
+        mov     byte ptr [srb+SRB_Flags], SRB_DIR_NONE
+        mov     al, byte ptr [tape_target]
+        mov     byte ptr [srb+SRB_Target], al
+        mov     al, byte ptr [tape_lun]
+        mov     byte ptr [srb+SRB_Lun], al
+        mov     byte ptr [srb+SRB_SenseLen], 32
+        mov     byte ptr [srb+SRB_CDBLen], 6
+        ret
+prepare_control_srb endp
+
+; Encode an unsigned count from mtop.count into CDB bytes 2..4.
+encode_forward_count proc near
+        mov     ax, word ptr es:[di+2]
+        mov     dx, word ptr es:[di+4]
+        cmp     dx, 00FFh
+        ja      forward_count_invalid
+        mov     byte ptr [srb+SRB_CDB+2], dl
+        mov     byte ptr [srb+SRB_CDB+3], ah
+        mov     byte ptr [srb+SRB_CDB+4], al
+        clc
+        ret
+forward_count_invalid:
+        stc
+        ret
+encode_forward_count endp
+
+; Encode -mtop.count as a signed 24-bit SPACE count.
+encode_backward_count proc near
+        mov     ax, word ptr es:[di+2]
+        mov     dx, word ptr es:[di+4]
+        cmp     dx, 0080h
+        ja      backward_count_invalid
+        jb      backward_count_valid
+        or      ax, ax                  ; 00800000h is the largest magnitude
+        jnz     backward_count_invalid
+backward_count_valid:
+        neg     ax
+        adc     dx, 0
+        neg     dx
+        mov     byte ptr [srb+SRB_CDB+2], dl
+        mov     byte ptr [srb+SRB_CDB+3], ah
+        mov     byte ptr [srb+SRB_CDB+4], al
+        clc
+        ret
+backward_count_invalid:
+        stc
+        ret
+encode_backward_count endp
 
 remember_sense_key proc near
         mov     al, byte ptr [srb+SRB_CDB+16]
@@ -469,7 +606,7 @@ print_nibble endp
 
 manager_name        db  'SCSIMGR$', 0
 banner_found        db  'OpenASPI ASPITAP: tape found at $'
-banner_tail         db  '; RMT0 and NRMT0 ready (read-only control)', 13, 10, '$'
+banner_tail         db  '; RMT0 and NRMT0 ready (control only)', 13, 10, '$'
 banner_missing      db  'OpenASPI ASPITAP: no ASPI tape; not installed', 13, 10, '$'
 
 aspi_entry          dd  0

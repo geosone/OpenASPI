@@ -21,6 +21,13 @@ fail_if_not_equal macro target
 equal:
 endm
 
+fail_if_no_carry macro target
+        local   expected_error
+        jc      expected_error
+        jmp     target
+expected_error:
+endm
+
 start:
         push    cs
         pop     ds
@@ -97,6 +104,73 @@ start:
         cmp     byte ptr [status+9], 0
         fail_if_not_equal failed_close
 
+        mov     byte ptr [stage], '8'
+        mov     word ptr [control], 0    ; MTWEOF
+        mov     word ptr [control+2], 2
+        mov     word ptr [control+4], 0
+        call    run_mtop
+        fail_if_no_carry failed_close
+
+        mov     byte ptr [stage], '9'
+        mov     word ptr [control], 1    ; MTFSF
+        mov     word ptr [control+2], 3
+        mov     word ptr [control+4], 0
+        call    run_mtop
+        fail_if_carry failed_close
+
+        mov     byte ptr [stage], 'I'
+        mov     word ptr [control], 2    ; MTBSF
+        call    run_mtop
+        fail_if_carry failed_close
+
+        mov     byte ptr [stage], 'J'
+        mov     word ptr [control], 3    ; MTFSR
+        mov     word ptr [control+2], 4
+        mov     word ptr [control+4], 0
+        call    run_mtop
+        fail_if_carry failed_close
+
+        mov     byte ptr [stage], 'K'
+        mov     word ptr [control], 4    ; MTBSR
+        call    run_mtop
+        fail_if_carry failed_close
+
+        mov     byte ptr [stage], 'L'
+        mov     word ptr [control], 5    ; MTREW
+        mov     word ptr [control+2], 1
+        mov     word ptr [control+4], 0
+        call    run_mtop
+        fail_if_carry failed_close
+
+        mov     byte ptr [stage], 'M'
+        mov     word ptr [control], 6    ; MTOFFL
+        call    run_mtop
+        fail_if_carry failed_close
+
+        mov     byte ptr [stage], 'N'
+        mov     word ptr [control], 1    ; count too large for SPACE
+        mov     word ptr [control+2], 0
+        mov     word ptr [control+4], 0100h
+        call    run_mtop
+        fail_if_no_carry failed_close
+
+        mov     byte ptr [stage], 'O'
+        mov     word ptr [control], 2    ; magnitude too large for SPACE
+        mov     word ptr [control+2], 1
+        mov     word ptr [control+4], 0080h
+        call    run_mtop
+        fail_if_no_carry failed_close
+
+        mov     byte ptr [stage], 'P'
+        call    get_status
+        fail_if_carry failed_close
+        cmp     word ptr [status+0Ah], 181Bh
+        fail_if_not_equal failed_close
+        cmp     byte ptr [status+8], 0
+        fail_if_not_equal failed_close
+        cmp     byte ptr [status+9], 0
+        fail_if_not_equal failed_close
+
         call    close_handle
         mov     dx, offset success_message
         mov     ah, 09h
@@ -158,6 +232,12 @@ get_status proc near
         mov     dx, offset status
         jmp     short tape_ioctl
 get_status endp
+
+run_mtop proc near
+        mov     cl, 01h
+        mov     dx, offset control
+        jmp     short tape_ioctl
+run_mtop endp
 
 tape_ioctl proc near
         mov     bx, word ptr [handle]

@@ -12,8 +12,8 @@ This repository is at the bootstrap stage.  It currently contains:
 - `ASPISCAN.COM`, a read-only host/target/LUN and SCSI-INQUIRY diagnostic;
 - generic installer probes for ASPI device classes and the running DOS/Windows environment;
 - `ASPITAP.SYS` initialization-time ASPI discovery for the first tape device;
-- linked `RMT0`/`NRMT0` device names with read-only `mtget`, EOT-policy and
-  `MTNOP` generic IOCTL support;
+- linked `RMT0`/`NRMT0` device names with `mtget`, EOT policy and
+  non-writing tape positioning through the generic IOCTL interface;
 - the documented ASPITAPE compatibility ABI;
 - portable builders for the initial SCSI sequential-access commands;
 - fixed-format SCSI sense decoding;
@@ -21,9 +21,10 @@ This repository is at the bootstrap stage.  It currently contains:
 - 8086 DOS binaries built with JWasm.
 
 The generated `ASPITAP.SYS` installs `RMT0` and `NRMT0` only when it finds an
-ASPI sequential-access device. Runtime data I/O and positioning are still
-deliberately rejected; do not use it for backup or restore. Compatible read
-handling and the remaining control operations are the next implementation
+ASPI sequential-access device. Status, readiness, forward/backward spacing,
+rewind and unload are implemented. Runtime data I/O and media-writing controls
+remain deliberately rejected; do not use it for backup or restore. Compatible
+read handling and full sense/error translation are the next implementation
 stage.
 
 The installer runs package-defined probes rather than containing OpenASPI
@@ -68,7 +69,8 @@ an emulated ATAPI CD-ROM.  It requires the private test media described in
 
 `make dos-tape-smoke` boots a test-only ASPI manager that exposes an emulated
 tape. It verifies both device names, DOS raw-mode setup, `mtget`, EOT policy,
-and `MTNOP` without touching real tape media. It uses the same SvarDOS fixture.
+and the exact CDBs for readiness, spacing, rewind and unload without touching
+real tape media. It uses the same SvarDOS fixture.
 
 `make check` also compiles the portable C modules as 16-bit DOS objects with
 OpenWatcom from `/opt/watcom`.

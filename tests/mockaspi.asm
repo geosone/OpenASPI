@@ -74,6 +74,9 @@ aspi_entry proc far
         mov     bp, sp
         push    ax
         push    bx
+        push    cx
+        push    di
+        push    si
         push    es
 
         les     bx, dword ptr [bp+6]
@@ -85,14 +88,14 @@ aspi_entry proc far
         cmp     al, SC_EXEC_SCSI_CMD
         je      execute_scsi
         mov     byte ptr es:[bx+SRB_Status], SS_INVALID_CMD
-        jmp     short aspi_done
+        jmp     aspi_done
 
 host_inquiry:
         mov     byte ptr es:[bx+HA_Count], 1
         mov     byte ptr es:[bx+HA_SCSI_ID], 7
         mov     byte ptr es:[bx+HA_Unique+3], 1
         mov     byte ptr es:[bx+SRB_Status], SS_COMP
-        jmp     short aspi_done
+        jmp     aspi_done
 
 device_type:
         cmp     byte ptr es:[bx+SRB_Target], 0
@@ -101,14 +104,38 @@ device_type:
         jne     no_device
         mov     byte ptr es:[bx+SRB_DeviceType], ASPI_DEV_TAPE
         mov     byte ptr es:[bx+SRB_Status], SS_COMP
-        jmp     short aspi_done
+        jmp     aspi_done
 no_device:
         mov     byte ptr es:[bx+SRB_Status], SS_NO_DEVICE
-        jmp     short aspi_done
+        jmp     aspi_done
 
 execute_scsi:
-        cmp     byte ptr es:[bx+SRB_CDB], 0
+        cmp     byte ptr es:[bx+SRB_Flags], SRB_DIR_NONE
         jne     bad_scsi
+        cmp     byte ptr es:[bx+SRB_CDBLen], 6
+        jne     bad_scsi
+        cmp     byte ptr es:[bx+SRB_SenseLen], 32
+        jne     bad_scsi
+        xor     ax, ax
+        mov     al, byte ptr cs:[expected_index]
+        cmp     al, EXPECTED_COUNT
+        jae     bad_scsi
+        mov     si, ax
+        shl     si, 1
+        mov     ax, si
+        shl     si, 1
+        add     si, ax                  ; six bytes per expected CDB
+        add     si, offset expected_cdbs
+        xor     di, di
+        mov     cx, 6
+check_cdb:
+        mov     al, byte ptr cs:[si]
+        cmp     al, byte ptr es:[bx+di+SRB_CDB]
+        jne     bad_scsi
+        inc     si
+        inc     di
+        loop    check_cdb
+        inc     byte ptr cs:[expected_index]
         mov     byte ptr es:[bx+SRB_HaStat], 0
         mov     byte ptr es:[bx+SRB_TargStat], 0
         mov     byte ptr es:[bx+SRB_Status], SS_COMP
@@ -118,11 +145,25 @@ bad_scsi:
 
 aspi_done:
         pop     es
+        pop     si
+        pop     di
+        pop     cx
         pop     bx
         pop     ax
         pop     bp
         retf
 aspi_entry endp
+
+EXPECTED_COUNT equ     7
+expected_index db      0
+expected_cdbs:
+        db      00h, 00h, 00h, 00h, 00h, 00h ; MTNOP / TEST UNIT READY
+        db      11h, 01h, 00h, 00h, 03h, 00h ; MTFSF 3
+        db      11h, 01h, 0FFh, 0FFh, 0FDh, 00h ; MTBSF 3
+        db      11h, 00h, 00h, 00h, 04h, 00h ; MTFSR 4
+        db      11h, 00h, 0FFh, 0FFh, 0FCh, 00h ; MTBSR 4
+        db      01h, 00h, 00h, 00h, 00h, 00h ; MTREW
+        db      1Bh, 00h, 00h, 00h, 00h, 00h ; MTOFFL
 
 resident_end label byte
 
