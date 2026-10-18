@@ -31,3 +31,16 @@ The DOS archive is mounted as `/home/mario/Iso/Dos` (capital `I` and `D`), not
 These are black-box compatibility fixtures.  Record hashes, command-line
 options and observed behavior in test logs; do not check the binaries into the
 OpenASPI repository.
+
+## Virtual tape integration
+
+- mhVTL provides Linux virtual SCSI tape drives and media changers.
+- QEMU `scsi-generic` passes their `/dev/sgN` interfaces to a guest.
+- QEMU's `dc390` controller works with the locally tested historical Tekram
+  DOS `ASPI.SYS` manager when the targets are hot-plugged after SeaBIOS.
+- QEMU 10.2's LSI emulation hangs with Symbios `ASPI8XX.SYS` and a
+  `scsi-generic` target, so it is not the mhVTL test default.
+
+The historical manager remains an external black-box fixture. Its binary must
+not be committed. The reproducible setup and required environment variables
+are documented in `docs/qemu-mhvtl.md`.

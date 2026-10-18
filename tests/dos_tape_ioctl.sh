@@ -35,12 +35,14 @@ printf '%s\r\n' \
 printf '%s\r\n' \
     '@ECHO OFF' \
     'ASPISCAN > AUX' \
+    'TAPECTL > AUX' \
     'TAPETEST > AUX' \
     'QEXIT' > "$OUT/AUTOEXEC.BAT"
 
 mcopy -o -i "$OUT/boot.img" \
     "$OUT/CONFIG.SYS" "$OUT/AUTOEXEC.BAT" "$OUT/MOCKASPI.SYS" \
     "$ROOT/build/dos/ASPITAP.SYS" "$ROOT/build/dos/ASPISCAN.COM" \
+    "$ROOT/build/dos/TAPECTL.COM" \
     "$OUT/TAPETEST.COM" \
     "$OUT/QEXIT.COM" ::/
 
@@ -59,6 +61,7 @@ if [ "$rc" -eq 124 ]; then
 fi
 
 tr -d '\r' < "$OUT/serial.log"
+grep -q 'OpenASPI TAPECTL status passed' "$OUT/serial.log"
 grep -q 'OpenASPI tape IOCTL smoke test passed' "$OUT/serial.log"
 ! grep -q 'FAILED' "$OUT/serial.log"
 

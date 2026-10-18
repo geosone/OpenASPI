@@ -19,6 +19,10 @@ quietly to preselect Tape, Disk, removable-media and CD/DVD components from
 the devices actually reported by the active ASPI manager. You can change every
 suggested selection before installation.
 
+TAPECTL.COM opens RMT0 in raw mode and reports the ASPITAPE-compatible status
+block. TAPECTL /READY additionally sends the non-destructive TEST UNIT READY
+command.
+
 WINCHECK.COM distinguishes DOS, a Windows 3.x DOS box and Windows 9x/ME for
 conditional setup choices. WINCHECK.EXE is the companion 16-bit Windows probe
 for Windows-specific installation choices.

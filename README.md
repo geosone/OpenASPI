@@ -10,6 +10,7 @@ This repository is at the bootstrap stage.  It currently contains:
 
 - byte-exact ASPI for DOS SRB definitions shared by C and assembly code;
 - `ASPISCAN.COM`, a read-only host/target/LUN and SCSI-INQUIRY diagnostic;
+- `TAPECTL.COM`, a non-destructive ASPITAPE status/readiness diagnostic;
 - generic installer probes for ASPI device classes and the running DOS/Windows environment;
 - `ASPITAP.SYS` initialization-time ASPI discovery for the first tape device;
 - linked `RMT0`/`NRMT0` device names with `mtget`, EOT policy and
@@ -71,6 +72,12 @@ an emulated ATAPI CD-ROM.  It requires the private test media described in
 tape. It verifies both device names, DOS raw-mode setup, `mtget`, EOT policy,
 and the exact CDBs for readiness, spacing, rewind and unload without touching
 real tape media. It uses the same SvarDOS fixture.
+
+`make dos-mhvtl-smoke` uses QEMU's emulated Tekram-compatible DC-390 controller
+and `scsi-generic` passthrough to exercise `ASPITAP.SYS` against an mhVTL tape.
+The external DOS ASPI manager and the selected `/dev/sgN` nodes are provided
+through environment variables. See
+[docs/qemu-mhvtl.md](docs/qemu-mhvtl.md).
 
 `make check` also compiles the portable C modules as 16-bit DOS objects with
 OpenWatcom from `/opt/watcom`.
