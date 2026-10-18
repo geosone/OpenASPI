@@ -33,15 +33,14 @@ The byte-exact structures and flags are declared in
 
 The baseline operations are write filemark, forward/backward space file,
 forward/backward space record, rewind, rewind-and-unload, and no-op/Test Unit
-Ready. OpenASPI currently enables all of these except write filemark; `MTWEOF`
-remains rejected until destructive-operation tests cover write protection,
-errors and real hardware.
+Ready. OpenASPI implements all of them. `MTWEOF` is never implicit: a zero-byte
+DOS write is a no-op, and only an explicit `MTWEOF` writes filemarks.
 
 Compatibility behavior still requiring verification against the historical
 binary includes exact DOS error mapping, buffering, partial-transfer corner
 cases, raw-mode enforcement, and exact close/rewind timing.
 
-## Current read subset
+## Current transfer subset
 
 One DOS character-device read maps to one variable-block SCSI `READ(6)`.
 Managers advertising ASPI extension flag `0002h` return a residual count, so
@@ -53,8 +52,13 @@ A filemark with no data completes as one zero-byte read; a filemark delivered
 with data defers that zero-byte result until the next read. EOM is an error by
 default and becomes a zero/partial successful result only after IOCTL function
 `03h` selects the historical ignore-EOT policy. Negative ILI (record larger
-than the caller's buffer) remains an error. Fixed-block mode and DOS writes
-remain rejected.
+than the caller's buffer) remains an error.
+
+One non-empty DOS write maps to one variable-block SCSI `WRITE(6)`. A complete
+write returns the input byte count. ASPI residuals are validated when the
+manager supports them; write protection and other CHECK CONDITION results stay
+failed DOS requests and remain visible through `mtget`. Fixed-block mode
+remains unavailable.
 
 The current implementation discovers and exposes only the first tape drive.
 Medium changers and tape-library robotics are outside this stage.

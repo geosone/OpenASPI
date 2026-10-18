@@ -5,7 +5,8 @@
 ; IOCTL interface provides status, EOT policy, spacing, rewind, unload and
 ; readiness operations. Variable-block reads use residual counts when the ASPI
 ; manager provides them and retain exact-length compatibility with older
-; managers. Data writes remain disabled.
+; managers. Variable-block writes use the same ASPI residual extension and
+; write filemarks only when explicitly requested through MTWEOF.
 
         .8086
         option casemap:none
@@ -50,6 +51,8 @@ MTNOP           equ     07h
 SCSI_TUR        equ     00h
 SCSI_REWIND     equ     01h
 SCSI_READ       equ     08h
+SCSI_WRITE      equ     0Ah
+SCSI_WRITE_FILEMARKS equ 10h
 SCSI_SPACE      equ     11h
 SCSI_LOAD       equ     1Bh
 SPACE_BLOCKS    equ     00h
@@ -57,6 +60,7 @@ SPACE_FILEMARKS equ     01h
 
 MT_PARAM_ASPI   equ     080h
 MT_STATE_REWIND equ     004h
+MT_STATE_WRITTEN equ    008h
 MT_STATE_READ   equ     010h
 MT_STATE_EOF_NEXT equ   020h
 MT_STATE_EOM_EOF equ    040h
@@ -129,7 +133,7 @@ dispatch_read:
         cmp     al, CMD_READ
         je      read_request_dispatch
         cmp     al, CMD_WRITE
-        je      unsupported
+        je      write_request_dispatch
         jmp     short unsupported
 
 read_request_dispatch:
@@ -137,6 +141,13 @@ read_request_dispatch:
         jnc     read_request_success
         jmp     request_error
 read_request_success:
+        jmp     request_success
+
+write_request_dispatch:
+        call    write_request
+        jnc     write_request_success
+        jmp     request_error
+write_request_success:
         jmp     request_success
 
 init_request:
@@ -336,28 +347,28 @@ read_flags_ready:
         mov     byte ptr [last_sense_key], 0
         cmp     byte ptr [srb+SRB_Status], SS_COMP
         jne     read_scsi_failed
-        call    finish_read_count
+        call    finish_transfer_count
         jc      read_bad_residual
         or      byte ptr [device_state], MT_STATE_READ
         clc
         ret
 
 read_bad_residual:
-        call    zero_read_count
+        call    zero_transfer_count
         stc
         ret
 read_scsi_failed:
         call    remember_sense_key
         test    byte ptr [srb+SRB_Flags], SRB_RESIDUAL
         jz      read_count_from_sense
-        call    finish_read_count
+        call    finish_transfer_count
         jnc     read_classify_sense
         jmp     short read_zero_failed
 read_count_from_sense:
         call    finish_read_sense_count
         jnc     read_classify_sense
 read_zero_failed:
-        call    zero_read_count
+        call    zero_transfer_count
 read_classify_sense:
         call    classify_read_sense
         jc      read_condition_error
@@ -369,18 +380,100 @@ read_condition_error:
         ret
 read_request endp
 
-zero_read_count proc near
+; Process one DOS output request as one variable-length SCSI tape record.
+; A zero-byte DOS write is a no-op; filemarks are written only by MTWEOF.
+write_request proc near
+        les     bx, [request_ptr]
+        mov     ax, word ptr es:[bx+REQ_COUNT]
+        mov     word ptr [requested_bytes], ax
+        mov     word ptr es:[bx+REQ_COUNT], 0
+        or      ax, ax
+        jnz     write_issue
+        clc
+        ret
+
+write_issue:
+        call    clear_srb
+        mov     byte ptr [srb+SRB_Cmd], SC_EXEC_SCSI_CMD
+        mov     al, byte ptr [tape_ha]
+        mov     byte ptr [srb+SRB_HaId], al
+        mov     byte ptr [srb+SRB_Flags], SRB_DIR_OUT
+        test    word ptr [adapter_ext_flags], HA_EXT_RESIDUAL
+        jz      write_flags_ready
+        or      byte ptr [srb+SRB_Flags], SRB_RESIDUAL
+write_flags_ready:
+        mov     al, byte ptr [tape_target]
+        mov     byte ptr [srb+SRB_Target], al
+        mov     al, byte ptr [tape_lun]
+        mov     byte ptr [srb+SRB_Lun], al
+        mov     ax, word ptr [requested_bytes]
+        mov     word ptr [srb+SRB_BufLen], ax
+        mov     word ptr [srb+SRB_BufLen+2], 0
+        les     bx, [request_ptr]
+        mov     ax, word ptr es:[bx+REQ_TRANSFER]
+        mov     word ptr [srb+SRB_BufPointer], ax
+        mov     ax, word ptr es:[bx+REQ_TRANSFER+2]
+        mov     word ptr [srb+SRB_BufPointer+2], ax
+        mov     byte ptr [srb+SRB_SenseLen], 32
+        mov     byte ptr [srb+SRB_CDBLen], 6
+        mov     byte ptr [srb+SRB_CDB], SCSI_WRITE
+        mov     ax, word ptr [requested_bytes]
+        mov     byte ptr [srb+SRB_CDB+3], ah
+        mov     byte ptr [srb+SRB_CDB+4], al
+
+        xor     ax, ax
+        mov     al, byte ptr [srb+SRB_CDB]
+        mov     ah, byte ptr [srb+SRB_Flags]
+        mov     word ptr [last_scsi_opcode], ax
+        call    call_aspi
+
+        mov     al, byte ptr [srb+SRB_TargStat]
+        mov     byte ptr [last_scsi_status], al
+        mov     byte ptr [last_sense_key], 0
+        cmp     byte ptr [srb+SRB_Status], SS_COMP
+        jne     write_scsi_failed
+        call    finish_transfer_count
+        jc      write_bad_residual
+write_success:
+        and     byte ptr [device_state], not MT_STATE_EOF_NEXT
+        or      byte ptr [device_state], MT_STATE_WRITTEN
+        clc
+        ret
+
+write_scsi_failed:
+        call    remember_sense_key
+        test    byte ptr [srb+SRB_Flags], SRB_RESIDUAL
+        jz      write_zero_failed
+        call    finish_transfer_count
+        jc      write_zero_failed
+        test    byte ptr [sense_flags], SENSE_EOM
+        jz      write_condition_error
+        test    byte ptr [device_state], MT_STATE_EOM_EOF
+        jnz     write_success
+        jmp     short write_condition_error
+write_zero_failed:
+        call    zero_transfer_count
+write_condition_error:
+        stc
+        ret
+write_bad_residual:
+        call    zero_transfer_count
+        stc
+        ret
+write_request endp
+
+zero_transfer_count proc near
         les     bx, [request_ptr]
         mov     word ptr es:[bx+REQ_COUNT], 0
         mov     ax, word ptr [requested_bytes]
         mov     word ptr [residual_bytes], ax
         ret
-zero_read_count endp
+zero_transfer_count endp
 
 ; Convert ASPI's returned residual count to the DOS request's transferred
 ; byte count. Reject a manager result that cannot fit this 16-bit DOS request
 ; or that exceeds the original buffer length.
-finish_read_count proc near
+finish_transfer_count proc near
         test    byte ptr [srb+SRB_Flags], SRB_RESIDUAL
         jnz     finish_read_residual
         xor     ax, ax
@@ -402,7 +495,7 @@ finish_read_apply:
 finish_read_invalid:
         stc
         ret
-finish_read_count endp
+finish_transfer_count endp
 
 ; Fixed-format tape sense reports the requested-minus-actual byte count in its
 ; signed information field. A positive 16-bit value therefore recovers short
@@ -491,7 +584,7 @@ mtop_operation_valid:
         jmp     word ptr cs:[si+mtop_operations]
 
 mtop_operations:
-        dw      mtop_unsupported
+        dw      mtop_write_filemarks
         dw      mtop_forward_filemarks
         dw      mtop_backward_filemarks
         dw      mtop_forward_records
@@ -504,6 +597,17 @@ mtop_nop:
         call    prepare_control_srb
         mov     byte ptr [srb+SRB_CDB], SCSI_TUR
         jmp     execute_control_srb
+
+mtop_write_filemarks:
+        call    prepare_control_srb
+        mov     byte ptr [srb+SRB_CDB], SCSI_WRITE_FILEMARKS
+        call    encode_forward_count
+        jc      mtop_write_filemarks_done
+        call    execute_control_srb
+        jc      mtop_write_filemarks_done
+        or      byte ptr [device_state], MT_STATE_WRITTEN
+mtop_write_filemarks_done:
+        ret
 
 mtop_forward_filemarks:
         call    prepare_control_srb
@@ -880,7 +984,7 @@ print_nibble endp
 
 manager_name        db  'SCSIMGR$', 0
 banner_found        db  'OpenASPI ASPITAP: tape found at $'
-banner_tail         db  '; RMT0 and NRMT0 ready (read-only)', 13, 10, '$'
+banner_tail         db  '; RMT0 and NRMT0 ready', 13, 10, '$'
 banner_missing      db  'OpenASPI ASPITAP: no ASPI tape; not installed', 13, 10, '$'
 
 aspi_entry          dd  0

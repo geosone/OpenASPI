@@ -34,12 +34,12 @@ another UI framework. Automatic choices remain assigned to the package's DOS
 detectors; the embedded DOS engine performs the transactional installation.
 
 The current ASPITAP.SYS finds the first ASPI tape and installs RMT0 and NRMT0.
-Variable-block reads, status, readiness, forward/backward spacing, rewind and
-unload controls work. Short-record ILI, filemark EOF and the selectable EOM
-policy are supported. Fixed-block reads, data writes and media-writing controls
-are still rejected. Only one tape drive is exposed; medium-changer/library
-control is not part of this stage. It must not yet be used for backup or
-restore.
+Variable-block reads and writes, status, readiness, forward/backward spacing,
+rewind, unload and explicit filemark controls work. Short-record ILI, filemark
+EOF, write protection and the selectable EOM policy are supported. Fixed-block
+transfers are not yet available. Only one tape drive is exposed;
+medium-changer/library control is not part of this stage. The write path is not
+yet qualified for production backups on real media.
 
 The installer is the GeosOne DOS Installer: https://github.com/geosone/gdi
 License: GNU General Public License version 3.

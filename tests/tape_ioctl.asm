@@ -300,11 +300,45 @@ endif
 
         mov     byte ptr [stage], 'W'
         mov     bx, word ptr [handle]
+        mov     cx, WRITE_PAYLOAD_SIZE
+        mov     dx, offset write_payload
+        mov     ah, 40h
+        int     21h
+        fail_if_carry failed_close
+        cmp     ax, WRITE_PAYLOAD_SIZE
+        fail_if_not_equal failed_close
+        call    get_status
+        fail_if_carry failed_close
+        cmp     byte ptr [status+4], 18h
+        fail_if_not_equal failed_close
+ifdef NO_RESIDUAL
+        cmp     word ptr [status+0Ah], 100Ah
+else
+        cmp     word ptr [status+0Ah], 140Ah
+endif
+        fail_if_not_equal failed_close
+        cmp     word ptr [status+0Ch], 0
+        fail_if_not_equal failed_close
+
+        ; A DATA PROTECT condition must remain a failed DOS write and expose
+        ; the SCSI sense key through mtget.
+        mov     byte ptr [stage], 'p'
+        mov     bx, word ptr [handle]
         mov     cx, 1
-        mov     dx, offset expected_payload
+        mov     dx, offset write_payload
         mov     ah, 40h
         int     21h
         fail_if_no_carry failed_close
+        call    get_status
+        fail_if_carry failed_close
+        cmp     byte ptr [status+4], 18h
+        fail_if_not_equal failed_close
+        cmp     byte ptr [status+8], 2
+        fail_if_not_equal failed_close
+        cmp     byte ptr [status+9], 7
+        fail_if_not_equal failed_close
+        cmp     word ptr [status+0Ch], 1
+        fail_if_not_equal failed_close
 
         mov     byte ptr [stage], '7'
         mov     cl, 01h                 ; mtop: MTNOP
@@ -325,7 +359,7 @@ endif
         mov     word ptr [control+2], 2
         mov     word ptr [control+4], 0
         call    run_mtop
-        fail_if_no_carry failed_close
+        fail_if_carry failed_close
 
         mov     byte ptr [stage], '9'
         mov     word ptr [control], 1    ; MTFSF
@@ -417,7 +451,7 @@ failed:
         int     21h
 
 open_raw proc near
-        mov     ax, 3D00h
+        mov     ax, 3D02h
         int     21h
         jc      open_done
         mov     byte ptr [stage], 'A'
@@ -507,6 +541,8 @@ ILI_EXPECTED_SIZE equ  12
 ili_expected_payload db 'ILI-READ-OK!'
 AFTER_FILEMARK_SIZE equ 16
 after_filemark_payload db 'AFTER-FILEMARK!!'
+WRITE_PAYLOAD_SIZE equ 12
+write_payload   db      'WRITE-RECORD'
 read_buffer     db      16 dup (0)
 success_message db      'OpenASPI tape IOCTL smoke test passed', 13, 10, '$'
 failure_message db      'OpenASPI tape IOCTL smoke test FAILED at stage $'

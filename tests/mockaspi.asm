@@ -117,6 +117,11 @@ no_device:
 execute_scsi:
         cmp     byte ptr es:[bx+SRB_CDB], 08h
         je      execute_read
+        cmp     byte ptr es:[bx+SRB_CDB], 0Ah
+        jne     execute_control
+        call    execute_write
+        jmp     aspi_done
+execute_control:
         cmp     byte ptr es:[bx+SRB_Flags], SRB_DIR_NONE
         jne     control_bad_scsi
         cmp     byte ptr es:[bx+SRB_CDBLen], 6
@@ -275,6 +280,86 @@ aspi_done:
         retf
 aspi_entry endp
 
+; Validate and complete the two writes issued by the DOS test. ES:BX points
+; at the SRB and remains valid when this routine returns.
+execute_write proc near
+ifdef NO_RESIDUAL
+        cmp     byte ptr es:[bx+SRB_Flags], SRB_DIR_OUT
+else
+        cmp     byte ptr es:[bx+SRB_Flags], SRB_DIR_OUT or SRB_RESIDUAL
+endif
+        jne     write_validation_failed
+        cmp     byte ptr es:[bx+SRB_CDBLen], 6
+        jne     write_validation_failed
+        cmp     byte ptr es:[bx+SRB_SenseLen], 32
+        jne     write_validation_failed
+        cmp     word ptr es:[bx+SRB_BufLen+2], 0
+        jne     write_validation_failed
+        cmp     byte ptr es:[bx+SRB_CDB+1], 0
+        jne     write_validation_failed
+        cmp     byte ptr es:[bx+SRB_CDB+2], 0
+        jne     write_validation_failed
+        cmp     byte ptr es:[bx+SRB_CDB+3], 0
+        jne     write_validation_failed
+        mov     ax, word ptr es:[bx+SRB_BufLen]
+        cmp     byte ptr es:[bx+SRB_CDB+4], al
+        jne     write_validation_failed
+        cmp     byte ptr es:[bx+SRB_CDB+5], 0
+        je      write_validated
+write_validation_failed:
+        jmp     write_bad_scsi
+write_validated:
+
+        mov     al, byte ptr cs:[write_index]
+        inc     byte ptr cs:[write_index]
+        cmp     al, 0
+        je      write_first
+        cmp     al, 1
+        jne     write_bad_scsi
+        cmp     word ptr es:[bx+SRB_BufLen], 1
+        jne     write_bad_scsi
+ifndef NO_RESIDUAL
+        mov     word ptr es:[bx+SRB_BufLen], 1
+endif
+        mov     byte ptr es:[bx+SRB_CDB+16], 70h
+        mov     byte ptr es:[bx+SRB_CDB+18], 07h ; DATA PROTECT
+        mov     byte ptr es:[bx+SRB_HaStat], 0
+        mov     byte ptr es:[bx+SRB_TargStat], 2
+        mov     byte ptr es:[bx+SRB_Status], SS_ERR
+        ret
+
+write_first:
+        cmp     word ptr es:[bx+SRB_BufLen], WRITE_PAYLOAD_SIZE
+        jne     write_bad_scsi
+        push    es
+        mov     ax, word ptr es:[bx+SRB_BufPointer+2]
+        mov     si, word ptr es:[bx+SRB_BufPointer]
+        mov     es, ax
+        mov     di, offset write_payload
+        mov     cx, WRITE_PAYLOAD_SIZE
+write_compare_payload:
+        mov     al, byte ptr cs:[di]
+        cmp     al, byte ptr es:[si]
+        jne     write_payload_bad
+        inc     si
+        inc     di
+        loop    write_compare_payload
+        pop     es
+ifndef NO_RESIDUAL
+        mov     word ptr es:[bx+SRB_BufLen], 0
+endif
+        mov     word ptr es:[bx+SRB_BufLen+2], 0
+        mov     byte ptr es:[bx+SRB_HaStat], 0
+        mov     byte ptr es:[bx+SRB_TargStat], 0
+        mov     byte ptr es:[bx+SRB_Status], SS_COMP
+        ret
+write_payload_bad:
+        pop     es
+write_bad_scsi:
+        mov     byte ptr es:[bx+SRB_Status], SS_ERR
+        ret
+execute_write endp
+
 ; Copy CX bytes from CS:SI to the caller's transfer buffer while preserving
 ; the SRB pointer in ES:BX.
 copy_read_payload proc near
@@ -312,10 +397,11 @@ endif
         ret
 set_read_condition endp
 
-EXPECTED_COUNT equ     9
+EXPECTED_COUNT equ     10
 READ_COUNT     equ     7
 expected_index db      0
 read_index     db      0
+write_index    db      0
 read_cdb       db      08h, 00h, 00h, 00h, 10h, 00h
 ifdef NO_RESIDUAL
 READ_PAYLOAD_SIZE equ  16
@@ -328,10 +414,13 @@ ILI_PAYLOAD_SIZE equ   12
 ili_payload    db      'ILI-READ-OK!'
 AFTER_FILEMARK_SIZE equ 16
 after_filemark_payload db 'AFTER-FILEMARK!!'
+WRITE_PAYLOAD_SIZE equ 12
+write_payload  db      'WRITE-RECORD'
 expected_cdbs:
         db      00h, 00h, 00h, 00h, 00h, 00h ; MTNOP between RMT0 closes
         db      01h, 00h, 00h, 00h, 00h, 00h ; final RMT0 close rewinds
         db      00h, 00h, 00h, 00h, 00h, 00h ; MTNOP / TEST UNIT READY
+        db      10h, 00h, 00h, 00h, 02h, 00h ; MTWEOF 2
         db      11h, 01h, 00h, 00h, 03h, 00h ; MTFSF 3
         db      11h, 01h, 0FFh, 0FFh, 0FDh, 00h ; MTBSF 3
         db      11h, 00h, 00h, 00h, 04h, 00h ; MTFSR 4
