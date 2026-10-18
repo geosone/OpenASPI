@@ -1,12 +1,14 @@
-TOOLROOT ?= ../386MAX/linux
-GDI      ?= ../gdi
-JWASM   ?= $(TOOLROOT)/bin/jwasm
-JWLINK  ?= $(TOOLROOT)/bin/jwlink
+JWASM_DIR  ?= deps/JWasm
+JWLINK_DIR ?= deps/jwlink
+GDI        ?= deps/gdi
 CC      ?= cc
 WATCOM  ?= /opt/watcom
 WCC     ?= $(WATCOM)/binl64/wcc
 
 BUILD   := build
+TOOLSDIR := $(BUILD)/tools
+JWASM   ?= $(TOOLSDIR)/jwasm/jwasm
+JWLINK  ?= $(TOOLSDIR)/jwlink/jwlink
 HOSTOBJ := $(BUILD)/host/tape_cdb.o $(BUILD)/host/tape_sense.o
 TESTBIN := $(BUILD)/host/test_tape
 DOSDRV  := $(BUILD)/dos/ASPITAP.SYS
@@ -16,14 +18,23 @@ DISTDIR := $(BUILD)/dist
 CFLAGS  ?= -std=c90 -Wall -Wextra -Werror -pedantic -O2
 CPPFLAGS += -Iinclude
 
-.PHONY: all test check dos-c-check dist clean
+.PHONY: all tools test check dos-c-check dist clean
 
 all: $(DOSDRV) $(TESTBIN)
 
 test: $(TESTBIN)
 	$(TESTBIN)
 
-check: all test dos-c-check
+check: tools all test dos-c-check
+
+tools: $(JWASM) $(JWLINK)
+
+$(JWASM):
+	$(MAKE) -C $(JWASM_DIR) -f GccUnix.mak OUTD=$(abspath $(@D))
+
+$(JWLINK):
+	$(MAKE) -C $(JWLINK_DIR) -f GccUnix.mak OUTD=$(abspath $(@D)) \
+		outd_wres=$(abspath $(TOOLSDIR)/jwlink-wres)
 
 dos-c-check: $(DOSCOBJ)
 

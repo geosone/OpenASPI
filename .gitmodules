@@ -1,0 +1,9 @@
+[submodule "deps/JWasm"]
+	path = deps/JWasm
+	url = https://github.com/geosone/JWasm.git
+[submodule "deps/jwlink"]
+	path = deps/jwlink
+	url = https://github.com/geosone/jwlink.git
+[submodule "deps/gdi"]
+	path = deps/gdi
+	url = https://github.com/geosone/gdi.git

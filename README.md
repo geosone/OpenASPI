@@ -20,12 +20,12 @@ data.  ASPI-manager discovery and tape I/O are the next implementation stage.
 
 ## Build
 
-The default tool paths reuse the Linux-native tools from the sibling 386MAX
-checkout:
+JWasm and JWlink are pinned Git submodules and are built locally without
+writing generated files into their checkouts:
 
 ```text
-../386MAX/linux/bin/jwasm
-../386MAX/linux/bin/jwlink
+build/tools/jwasm/jwasm
+build/tools/jwlink/jwlink
 ```
 
 Build the DOS loader skeleton and run the protocol tests:
@@ -38,8 +38,10 @@ make test
 `make check` also compiles the portable C modules as 16-bit DOS objects with
 OpenWatcom from `/opt/watcom`.
 
-Override `JWASM`, `JWLINK`, or `CC` on the make command line when required.
-Build products are written below `build/`.
+Clone with `git clone --recursive`, or initialize an existing checkout with
+`git submodule update --init --recursive`. Override `JWASM`, `JWLINK`, or `CC`
+on the make command line when required. Build products are written below
+`build/`.
 
 `make dist` creates an installable directory with the existing GeosOne DOS
 Installer. Its component choices cover all four OpenASPI drivers; drivers not
