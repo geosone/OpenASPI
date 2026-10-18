@@ -194,6 +194,14 @@ The installer will probe the installed components and versions, preserve a
 recoverable copy of a working system stack, and install OpenASPI replacements
 only when the user selects them or no suitable runtime exists.
 
+The shared GDI package now includes the native Win16 `WINSTALL.EXE` frontend,
+built directly on the Windows 3.1 API without MFC. It reads the same
+`INSTALL.INI` as the DOS installer and distinguishes Windows 3.x from 9x/ME.
+Registry changes will use GDI's planned package-defined `[Registry]`
+transaction format. That feature must back up and restore previous values and
+use separate Windows 3.1 and Windows 9x backends before OpenASPI adds any
+registry entries to its package.
+
 The first replacement milestone covers the paired ASPI bridge and DLLs.  A
 compatible replacement for `SCSIPORT.PDR`, the Windows type-specific drivers
 or an official hardware miniport is allowed as a later milestone; none is

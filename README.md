@@ -32,6 +32,12 @@ matching DOS components. `WINCHECK.COM` distinguishes DOS, Windows 3.x and
 Windows 9x/ME DOS boxes; the companion `WINCHECK.EXE` is a real Win16 probe
 for the future Windows setup. All automatic selections remain editable.
 
+GDI now also supplies `WINSTALL.EXE`, a native Win16 component-selection
+frontend written directly against the Windows 3.1 USER/GDI APIs. It reads the
+same `INSTALL.INI`, preserves detector-controlled choices as three-state
+automatic selections, and starts the transactional DOS installation engine
+with the explicit choices. No MFC or other GUI framework is required.
+
 ## Build
 
 JWasm and JWlink are pinned Git submodules and are built locally without

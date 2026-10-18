@@ -1,6 +1,8 @@
 JWASM_DIR  ?= deps/JWasm
 JWLINK_DIR ?= deps/jwlink
 GDI        ?= deps/gdi
+GDIINSTALL := $(GDI)/build/INSTALL.EXE
+GDIWINSTALL := $(GDI)/build/WINSTALL.EXE
 CC      ?= cc
 WATCOM  ?= /opt/watcom
 WCC     ?= $(WATCOM)/binl64/wcc
@@ -52,17 +54,20 @@ dos-smoke: all
 dos-tape-smoke: all
 	bash tests/dos_tape_ioctl.sh
 
-dist: all $(GDI)/build/INSTALL.EXE LICENSE
+dist: all $(GDIINSTALL) $(GDIWINSTALL) LICENSE
 	rm -rf $(DISTDIR)
 	mkdir -p $(DISTDIR)
-	cp $(DOSDRV) $(DOSSCAN) $(DOSWINCHECK) $(WIN16CHECK) $(GDI)/build/INSTALL.EXE installer/INSTALL.INI \
+	cp $(DOSDRV) $(DOSSCAN) $(DOSWINCHECK) $(WIN16CHECK) $(GDIINSTALL) $(GDIWINSTALL) installer/INSTALL.INI \
 		installer/README.TXT LICENSE $(DISTDIR)/
 	mv $(DISTDIR)/LICENSE $(DISTDIR)/LICENSE.TXT
 	for f in ASPIDSK.SYS ASPIFDD.SYS ASPICDA.SYS; do \
 		test ! -f $(BUILD)/dos/$$f || cp $(BUILD)/dos/$$f $(DISTDIR)/; \
 	done
 
-$(GDI)/build/INSTALL.EXE:
+$(GDIINSTALL):
+	$(MAKE) -C $(GDI)
+
+$(GDIWINSTALL):
 	$(MAKE) -C $(GDI)
 
 $(DOSDRV): drivers/aspitap/aspitap.asm common/aspi/dos_aspi.inc
