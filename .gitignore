@@ -1,0 +1,5 @@
+/build/
+*.err
+*.log
+*.lst
+*.map
