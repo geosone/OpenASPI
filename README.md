@@ -38,7 +38,10 @@ the same `INSTALL.INI`, preserves detector-controlled choices as three-state
 automatic selections, and starts its embedded transactional DOS engine with
 the explicit choices. The frontend waits for an explicit success, cancellation
 or failure result before later native Windows stages can run. No MFC or other
-GUI framework is required.
+GUI framework is required. Its package-defined registry layer now has a
+strict shared parser, Windows-family capability checks, typed data conversion
+and a lossless rollback/uninstall journal format; the native 3.x and 9x
+mutation backends remain the next stage.
 
 ## Build
 
