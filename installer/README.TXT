@@ -21,12 +21,13 @@ suggested selection before installation.
 
 WINCHECK.COM distinguishes DOS, a Windows 3.x DOS box and Windows 9x/ME for
 conditional setup choices. WINCHECK.EXE is the companion 16-bit Windows probe
-and the starting point for the later graphical Windows setup.
+for Windows-specific installation choices.
 
-From Windows 3.1 or Windows 95/98/ME, start WINSTALL.EXE for the native Win16
+There is only one dual-mode INSTALL.EXE. Under DOS it starts the DOS setup;
+from Windows 3.1 or Windows 95/98/ME the same file opens the native Win16
 component-selection window. It uses the standard Windows API without MFC or
 another UI framework. Automatic choices remain assigned to the package's DOS
-detectors; the existing INSTALL.EXE performs the transactional installation.
+detectors; the embedded DOS engine performs the transactional installation.
 
 The current ASPITAP.SYS finds the first ASPI tape and installs RMT0 and NRMT0.
 Status and TEST UNIT READY controls work, but data I/O and positioning are

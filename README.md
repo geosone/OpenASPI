@@ -30,13 +30,13 @@ The installer runs package-defined probes rather than containing OpenASPI
 hardware rules. `ASPISCAN /Q /TAPE`, `/DISK`, `/FDD` and `/CDA` preselect the
 matching DOS components. `WINCHECK.COM` distinguishes DOS, Windows 3.x and
 Windows 9x/ME DOS boxes; the companion `WINCHECK.EXE` is a real Win16 probe
-for the future Windows setup. All automatic selections remain editable.
+for Windows-specific setup decisions. All automatic selections remain editable.
 
-GDI now also supplies `WINSTALL.EXE`, a native Win16 component-selection
-frontend written directly against the Windows 3.1 USER/GDI APIs. It reads the
-same `INSTALL.INI`, preserves detector-controlled choices as three-state
-automatic selections, and starts the transactional DOS installation engine
-with the explicit choices. No MFC or other GUI framework is required.
+GDI supplies one dual-mode `INSTALL.EXE`: DOS runs its MZ text installer while
+Windows 3.1/9x loads its native Win16 NE component-selection frontend. It reads
+the same `INSTALL.INI`, preserves detector-controlled choices as three-state
+automatic selections, and starts its embedded transactional DOS engine with
+the explicit choices. No MFC or other GUI framework is required.
 
 ## Build
 
