@@ -14,7 +14,8 @@ This repository is at the bootstrap stage.  It currently contains:
 - generic installer probes for ASPI device classes and the running DOS/Windows environment;
 - `ASPITAP.SYS` initialization-time ASPI discovery for the first tape device;
 - linked `RMT0`/`NRMT0` device names with variable-block reads, `mtget`, EOT
-  policy and non-writing tape positioning through the generic IOCTL interface;
+  policy, final-close rewind semantics and non-writing tape positioning through
+  the generic IOCTL interface;
 - the documented ASPITAPE compatibility ABI;
 - portable builders for the initial SCSI sequential-access commands;
 - fixed-format SCSI sense decoding;
@@ -29,7 +30,8 @@ sense with older managers. A filemark returns one zero-byte read; EOM remains
 an error unless the application selects the documented ignore-EOT policy.
 Fixed-block reads and all media-writing controls remain deliberately rejected;
 do not use it for backup or restore. Broader sense/error translation is the
-next implementation stage.
+next implementation stage. `RMT0` rewinds when its last tracked handle closes;
+`NRMT0`, `ASPISCAN` and `TAPECTL` leave the tape position unchanged.
 
 The installer runs package-defined probes rather than containing OpenASPI
 hardware rules. `ASPISCAN /Q /TAPE`, `/DISK`, `/FDD` and `/CDA` preselect the
@@ -75,8 +77,10 @@ an emulated ATAPI CD-ROM.  It requires the private test media described in
 tape. It verifies both device names, DOS raw-mode setup, full and residual
 variable-block reads, fixed-sense ILI short records, filemarks, both EOM
 policies, rejected writes, `mtget`, and the exact CDBs for readiness, spacing,
-rewind and unload without touching real tape media. It also runs against an
-old-manager fixture without residual support and uses the same SvarDOS fixture.
+rewind and unload without touching real tape media. Nested `RMT0` opens verify
+that rewind occurs only on final close, while `NRMT0` never rewinds. The test
+also runs against an old-manager fixture without residual support and uses the
+same SvarDOS fixture.
 
 `make dos-mhvtl-smoke` uses QEMU's emulated Tekram-compatible DC-390 controller
 and `scsi-generic` passthrough to exercise `ASPITAP.SYS` against an mhVTL tape.

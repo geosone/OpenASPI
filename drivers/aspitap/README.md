@@ -10,9 +10,10 @@ The non-writing category `07h` control subset supports `mtget`, enable/ignore
 EOT policy, `MTNOP` (TEST UNIT READY), forward/backward file and record spacing,
 rewind, and rewind/unload. Variable-block reads use the ASPI manager's residual
 count to return short record lengths to DOS when available; exact-length reads
-also work with older managers without that extension. Fixed-block reads, data
-writes, `MTWEOF`, and rewind-on-close are still rejected, so the driver must
-not yet be used for backup or restore.
+also work with older managers without that extension. `RMT0` rewinds only when
+its final tracked handle closes; `NRMT0` never rewinds on close. Fixed-block
+reads, data writes and `MTWEOF` are still rejected, so the driver must not yet
+be used for backup or restore.
 
 Implementation order:
 
@@ -21,12 +22,13 @@ Implementation order:
 3. [partial] create the compatible `RMTx`/`NRMTx` device-header set (`RMT0`
    and `NRMT0` are present; units 1 through 3 follow multi-device discovery);
 4. [partial] implement open, close, raw mode, read and write request handling
-   (variable-block reads are present; fixed-block reads, close semantics and
-   writes remain);
+   (variable-block reads and rewind/no-rewind close semantics are present;
+   fixed-block reads and writes remain);
 5. [partial] implement category `07h` generic IOCTL functions (all documented
    non-writing operations are present; `MTWEOF` remains safety-gated);
 6. translate CHECK CONDITION and fixed/descriptor sense data;
 7. add fixed- and variable-block tests using an emulator and real drives.
 
-The device uses attributes `8040h`, advertising the implemented generic IOCTL
-handler but not open/close or legacy IOCTL support.
+The device uses attributes `8840h`, advertising the implemented open/close and
+generic IOCTL handlers but not legacy IOCTL support. Non-destructive diagnostic
+tools open `NRMT0`, so merely scanning or displaying status never rewinds tape.

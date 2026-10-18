@@ -63,7 +63,26 @@ start:
         mov     byte ptr [stage], 'H'
         cmp     byte ptr [status+4], 04h
         fail_if_not_equal failed_close
+
+        ; Open RMT0 twice. Closing the first handle must leave the tape alone;
+        ; an intervening TUR proves that rewind is deferred until final close.
+        mov     dx, offset rmt_name
+        call    open_raw
+        fail_if_carry failed_close
+        mov     word ptr [handle2], ax
+        mov     byte ptr [stage], 'o'
         call    close_handle
+        fail_if_carry failed_close2
+        mov     ax, word ptr [handle2]
+        mov     word ptr [handle], ax
+        mov     word ptr [control], 7    ; MTNOP between the two closes
+        mov     word ptr [control+2], 0
+        mov     word ptr [control+4], 0
+        call    run_mtop
+        fail_if_carry failed_close
+        mov     byte ptr [stage], 'c'
+        call    close_handle             ; final RMT0 close must rewind
+        fail_if_carry failed
 
         mov     byte ptr [stage], '3'
         mov     dx, offset nrmt_name
@@ -378,6 +397,11 @@ endif
 
 failed_close:
         call    close_handle
+        jmp     short failed
+failed_close2:
+        mov     bx, word ptr [handle2]
+        mov     ah, 3Eh
+        int     21h
 failed:
         call    restore_int24
         mov     dx, offset failure_message
@@ -465,6 +489,7 @@ tape_ioctl endp
 rmt_name        db      'RMT0', 0
 nrmt_name       db      'NRMT0', 0
 handle          dw      0
+handle2         dw      0
 old_int24       dd      0
 stage           db      '?'
 control:

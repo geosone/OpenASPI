@@ -16,7 +16,7 @@
 
         include common/aspi/dos_aspi.inc
 
-DEV_ATTR        equ     08040h          ; character device + generic IOCTL
+DEV_ATTR        equ     08840h          ; character + open/close + generic IOCTL
 REQ_COMMAND     equ     02h
 REQ_STATUS      equ     03h
 REQ_CATEGORY    equ     0Dh
@@ -28,6 +28,8 @@ REQ_COUNT       equ     12h
 CMD_INIT        equ     00h
 CMD_READ        equ     04h
 CMD_WRITE       equ     08h
+CMD_OPEN        equ     0Dh
+CMD_CLOSE       equ     0Eh
 CMD_GEN_IOCTL   equ     13h
 
 IOCTL_TAPE      equ     07h
@@ -112,8 +114,18 @@ interrupt proc far
         mov     al, byte ptr es:[bx+REQ_COMMAND]
         cmp     al, CMD_INIT
         je      init_request
+        cmp     al, CMD_OPEN
+        jne     dispatch_close
+        jmp     open_request
+dispatch_close:
+        cmp     al, CMD_CLOSE
+        jne     dispatch_ioctl
+        jmp     close_request
+dispatch_ioctl:
         cmp     al, CMD_GEN_IOCTL
-        je      generic_ioctl
+        jne     dispatch_read
+        jmp     generic_ioctl
+dispatch_read:
         cmp     al, CMD_READ
         je      read_request_dispatch
         cmp     al, CMD_WRITE
@@ -152,7 +164,7 @@ init_request:
         mov     dx, offset banner_tail
         mov     ah, 09h
         int     21h
-        jmp     short request_done
+        jmp     request_done
 
 init_failed:
         les     bx, [request_ptr]
@@ -162,11 +174,30 @@ init_failed:
         mov     dx, offset banner_missing
         mov     ah, 09h
         int     21h
-        jmp     short request_done
+        jmp     request_done
 
 unsupported:
         mov     word ptr es:[bx+REQ_STATUS], 8103h
         jmp     short request_done
+
+open_request:
+        cmp     byte ptr [request_rewind], 0
+        je      request_success
+        cmp     byte ptr [rmt_open_count], 0FFh
+        je      request_error
+        inc     byte ptr [rmt_open_count]
+        jmp     short request_success
+
+close_request:
+        cmp     byte ptr [request_rewind], 0
+        je      request_success
+        cmp     byte ptr [rmt_open_count], 0
+        je      request_success
+        dec     byte ptr [rmt_open_count]
+        jne     request_success
+        call    rewind_on_close
+        jc      request_error
+        jmp     short request_success
 
 generic_ioctl:
         cmp     byte ptr es:[bx+REQ_CATEGORY], IOCTL_TAPE
@@ -436,6 +467,13 @@ read_sense_error:
         ret
 classify_read_sense endp
 
+rewind_on_close proc near
+        call    prepare_control_srb
+        mov     byte ptr [srb+SRB_CDB], SCSI_REWIND
+        call    execute_control_srb
+        ret
+rewind_on_close endp
+
 ; Translate the documented ASPITAPE mtop operations to six-byte sequential-
 ; access CDBs.  The four-byte count in mtop must fit the signed or unsigned
 ; 24-bit field used by the corresponding SCSI command.
@@ -465,7 +503,7 @@ mtop_operations:
 mtop_nop:
         call    prepare_control_srb
         mov     byte ptr [srb+SRB_CDB], SCSI_TUR
-        jmp     short mtop_execute
+        jmp     execute_control_srb
 
 mtop_forward_filemarks:
         call    prepare_control_srb
@@ -476,7 +514,7 @@ mtop_forward_filemarks:
         stc
         ret
 mtop_fsf_ready:
-        jmp     short mtop_execute
+        jmp     execute_control_srb
 
 mtop_backward_filemarks:
         call    prepare_control_srb
@@ -487,7 +525,7 @@ mtop_backward_filemarks:
         stc
         ret
 mtop_bsf_ready:
-        jmp     short mtop_execute
+        jmp     execute_control_srb
 
 mtop_forward_records:
         call    prepare_control_srb
@@ -498,7 +536,7 @@ mtop_forward_records:
         stc
         ret
 mtop_fsr_ready:
-        jmp     short mtop_execute
+        jmp     execute_control_srb
 
 mtop_backward_records:
         call    prepare_control_srb
@@ -509,18 +547,24 @@ mtop_backward_records:
         stc
         ret
 mtop_bsr_ready:
-        jmp     short mtop_execute
+        jmp     execute_control_srb
 
 mtop_rewind:
         call    prepare_control_srb
         mov     byte ptr [srb+SRB_CDB], SCSI_REWIND
-        jmp     short mtop_execute
+        jmp     execute_control_srb
 
 mtop_offline:
         call    prepare_control_srb
         mov     byte ptr [srb+SRB_CDB], SCSI_LOAD
+        jmp     execute_control_srb
 
-mtop_execute:
+mtop_unsupported:
+        stc
+        ret
+ioctl_mtop endp
+
+execute_control_srb proc near
         xor     ax, ax
         mov     al, byte ptr [srb+SRB_CDB]
         mov     ah, byte ptr [srb+SRB_Flags]
@@ -532,17 +576,18 @@ mtop_execute:
         mov     byte ptr [last_scsi_status], al
         mov     byte ptr [last_sense_key], 0
         cmp     byte ptr [srb+SRB_Status], SS_COMP
-        je      mtop_complete
+        je      control_complete
         call    remember_sense_key
         stc
         ret
-mtop_complete:
+control_complete:
+        cmp     byte ptr [srb+SRB_CDB], SCSI_TUR
+        je      control_success
+        and     byte ptr [device_state], not MT_STATE_EOF_NEXT
+control_success:
         clc
         ret
-mtop_unsupported:
-        stc
-        ret
-ioctl_mtop endp
+execute_control_srb endp
 
 prepare_control_srb proc near
         call    clear_srb
@@ -850,6 +895,7 @@ tape_ha             db  0
 tape_target         db  0
 tape_lun            db  0
 device_state        db  0
+rmt_open_count      db  0
 last_scsi_status    db  0
 last_sense_key      db  0
 last_scsi_opcode    dw  0

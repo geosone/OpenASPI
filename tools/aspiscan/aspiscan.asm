@@ -506,7 +506,7 @@ fixed_print:
 print_fixed endp
 
 manager_name        db  'SCSIMGR$', 0
-tape_driver_name    db  'RMT0', 0
+tape_driver_name    db  'NRMT0', 0
 msg_title           db  'OpenASPI DOS device scan', 13, 10, '$'
 msg_no_manager      db  'SCSIMGR$ not found', 13, 10, '$'
 msg_bad_manager     db  'ASPI host adapter inquiry failed', 13, 10, '$'

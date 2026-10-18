@@ -21,7 +21,7 @@ start:
         call    parse_action
         mov     byte ptr [action], al
 
-        mov     dx, offset rmt_name
+        mov     dx, offset tape_name
         call    open_raw
         jc      open_failed
         mov     word ptr [handle], ax
@@ -280,7 +280,7 @@ print_newline proc near
         jmp     short print_string
 print_newline endp
 
-rmt_name         db      'RMT0', 0
+tape_name        db      'NRMT0', 0
 ready_word       db      'READY'
 action           db      0
 handle           dw      0
@@ -290,7 +290,7 @@ control:
         dd      1
 status           db      14 dup (0)
 
-address_message  db      'RMT0 ASPI address $'
+address_message  db      'NRMT0 ASPI address $'
 flags_message    db      ' flags=$'
 scsi_message     db      ' SCSI=$'
 sense_message    db      ' sense=$'
@@ -298,7 +298,7 @@ opcode_message   db      ' opcode=$'
 residual_message db      ' residual=$'
 ready_message    db      'TEST UNIT READY completed', 13, 10, '$'
 success_message  db      'OpenASPI TAPECTL status passed', 13, 10, '$'
-open_error       db      'Cannot open RMT0, DOS error $'
+open_error       db      'Cannot open NRMT0, DOS error $'
 ioctl_error      db      'Cannot read ASPITAPE status, DOS error $'
 ready_error      db      'TEST UNIT READY failed, DOS error $'
 newline          db      13, 10, '$'

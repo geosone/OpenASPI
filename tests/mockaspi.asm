@@ -312,7 +312,7 @@ endif
         ret
 set_read_condition endp
 
-EXPECTED_COUNT equ     7
+EXPECTED_COUNT equ     9
 READ_COUNT     equ     7
 expected_index db      0
 read_index     db      0
@@ -329,6 +329,8 @@ ili_payload    db      'ILI-READ-OK!'
 AFTER_FILEMARK_SIZE equ 16
 after_filemark_payload db 'AFTER-FILEMARK!!'
 expected_cdbs:
+        db      00h, 00h, 00h, 00h, 00h, 00h ; MTNOP between RMT0 closes
+        db      01h, 00h, 00h, 00h, 00h, 00h ; final RMT0 close rewinds
         db      00h, 00h, 00h, 00h, 00h, 00h ; MTNOP / TEST UNIT READY
         db      11h, 01h, 00h, 00h, 03h, 00h ; MTFSF 3
         db      11h, 01h, 0FFh, 0FFh, 0FDh, 00h ; MTBSF 3

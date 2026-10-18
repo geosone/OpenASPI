@@ -30,6 +30,15 @@ device contract so the same executable can operate with either `ASPITAP.SYS`
 or a compatible historical `ASPITAPE.SYS`.  A direct-ASPI backend is optional
 and must remain separate from that compatibility backend.
 
+OpenTape uses standard LTFS on drives and media that provide the required tape
+partitioning, such as supported LTO and IBM enterprise generations. DDS/DAT
+and other non-partitioning drives use a standard streaming TAR backend instead
+of a private pseudo-LTFS format. LTFS partition selection, positioning and
+index operations need capabilities beyond the historical ASPITAPE control
+subset; they belong in explicitly detected OpenASPI extension IOCTLs or the
+separate direct-ASPI backend. OpenASPI remains a transport driver and never
+interprets LTFS or TAR metadata.
+
 AHCIASPI and EUSBASPI remain independent ASPI managers.  OpenASPI is their
 client, just as it is a client of an Adaptec or other compatible manager.  The
 driver suite must never depend on manager-specific identity strings for normal

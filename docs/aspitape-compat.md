@@ -58,3 +58,8 @@ remain rejected.
 
 The current implementation discovers and exposes only the first tape drive.
 Medium changers and tape-library robotics are outside this stage.
+
+Both device headers advertise DOS open/close notifications. OpenASPI counts
+`RMT0` opens and issues synchronous SCSI REWIND only when its final tracked
+handle closes. Closing `NRMT0` never changes position. OpenASPI's own scan and
+status tools therefore use `NRMT0`.
