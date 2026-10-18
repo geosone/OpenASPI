@@ -152,52 +152,110 @@ control_bad_scsi:
         jmp     bad_scsi
 
 execute_read:
-        cmp     byte ptr cs:[read_seen], 0
-        jne     bad_scsi
 ifdef NO_RESIDUAL
         cmp     byte ptr es:[bx+SRB_Flags], SRB_DIR_IN
 else
         cmp     byte ptr es:[bx+SRB_Flags], SRB_DIR_IN or SRB_RESIDUAL
 endif
-        jne     bad_scsi
+        jne     read_bad_scsi
         cmp     byte ptr es:[bx+SRB_CDBLen], 6
-        jne     bad_scsi
+        jne     read_bad_scsi
         cmp     byte ptr es:[bx+SRB_SenseLen], 32
-        jne     bad_scsi
+        jne     read_bad_scsi
         cmp     word ptr es:[bx+SRB_BufLen], 16
-        jne     bad_scsi
+        jne     read_bad_scsi
         cmp     word ptr es:[bx+SRB_BufLen+2], 0
-        jne     bad_scsi
+        jne     read_bad_scsi
         xor     di, di
         mov     si, offset read_cdb
         mov     cx, 6
 check_read_cdb:
         mov     al, byte ptr cs:[si]
         cmp     al, byte ptr es:[bx+di+SRB_CDB]
-        jne     bad_scsi
+        jne     read_bad_scsi
         inc     si
         inc     di
         loop    check_read_cdb
 
-        push    ds
-        push    es
-        push    bx
-        mov     ax, word ptr es:[bx+SRB_BufPointer+2]
-        mov     di, word ptr es:[bx+SRB_BufPointer]
-        mov     es, ax
-        push    cs
-        pop     ds
+        mov     al, byte ptr cs:[read_index]
+        cmp     al, READ_COUNT
+        jb      read_index_valid
+read_bad_scsi:
+        jmp     bad_scsi
+read_index_valid:
+        inc     byte ptr cs:[read_index]
+        cmp     al, 0
+        je      read_first
+        cmp     al, 1
+        je      read_short_ili
+        cmp     al, 2
+        je      read_filemark
+        cmp     al, 3
+        je      read_after_filemark
+        cmp     al, 4
+        je      read_eom
+        cmp     al, 5
+        je      read_eom
+        jmp     short read_negative_ili
+
+read_first:
         mov     si, offset read_payload
         mov     cx, READ_PAYLOAD_SIZE
-        rep     movsb
-        pop     bx
-        pop     es
-        pop     ds
-
-        mov     byte ptr cs:[read_seen], 1
+        call    copy_read_payload
 ifndef NO_RESIDUAL
         mov     word ptr es:[bx+SRB_BufLen], 16-READ_PAYLOAD_SIZE
 endif
+        jmp     short read_success
+
+read_short_ili:
+        mov     si, offset ili_payload
+        mov     cx, ILI_PAYLOAD_SIZE
+        call    copy_read_payload
+ifndef NO_RESIDUAL
+        mov     word ptr es:[bx+SRB_BufLen], 16-ILI_PAYLOAD_SIZE
+endif
+        mov     al, 20h                 ; ILI, no-sense key
+        mov     dx, 16-ILI_PAYLOAD_SIZE ; requested minus actual
+        call    set_read_condition
+        jmp     short aspi_done
+
+read_filemark:
+        mov     al, 80h                 ; FILEMARK, no-sense key
+        mov     dx, 16                  ; no bytes transferred
+        call    set_read_condition
+        jmp     short aspi_done
+
+read_after_filemark:
+        mov     si, offset after_filemark_payload
+        mov     cx, AFTER_FILEMARK_SIZE
+        call    copy_read_payload
+ifndef NO_RESIDUAL
+        mov     word ptr es:[bx+SRB_BufLen], 0
+endif
+        jmp     short read_success
+
+read_eom:
+        mov     al, 40h                 ; EOM, no-sense key
+        mov     dx, 16                  ; no bytes transferred
+        call    set_read_condition
+        jmp     short aspi_done
+
+read_negative_ili:
+ifndef NO_RESIDUAL
+        mov     word ptr es:[bx+SRB_BufLen], 16
+endif
+        mov     byte ptr es:[bx+SRB_CDB+16], 0F0h
+        mov     byte ptr es:[bx+SRB_CDB+18], 20h
+        mov     byte ptr es:[bx+SRB_CDB+19], 0FFh
+        mov     byte ptr es:[bx+SRB_CDB+20], 0FFh
+        mov     byte ptr es:[bx+SRB_CDB+21], 0FFh
+        mov     byte ptr es:[bx+SRB_CDB+22], 0FCh ; actual is four bytes too large
+        mov     byte ptr es:[bx+SRB_HaStat], 0
+        mov     byte ptr es:[bx+SRB_TargStat], 2
+        mov     byte ptr es:[bx+SRB_Status], SS_ERR
+        jmp     short aspi_done
+
+read_success:
         mov     word ptr es:[bx+SRB_BufLen+2], 0
         mov     byte ptr es:[bx+SRB_HaStat], 0
         mov     byte ptr es:[bx+SRB_TargStat], 0
@@ -217,9 +275,47 @@ aspi_done:
         retf
 aspi_entry endp
 
+; Copy CX bytes from CS:SI to the caller's transfer buffer while preserving
+; the SRB pointer in ES:BX.
+copy_read_payload proc near
+        push    ds
+        push    es
+        push    bx
+        mov     ax, word ptr es:[bx+SRB_BufPointer+2]
+        mov     di, word ptr es:[bx+SRB_BufPointer]
+        mov     es, ax
+        push    cs
+        pop     ds
+        rep     movsb
+        pop     bx
+        pop     es
+        pop     ds
+        ret
+copy_read_payload endp
+
+; Return fixed-format CHECK CONDITION sense. AL contains FILEMARK/EOM/ILI and
+; DX contains the positive requested-minus-actual information value.
+set_read_condition proc near
+ifndef NO_RESIDUAL
+        mov     word ptr es:[bx+SRB_BufLen], dx
+endif
+        mov     word ptr es:[bx+SRB_BufLen+2], 0
+        mov     byte ptr es:[bx+SRB_CDB+16], 0F0h
+        mov     byte ptr es:[bx+SRB_CDB+18], al
+        mov     byte ptr es:[bx+SRB_CDB+19], 0
+        mov     byte ptr es:[bx+SRB_CDB+20], 0
+        mov     byte ptr es:[bx+SRB_CDB+21], dh
+        mov     byte ptr es:[bx+SRB_CDB+22], dl
+        mov     byte ptr es:[bx+SRB_HaStat], 0
+        mov     byte ptr es:[bx+SRB_TargStat], 2
+        mov     byte ptr es:[bx+SRB_Status], SS_ERR
+        ret
+set_read_condition endp
+
 EXPECTED_COUNT equ     7
+READ_COUNT     equ     7
 expected_index db      0
-read_seen      db      0
+read_index     db      0
 read_cdb       db      08h, 00h, 00h, 00h, 10h, 00h
 ifdef NO_RESIDUAL
 READ_PAYLOAD_SIZE equ  16
@@ -228,6 +324,10 @@ else
 READ_PAYLOAD_SIZE equ  12
 read_payload   db      'TAPE-READ-OK'
 endif
+ILI_PAYLOAD_SIZE equ   12
+ili_payload    db      'ILI-READ-OK!'
+AFTER_FILEMARK_SIZE equ 16
+after_filemark_payload db 'AFTER-FILEMARK!!'
 expected_cdbs:
         db      00h, 00h, 00h, 00h, 00h, 00h ; MTNOP / TEST UNIT READY
         db      11h, 01h, 00h, 00h, 03h, 00h ; MTFSF 3

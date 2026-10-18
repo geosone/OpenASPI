@@ -56,7 +56,12 @@ SPACE_FILEMARKS equ     01h
 MT_PARAM_ASPI   equ     080h
 MT_STATE_REWIND equ     004h
 MT_STATE_READ   equ     010h
+MT_STATE_EOF_NEXT equ   020h
 MT_STATE_EOM_EOF equ    040h
+
+SENSE_FILEMARK  equ     080h
+SENSE_EOM       equ     040h
+SENSE_ILI       equ     020h
 
 driver_start:
         dw      offset nrmt_header, 0   ; second header is in this segment
@@ -254,6 +259,13 @@ read_request proc near
         ret
 
 read_nonempty:
+        test    byte ptr [device_state], MT_STATE_EOF_NEXT
+        jz      read_issue
+        and     byte ptr [device_state], not MT_STATE_EOF_NEXT
+        clc
+        ret
+
+read_issue:
         call    clear_srb
         mov     byte ptr [srb+SRB_Cmd], SC_EXEC_SCSI_CMD
         mov     al, byte ptr [tape_ha]
@@ -301,16 +313,27 @@ read_flags_ready:
 
 read_bad_residual:
         call    zero_read_count
-        jmp     short read_remember_sense
+        stc
+        ret
 read_scsi_failed:
-        test    byte ptr [srb+SRB_Flags], SRB_RESIDUAL
-        jz      read_error_without_residual
-        call    finish_read_count
-        jnc     read_remember_sense
-read_error_without_residual:
-        call    zero_read_count
-read_remember_sense:
         call    remember_sense_key
+        test    byte ptr [srb+SRB_Flags], SRB_RESIDUAL
+        jz      read_count_from_sense
+        call    finish_read_count
+        jnc     read_classify_sense
+        jmp     short read_zero_failed
+read_count_from_sense:
+        call    finish_read_sense_count
+        jnc     read_classify_sense
+read_zero_failed:
+        call    zero_read_count
+read_classify_sense:
+        call    classify_read_sense
+        jc      read_condition_error
+        or      byte ptr [device_state], MT_STATE_READ
+        clc
+        ret
+read_condition_error:
         stc
         ret
 read_request endp
@@ -349,6 +372,69 @@ finish_read_invalid:
         stc
         ret
 finish_read_count endp
+
+; Fixed-format tape sense reports the requested-minus-actual byte count in its
+; signed information field. A positive 16-bit value therefore recovers short
+; variable records for managers without ASPI residual support.
+finish_read_sense_count proc near
+        cmp     byte ptr [sense_info_valid], 0
+        je      finish_sense_invalid
+        cmp     word ptr [sense_info_high], 0
+        jne     finish_sense_invalid
+        mov     ax, word ptr [sense_info_low]
+        cmp     ax, word ptr [requested_bytes]
+        ja      finish_sense_invalid
+        mov     word ptr [residual_bytes], ax
+        mov     dx, word ptr [requested_bytes]
+        sub     dx, ax
+        les     bx, [request_ptr]
+        mov     word ptr es:[bx+REQ_COUNT], dx
+        clc
+        ret
+finish_sense_invalid:
+        stc
+        ret
+finish_read_sense_count endp
+
+; FILEMARK and a positive ILI are normal variable-block read completions. EOM
+; is an EOF only when the caller selected the documented ignore-EOT policy.
+classify_read_sense proc near
+        test    byte ptr [sense_flags], SENSE_FILEMARK
+        jnz     read_sense_filemark
+        test    byte ptr [sense_flags], SENSE_ILI
+        jnz     read_sense_ili
+        test    byte ptr [sense_flags], SENSE_EOM
+        jnz     read_sense_eom
+        stc
+        ret
+
+read_sense_filemark:
+        les     bx, [request_ptr]
+        cmp     word ptr es:[bx+REQ_COUNT], 0
+        je      read_sense_success
+        or      byte ptr [device_state], MT_STATE_EOF_NEXT
+        jmp     short read_sense_success
+
+read_sense_ili:
+        cmp     byte ptr [sense_info_valid], 0
+        je      read_sense_error
+        cmp     word ptr [sense_info_high], 0
+        jne     read_sense_error
+        mov     ax, word ptr [sense_info_low]
+        cmp     ax, word ptr [requested_bytes]
+        ja      read_sense_error
+        jmp     short read_sense_success
+
+read_sense_eom:
+        test    byte ptr [device_state], MT_STATE_EOM_EOF
+        jz      read_sense_error
+read_sense_success:
+        clc
+        ret
+read_sense_error:
+        stc
+        ret
+classify_read_sense endp
 
 ; Translate the documented ASPITAPE mtop operations to six-byte sequential-
 ; access CDBs.  The four-byte count in mtop must fit the signed or unsigned
@@ -513,6 +599,10 @@ backward_count_invalid:
 encode_backward_count endp
 
 remember_sense_key proc near
+        mov     byte ptr [sense_flags], 0
+        mov     byte ptr [sense_info_valid], 0
+        mov     word ptr [sense_info_high], 0
+        mov     word ptr [sense_info_low], 0
         mov     al, byte ptr [srb+SRB_CDB+16]
         and     al, 7Fh
         cmp     al, 70h
@@ -529,7 +619,21 @@ descriptor_sense:
         mov     byte ptr [last_sense_key], al
         ret
 fixed_sense:
+        mov     al, byte ptr [srb+SRB_CDB+16]
+        test    al, 80h
+        jz      fixed_sense_flags
+        mov     byte ptr [sense_info_valid], 1
+        mov     ah, byte ptr [srb+SRB_CDB+19]
+        mov     al, byte ptr [srb+SRB_CDB+20]
+        mov     word ptr [sense_info_high], ax
+        mov     ah, byte ptr [srb+SRB_CDB+21]
+        mov     al, byte ptr [srb+SRB_CDB+22]
+        mov     word ptr [sense_info_low], ax
+fixed_sense_flags:
         mov     al, byte ptr [srb+SRB_CDB+18]
+        mov     ah, al
+        and     ah, SENSE_FILEMARK or SENSE_EOM or SENSE_ILI
+        mov     byte ptr [sense_flags], ah
         and     al, 0Fh
         mov     byte ptr [last_sense_key], al
 sense_done:
@@ -751,6 +855,10 @@ last_sense_key      db  0
 last_scsi_opcode    dw  0
 residual_bytes      dw  0
 requested_bytes     dw  0
+sense_flags         db  0
+sense_info_valid    db  0
+sense_info_high     dw  0
+sense_info_low      dw  0
 srb                  db  ASPI_SRB_SIZE dup (0)
 
 resident_end label byte

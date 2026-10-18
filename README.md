@@ -24,11 +24,12 @@ This repository is at the bootstrap stage.  It currently contains:
 The generated `ASPITAP.SYS` installs `RMT0` and `NRMT0` only when it finds an
 ASPI sequential-access device. Variable-block reads, status, readiness,
 forward/backward spacing, rewind and unload are implemented. Short-record
-lengths use the ASPI residual extension when available; exact-length reads
-remain compatible with older managers. Fixed-block reads, EOF/EOM completion
-and all media-writing controls remain deliberately rejected; do not use it for
-backup or restore. Full sense/error translation is the next implementation
-stage.
+lengths use the ASPI residual extension when available and fixed-format ILI
+sense with older managers. A filemark returns one zero-byte read; EOM remains
+an error unless the application selects the documented ignore-EOT policy.
+Fixed-block reads and all media-writing controls remain deliberately rejected;
+do not use it for backup or restore. Broader sense/error translation is the
+next implementation stage.
 
 The installer runs package-defined probes rather than containing OpenASPI
 hardware rules. `ASPISCAN /Q /TAPE`, `/DISK`, `/FDD` and `/CDA` preselect the
@@ -72,10 +73,10 @@ an emulated ATAPI CD-ROM.  It requires the private test media described in
 
 `make dos-tape-smoke` boots a test-only ASPI manager that exposes an emulated
 tape. It verifies both device names, DOS raw-mode setup, full and residual
-variable-block reads, rejected writes, `mtget`, EOT policy, and the exact CDBs
-for readiness, spacing, rewind and unload without touching real tape media. It
-also runs against an old-manager fixture without residual support and uses the
-same SvarDOS fixture.
+variable-block reads, fixed-sense ILI short records, filemarks, both EOM
+policies, rejected writes, `mtget`, and the exact CDBs for readiness, spacing,
+rewind and unload without touching real tape media. It also runs against an
+old-manager fixture without residual support and uses the same SvarDOS fixture.
 
 `make dos-mhvtl-smoke` uses QEMU's emulated Tekram-compatible DC-390 controller
 and `scsi-generic` passthrough to exercise `ASPITAP.SYS` against an mhVTL tape.
@@ -100,7 +101,8 @@ yet present in the distribution remain unavailable to the installer.
 OpenASPI owns the DOS drivers and low-level ASPI/SCSI support.  OpenTape is a
 separate sibling project and consumes the ASPITAPE-compatible character-device
 interface; it must work with both OpenASPI's `ASPITAP.SYS` and the historical
-`ASPITAPE.SYS`.
+`ASPITAPE.SYS`. The current tape scope is one sequential-access drive; medium
+changer and tape-library control is intentionally deferred.
 
 See [docs/architecture.md](docs/architecture.md) and
 [docs/aspitape-compat.md](docs/aspitape-compat.md).  The complete driver split

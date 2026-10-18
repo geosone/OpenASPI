@@ -31,17 +31,18 @@ systemctl start mhvtl.target
 lsscsi -g
 ```
 
-One tested configuration exposed the STK L700 changer as `/dev/sg13` and its
-first IBM ULT3580-TD8 drive as `/dev/sg6`. Device-node numbers are not stable;
-always verify them with `lsscsi -g`. The QEMU process needs read/write access
-to the selected nodes, normally through the host's `tape` group.
+One tested configuration exposed an IBM ULT3580-TD8 drive as `/dev/sg6`.
+Device-node numbers are not stable; always verify them with `lsscsi -g`. The
+QEMU process needs read/write access to the selected node, normally through the
+host's `tape` group.
 
-The L700 example can preserve the mhVTL target IDs on one emulated SCSI bus:
+Only one sequential-access drive is required for the current OpenASPI stage:
 
 ```text
-target 0, LUN 0  /dev/sg13  medium changer
 target 1, LUN 0  /dev/sg6   tape drive
 ```
+
+Medium-changer/library robotics are not exercised by OpenASPI at this stage.
 
 ## Automated DOS smoke test
 
@@ -49,7 +50,6 @@ Supply the independently obtained Tekram manager and the verified mhVTL nodes:
 
 ```sh
 ASPI_MANAGER=/path/to/ASPI.SYS \
-MHVTL_CHANGER=/dev/sg13 \
 MHVTL_TAPE=/dev/sg6 \
 make dos-mhvtl-smoke
 ```
@@ -79,8 +79,8 @@ command. That mode intentionally fails if no cartridge is loaded; `TAPECTL`
 prints the resulting SCSI status and sense key for diagnosis.
 
 The script verifies through sysfs that the tape node has SCSI peripheral type
-`01h` and an optional changer has type `08h`; this prevents accidentally
-passing an unrelated `/dev/sgN` device to the test.
+`01h`; this prevents accidentally passing an unrelated `/dev/sgN` device to
+the test.
 
 ## Equivalent QEMU devices
 
@@ -90,8 +90,6 @@ loading, and sends these commands to the QEMU monitor while `DELAY.SYS` holds
 the Tekram manager back briefly:
 
 ```sh
-drive_add 0 if=none,id=mhvtl_changer,format=raw,file=/dev/sg13
-device_add scsi-generic,drive=mhvtl_changer,bus=scsi0.0,scsi-id=0,lun=0
 drive_add 0 if=none,id=mhvtl_tape,format=raw,file=/dev/sg6
 device_add scsi-generic,drive=mhvtl_tape,bus=scsi0.0,scsi-id=1,lun=0
 ```

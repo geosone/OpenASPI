@@ -38,14 +38,23 @@ remains rejected until destructive-operation tests cover write protection,
 errors and real hardware.
 
 Compatibility behavior still requiring verification against the historical
-binary includes DOS error mapping, EOF/EOM read semantics, buffering, partial
-transfer reporting, raw-mode enforcement, and exact close/rewind timing.
+binary includes exact DOS error mapping, buffering, partial-transfer corner
+cases, raw-mode enforcement, and exact close/rewind timing.
 
 ## Current read subset
 
 One DOS character-device read maps to one variable-block SCSI `READ(6)`.
 Managers advertising ASPI extension flag `0002h` return a residual count, so
 short records produce the correct DOS byte count. With older managers, such as
-the tested Tekram 1.60 manager, an exact-size record can be read but a short
-record remains an error until fixed-sense ILI handling is complete. Fixed-block
-mode and EOF/EOM completion are not enabled yet. DOS writes remain rejected.
+the tested Tekram 1.60 manager, an exact-size record works directly and a valid
+fixed-format ILI information field supplies the length of a short record.
+
+A filemark with no data completes as one zero-byte read; a filemark delivered
+with data defers that zero-byte result until the next read. EOM is an error by
+default and becomes a zero/partial successful result only after IOCTL function
+`03h` selects the historical ignore-EOT policy. Negative ILI (record larger
+than the caller's buffer) remains an error. Fixed-block mode and DOS writes
+remain rejected.
+
+The current implementation discovers and exposes only the first tape drive.
+Medium changers and tape-library robotics are outside this stage.

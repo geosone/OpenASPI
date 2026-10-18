@@ -31,6 +31,13 @@ endm
 start:
         push    cs
         pop     ds
+        mov     ax, 3524h
+        int     21h
+        mov     word ptr [old_int24], bx
+        mov     word ptr [old_int24+2], es
+        mov     dx, offset critical_error
+        mov     ax, 2524h
+        int     21h
 
         mov     byte ptr [stage], '1'
         mov     dx, offset rmt_name
@@ -125,6 +132,141 @@ ifdef NO_RESIDUAL
 else
         cmp     word ptr [status+0Ch], 4
 endif
+        fail_if_not_equal failed_close
+
+        ; A short variable record may arrive as CHECK CONDITION with a
+        ; positive ILI information value instead of a manager residual.
+        mov     byte ptr [stage], 'q'
+        mov     bx, word ptr [handle]
+        mov     cx, 16
+        mov     dx, offset read_buffer
+        mov     ah, 3Fh
+        int     21h
+        fail_if_carry failed_close
+        cmp     ax, ILI_EXPECTED_SIZE
+        fail_if_not_equal failed_close
+        push    ds
+        pop     es
+        mov     si, offset ili_expected_payload
+        mov     di, offset read_buffer
+        mov     cx, ILI_EXPECTED_SIZE
+        repe    cmpsb
+        fail_if_not_equal failed_close
+        call    get_status
+        fail_if_carry failed_close
+        cmp     byte ptr [status+4], 10h
+        fail_if_not_equal failed_close
+        cmp     byte ptr [status+8], 2
+        fail_if_not_equal failed_close
+        cmp     byte ptr [status+9], 0
+        fail_if_not_equal failed_close
+ifdef NO_RESIDUAL
+        cmp     word ptr [status+0Ah], 0808h
+else
+        cmp     word ptr [status+0Ah], 0C08h
+endif
+        fail_if_not_equal failed_close
+        cmp     word ptr [status+0Ch], 4
+        fail_if_not_equal failed_close
+
+        ; A filemark is reported as exactly one zero-byte read. The following
+        ; read must return the first record in the next tape file.
+        mov     byte ptr [stage], 'f'
+        mov     bx, word ptr [handle]
+        mov     cx, 16
+        mov     dx, offset read_buffer
+        mov     ah, 3Fh
+        int     21h
+        fail_if_carry failed_close
+        or      ax, ax
+        fail_if_not_equal failed_close
+        call    get_status
+        fail_if_carry failed_close
+        cmp     byte ptr [status+8], 2
+        fail_if_not_equal failed_close
+        cmp     word ptr [status+0Ch], 16
+        fail_if_not_equal failed_close
+
+        mov     byte ptr [stage], 'a'
+        mov     bx, word ptr [handle]
+        mov     cx, 16
+        mov     dx, offset read_buffer
+        mov     ah, 3Fh
+        int     21h
+        fail_if_carry failed_close
+        cmp     ax, AFTER_FILEMARK_SIZE
+        fail_if_not_equal failed_close
+        push    ds
+        pop     es
+        mov     si, offset after_filemark_payload
+        mov     di, offset read_buffer
+        mov     cx, AFTER_FILEMARK_SIZE
+        repe    cmpsb
+        fail_if_not_equal failed_close
+        call    get_status
+        fail_if_carry failed_close
+        cmp     byte ptr [status+8], 0
+        fail_if_not_equal failed_close
+        cmp     word ptr [status+0Ch], 0
+        fail_if_not_equal failed_close
+
+        ; EOM remains an error in the default mode.
+        mov     byte ptr [stage], 'e'
+        mov     bx, word ptr [handle]
+        mov     cx, 16
+        mov     dx, offset read_buffer
+        mov     ah, 3Fh
+        int     21h
+        fail_if_no_carry failed_close
+        call    get_status
+        fail_if_carry failed_close
+        cmp     byte ptr [status+8], 2
+        fail_if_not_equal failed_close
+        cmp     word ptr [status+0Ch], 16
+        fail_if_not_equal failed_close
+
+        ; With ignore-EOT selected, the same EOM condition becomes EOF.
+        mov     byte ptr [stage], 'i'
+        mov     cl, 03h
+        mov     dx, offset status
+        call    tape_ioctl
+        fail_if_carry failed_close
+        mov     bx, word ptr [handle]
+        mov     cx, 16
+        mov     dx, offset read_buffer
+        mov     ah, 3Fh
+        int     21h
+        fail_if_carry failed_close
+        or      ax, ax
+        fail_if_not_equal failed_close
+        call    get_status
+        fail_if_carry failed_close
+        cmp     byte ptr [status+4], 50h
+        fail_if_not_equal failed_close
+        cmp     byte ptr [status+8], 2
+        fail_if_not_equal failed_close
+
+        mov     byte ptr [stage], 't'
+        mov     cl, 04h
+        mov     dx, offset status
+        call    tape_ioctl
+        fail_if_carry failed_close
+
+        ; Negative ILI means the record did not fit and must stay an error.
+        mov     byte ptr [stage], 'n'
+        mov     bx, word ptr [handle]
+        mov     cx, 16
+        mov     dx, offset read_buffer
+        mov     ah, 3Fh
+        int     21h
+        fail_if_no_carry failed_close
+        call    get_status
+        fail_if_carry failed_close
+        cmp     byte ptr [status+4], 10h
+        fail_if_not_equal failed_close
+        cmp     byte ptr [status+8], 2
+        fail_if_not_equal failed_close
+        cmp     word ptr [status+0Ch], 16
         fail_if_not_equal failed_close
 
         mov     byte ptr [stage], 'Z'
@@ -227,6 +369,7 @@ endif
         fail_if_not_equal failed_close
 
         call    close_handle
+        call    restore_int24
         mov     dx, offset success_message
         mov     ah, 09h
         int     21h
@@ -236,6 +379,7 @@ endif
 failed_close:
         call    close_handle
 failed:
+        call    restore_int24
         mov     dx, offset failure_message
         mov     ah, 09h
         int     21h
@@ -282,6 +426,22 @@ close_handle proc near
         ret
 close_handle endp
 
+restore_int24 proc near
+        push    ds
+        mov     dx, word ptr cs:[old_int24]
+        mov     ax, word ptr cs:[old_int24+2]
+        mov     ds, ax
+        mov     ax, 2524h
+        int     21h
+        pop     ds
+        ret
+restore_int24 endp
+
+critical_error proc far
+        mov     al, 3                   ; fail the request; never prompt/retry
+        iret
+critical_error endp
+
 get_status proc near
         mov     cl, 02h
         mov     dx, offset status
@@ -305,6 +465,7 @@ tape_ioctl endp
 rmt_name        db      'RMT0', 0
 nrmt_name       db      'NRMT0', 0
 handle          dw      0
+old_int24       dd      0
 stage           db      '?'
 control:
         dw      7                       ; MTNOP
@@ -317,6 +478,10 @@ else
 READ_EXPECTED_SIZE equ  12
 expected_payload db     'TAPE-READ-OK'
 endif
+ILI_EXPECTED_SIZE equ  12
+ili_expected_payload db 'ILI-READ-OK!'
+AFTER_FILEMARK_SIZE equ 16
+after_filemark_payload db 'AFTER-FILEMARK!!'
 read_buffer     db      16 dup (0)
 success_message db      'OpenASPI tape IOCTL smoke test passed', 13, 10, '$'
 failure_message db      'OpenASPI tape IOCTL smoke test FAILED at stage $'
