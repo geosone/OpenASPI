@@ -8,15 +8,19 @@ documented interface of Greg Shenaut's historical `ASPITAPE.SYS`.
 
 This repository is at the bootstrap stage.  It currently contains:
 
+- byte-exact ASPI for DOS SRB definitions shared by C and assembly code;
+- `ASPISCAN.COM`, a read-only host/target/LUN and SCSI-INQUIRY diagnostic;
+- `ASPITAP.SYS` initialization-time ASPI discovery for the first tape device;
 - the documented ASPITAPE compatibility ABI;
 - portable builders for the initial SCSI sequential-access commands;
 - fixed-format SCSI sense decoding;
 - host-side unit tests for those protocol helpers;
-- an 8086 DOS character-device loader skeleton built with JWasm.
+- 8086 DOS binaries built with JWasm.
 
-The generated `ASPITAP.SYS` is deliberately a loader skeleton.  It installs
-as `RMT0`, prints a prototype warning, and rejects all I/O.  Do not use it for
-data.  ASPI-manager discovery and tape I/O are the next implementation stage.
+The generated `ASPITAP.SYS` installs as `RMT0` only when it finds an ASPI
+sequential-access device.  Runtime tape I/O is still deliberately rejected;
+do not use it for data.  Compatible device headers, status IOCTL and read paths
+are the next implementation stage.
 
 ## Build
 
@@ -34,6 +38,11 @@ Build the DOS loader skeleton and run the protocol tests:
 make
 make test
 ```
+
+`make dos-smoke` boots the local SvarDOS fixture in QEMU, loads the sibling
+AHCIASPI manager, verifies the no-tape driver path and runs `ASPISCAN` against
+an emulated ATAPI CD-ROM.  It requires the private test media described in
+`docs/reference-material.md` and is therefore not part of `make check`.
 
 `make check` also compiles the portable C modules as 16-bit DOS objects with
 OpenWatcom from `/opt/watcom`.

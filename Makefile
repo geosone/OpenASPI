@@ -11,19 +11,22 @@ JWASM   ?= $(TOOLSDIR)/jwasm/jwasm
 JWLINK  ?= $(TOOLSDIR)/jwlink/jwlink
 HOSTOBJ := $(BUILD)/host/tape_cdb.o $(BUILD)/host/tape_sense.o
 TESTBIN := $(BUILD)/host/test_tape
+ASPITESTBIN := $(BUILD)/host/test_aspi
 DOSDRV  := $(BUILD)/dos/ASPITAP.SYS
+DOSSCAN := $(BUILD)/dos/ASPISCAN.COM
 DOSCOBJ := $(BUILD)/dos/tape_cdb.obj $(BUILD)/dos/tape_sense.obj
 DISTDIR := $(BUILD)/dist
 
 CFLAGS  ?= -std=c90 -Wall -Wextra -Werror -pedantic -O2
 CPPFLAGS += -Iinclude
 
-.PHONY: all tools test check dos-c-check dist clean
+.PHONY: all tools test check dos-c-check dos-smoke dist clean
 
-all: $(DOSDRV) $(TESTBIN)
+all: $(DOSDRV) $(DOSSCAN) $(TESTBIN) $(ASPITESTBIN)
 
-test: $(TESTBIN)
+test: $(TESTBIN) $(ASPITESTBIN)
 	$(TESTBIN)
+	$(ASPITESTBIN)
 
 check: tools all test dos-c-check
 
@@ -38,10 +41,13 @@ $(JWLINK):
 
 dos-c-check: $(DOSCOBJ)
 
+dos-smoke: all
+	bash tests/dos_scan.sh
+
 dist: all $(GDI)/build/INSTALL.EXE LICENSE
 	rm -rf $(DISTDIR)
 	mkdir -p $(DISTDIR)
-	cp $(DOSDRV) $(GDI)/build/INSTALL.EXE installer/INSTALL.INI \
+	cp $(DOSDRV) $(DOSSCAN) $(GDI)/build/INSTALL.EXE installer/INSTALL.INI \
 		installer/README.TXT LICENSE $(DISTDIR)/
 	mv $(DISTDIR)/LICENSE $(DISTDIR)/LICENSE.TXT
 	for f in ASPIDSK.SYS ASPIFDD.SYS ASPICDA.SYS; do \
@@ -51,9 +57,13 @@ dist: all $(GDI)/build/INSTALL.EXE LICENSE
 $(GDI)/build/INSTALL.EXE:
 	$(MAKE) -C $(GDI)
 
-$(DOSDRV): drivers/aspitap/aspitap.asm
+$(DOSDRV): drivers/aspitap/aspitap.asm common/aspi/dos_aspi.inc
 	mkdir -p $(@D)
 	$(JWASM) -q -bin -0 -W4 -WX -Fl=$(BUILD)/dos/ASPITAP.lst -Fw$(BUILD)/dos/ASPITAP.err -Fo=$@ $<
+
+$(DOSSCAN): tools/aspiscan/aspiscan.asm common/aspi/dos_aspi.inc
+	mkdir -p $(@D)
+	$(JWASM) -q -bin -0 -W4 -WX -Fl=$(BUILD)/dos/ASPISCAN.lst -Fw$(BUILD)/dos/ASPISCAN.err -Fo=$@ $<
 
 $(BUILD)/dos/tape_cdb.obj: common/scsi/tape_cdb.c include/openaspi/scsi_tape.h include/openaspi/types.h
 	mkdir -p $(@D)
@@ -74,6 +84,10 @@ $(BUILD)/host/tape_sense.o: common/scsi/tape_sense.c include/openaspi/scsi_tape.
 $(TESTBIN): tests/test_tape.c $(HOSTOBJ) include/openaspi/aspitape.h
 	mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/test_tape.c $(HOSTOBJ)
+
+$(ASPITESTBIN): tests/test_aspi.c include/openaspi/aspi.h include/openaspi/types.h
+	mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/test_aspi.c
 
 clean:
 	rm -rf $(BUILD)

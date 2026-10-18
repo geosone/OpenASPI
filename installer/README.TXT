@@ -13,8 +13,11 @@ Place an ASPI manager such as AHCIASPI, EUSBASPI or an Adaptec manager before
 these drivers in CONFIG.SYS. Run INSTALL.EXE to install or update OpenASPI.
 Run INSTALL /U from the installation directory to remove it.
 
-The current ASPITAP.SYS is a non-functional loader skeleton. It rejects all
-I/O and must not be used with valuable media.
+ASPISCAN.COM lists the active ASPI adapters and devices and identifies tape
+devices without reading or changing their media.
+
+The current ASPITAP.SYS finds the first ASPI tape and installs RMT0, but still
+rejects runtime I/O. It must not yet be used with valuable media.
 
 The installer is the GeosOne DOS Installer: https://github.com/geosone/gdi
 License: GNU General Public License version 3.
