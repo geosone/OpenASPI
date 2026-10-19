@@ -45,7 +45,9 @@ ASPITAP.SYS CONFIG.SYS line to permit multiple-open transfers, and -s to permit
 single-byte transfers. The -tX option replaces the M in the device names with
 letter X; -$ appends a collision-avoiding dollar sign.
 Malformed or unsupported options stop the driver from loading and print an
-error. The historical -b, -w, -i, -v and -d switches are not implemented yet.
+error. Use -v (or -d) for adapter, tape, block-mode and device-name details
+during loading, including discovery failure reasons. Fixed block sizes are
+shown in hexadecimal. The historical -b, -w and -i switches are not implemented.
 Only one tape drive is exposed; medium-changer/library control is not part of
 this stage. The write path is not yet qualified for production backups on real
 media. Closing a written session adds two terminating filemarks; NRMT0 then

@@ -91,7 +91,25 @@ aspi_entry proc far
         jmp     aspi_done
 
 host_inquiry:
+ifdef BAD_INQUIRY
+        mov     byte ptr es:[bx+SRB_Status], SS_ERR
+        jmp     aspi_done
+endif
+        push    ds
+        push    cs
+        pop     ds
+        mov     si, offset mock_identity
+        mov     di, bx
+        add     di, HA_ManagerId
+        mov     cx, 32
+        cld
+        rep     movsb
+        pop     ds
+ifdef NO_ADAPTERS
+        mov     byte ptr es:[bx+HA_Count], 0
+else
         mov     byte ptr es:[bx+HA_Count], 1
+endif
         mov     byte ptr es:[bx+HA_SCSI_ID], 7
         mov     byte ptr es:[bx+HA_Unique+3], 1
 ifdef NO_RESIDUAL
@@ -103,6 +121,9 @@ endif
         jmp     aspi_done
 
 device_type:
+ifdef NO_TAPE
+        jmp     no_device
+endif
         cmp     byte ptr es:[bx+SRB_Target], 0
         jne     no_device
         cmp     byte ptr es:[bx+SRB_Lun], 0
@@ -663,6 +684,9 @@ EXPECTED_COUNT equ     12
 endif
 endif
 READ_COUNT     equ     7
+; '$' must be printed literally; the control byte must be sanitized.
+mock_identity  db      'MOCK', '$', 1, 'ASPI', 6 dup (' ')
+               db      'MOCK TAPE HA', 4 dup (' ')
 expected_index db      0
 read_index     db      0
 write_index    db      0

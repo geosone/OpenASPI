@@ -75,8 +75,11 @@ option clusters such as `-ms` are accepted. Open and close requests themselves
 remain tracked so final-close processing occurs at the correct time.
 Malformed or unsupported options abort installation before ASPI discovery;
 they are not silently ignored. `-t` requires an immediate alphabetic name
-letter. Historical buffering (`-b`), rewind timing (`-w`), Ctrl-Break (`-i`)
-and verbose output (`-v`/`-d`) switches remain unimplemented.
+letter. Historical buffering (`-b`), rewind timing (`-w`) and Ctrl-Break (`-i`)
+switches remain unimplemented. `-v` and its historical alias `-d` enable
+initialization diagnostics with adapter identities, extension flags, tape
+address, selected block mode and actual device names. Discovery failures also
+report the failing stage. The diagnostics add no ASPI commands.
 
 At installation, `READ BLOCK LIMITS` detects a drive whose minimum and maximum
 block sizes are the same. `mtget` then reports `FIXED_BLOCK` and that size.

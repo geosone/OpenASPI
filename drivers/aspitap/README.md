@@ -40,9 +40,16 @@ This example installs `RST0$` and `NRST0$`.
 The name letter must follow `-t` immediately and be in `A` through `Z` (case
 insensitive). An incomplete `-t`, an invalid letter, an empty option prefix,
 or an unsupported switch aborts installation with an error message. In
-particular, `-b`, `-w`, `-i`, `-v` and `-d` are not implemented and must not
+particular, `-b`, `-w` and `-i` are not implemented and must not
 be supplied. The driver pathname is skipped as a whole token, so hyphens in
 directory names do not enable options.
+
+`-v` and the equivalent `-d` enable verbose initialization. They show adapter
+count, manager/adapter identities and extension flags, the selected tape's
+address and block mode (fixed sizes are hexadecimal), and both actual device
+names. Failed discovery distinguishes an unavailable manager, a failed host
+inquiry, an empty adapter list and the absence of a tape. Diagnostics reuse
+discovery results without issuing additional ASPI commands.
 
 CHECK CONDITION decoding accepts both fixed and descriptor sense. Descriptor
 information and stream-command descriptors provide residual ILI lengths,

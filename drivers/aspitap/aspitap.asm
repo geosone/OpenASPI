@@ -6,7 +6,7 @@
 ; readiness operations. Variable-block reads use residual counts when the ASPI
 ; manager provides them and retain exact-length compatibility with older
 ; managers. Variable-block writes use the same ASPI residual extension and
-; write filemarks only when explicitly requested through MTWEOF.
+; finalize written sessions with two filemarks on final close.
 
         .8086
         option casemap:none
@@ -71,6 +71,7 @@ MT_STATE_EOM_EOF equ    040h
 OPT_ALLOW_SINGLE equ    001h
 OPT_ALLOW_MULTIPLE equ  002h
 OPT_NAME_SUFFIX  equ    004h
+OPT_VERBOSE      equ    008h
 
 SENSE_FILEMARK  equ     080h
 SENSE_EOM       equ     040h
@@ -991,6 +992,7 @@ remember_sense_key endp
 ; Locate SCSIMGR$, query each adapter and find the first peripheral type 01h.
 ; CF is clear with tape_ha:tape_target:tape_lun filled in.
 discover_tape proc near
+        mov     word ptr [discovery_reason], offset msg_no_manager
         mov     ax, 3D00h
         mov     dx, offset manager_name
         int     21h
@@ -1016,6 +1018,7 @@ manager_entry_read:
         jmp     discovery_failed
 
 query_adapters:
+        mov     word ptr [discovery_reason], offset msg_bad_inquiry
         call    clear_srb
         mov     byte ptr [srb+SRB_Cmd], SC_HA_INQUIRY
         call    call_aspi
@@ -1023,12 +1026,15 @@ query_adapters:
         je      adapter_count_ready
         jmp     discovery_failed
 adapter_count_ready:
+        mov     word ptr [discovery_reason], offset msg_no_adapters
         mov     al, byte ptr [srb+HA_Count]
         mov     byte ptr [adapter_count], al
+        call    report_adapter_count
         or      al, al
         jnz     begin_adapter_scan
         jmp     discovery_failed
 begin_adapter_scan:
+        mov     word ptr [discovery_reason], offset msg_no_tape
         mov     byte ptr [scan_ha], 0
 
 scan_adapter:
@@ -1041,6 +1047,7 @@ scan_adapter:
         je      adapter_inquiry_ready
         jmp     next_adapter
 adapter_inquiry_ready:
+        call    report_adapter
         mov     ax, word ptr [srb+HA_ExtFlags]
         mov     word ptr [adapter_ext_flags], ax
         mov     al, byte ptr [srb+HA_SCSI_ID]
@@ -1084,6 +1091,7 @@ scan_lun_loop:
         mov     al, byte ptr [scan_lun]
         mov     byte ptr [tape_lun], al
         call    detect_block_limits
+        call    report_tape
         clc
         ret
 
@@ -1104,6 +1112,12 @@ next_adapter:
         jmp     scan_adapter
 
 discovery_failed:
+        test    byte ptr [config_options], OPT_VERBOSE
+        jz      discovery_failure_done
+        mov     dx, word ptr [discovery_reason]
+        mov     ah, 09h
+        int     21h
+discovery_failure_done:
         stc
         ret
 discover_tape endp
@@ -1217,6 +1231,14 @@ init_option_not_single:
         or      byte ptr [config_options], OPT_ALLOW_MULTIPLE
         jmp     short init_option_next
 init_option_not_multiple:
+        cmp     al, 'V'
+        je      init_option_verbose
+        cmp     al, 'D'
+        jne     init_option_not_verbose
+init_option_verbose:
+        or      byte ptr [config_options], OPT_VERBOSE
+        jmp     short init_option_next
+init_option_not_verbose:
         cmp     al, 'T'
         jne     init_options_invalid
         inc     si
@@ -1369,14 +1391,175 @@ nibble_ready:
         ret
 print_nibble endp
 
+; Optional initialization diagnostics. Preserve the discovery registers and
+; never issue extra ASPI commands merely to produce verbose output.
+report_adapter_count proc near
+        push    ax
+        push    dx
+        test    byte ptr [config_options], OPT_VERBOSE
+        jz      report_count_done
+        mov     dx, offset msg_adapter_count
+        mov     ah, 09h
+        int     21h
+        mov     al, byte ptr [adapter_count]
+        call    print_hex8
+        mov     dx, offset msg_crlf
+        mov     ah, 09h
+        int     21h
+report_count_done:
+        pop     dx
+        pop     ax
+        ret
+report_adapter_count endp
+
+report_adapter proc near
+        push    ax
+        push    cx
+        push    dx
+        push    si
+        test    byte ptr [config_options], OPT_VERBOSE
+        jz      report_adapter_done
+        mov     dx, offset msg_adapter
+        mov     ah, 09h
+        int     21h
+        mov     al, byte ptr [scan_ha]
+        call    print_hex8
+        mov     dx, offset msg_extensions
+        mov     ah, 09h
+        int     21h
+        mov     ax, word ptr [srb+HA_ExtFlags]
+        call    print_hex16
+        mov     dx, offset msg_manager
+        mov     ah, 09h
+        int     21h
+        mov     si, offset srb+HA_ManagerId
+        mov     cx, 16
+        call    print_fixed
+        mov     dx, offset msg_identity
+        mov     ah, 09h
+        int     21h
+        mov     si, offset srb+HA_Identifier
+        mov     cx, 16
+        call    print_fixed
+        mov     dx, offset msg_quote_crlf
+        mov     ah, 09h
+        int     21h
+report_adapter_done:
+        pop     si
+        pop     dx
+        pop     cx
+        pop     ax
+        ret
+report_adapter endp
+
+report_tape proc near
+        push    ax
+        push    cx
+        push    dx
+        push    si
+        test    byte ptr [config_options], OPT_VERBOSE
+        jz      report_tape_done
+        mov     dx, offset msg_tape
+        mov     ah, 09h
+        int     21h
+        mov     al, byte ptr [tape_ha]
+        call    print_hex8
+        mov     dl, ':'
+        call    print_char
+        mov     al, byte ptr [tape_target]
+        call    print_hex8
+        mov     dl, ':'
+        call    print_char
+        mov     al, byte ptr [tape_lun]
+        call    print_hex8
+        cmp     word ptr [tape_fixed_block], 0
+        je      report_variable
+        mov     dx, offset msg_fixed
+        mov     ah, 09h
+        int     21h
+        mov     ax, word ptr [tape_fixed_block]
+        call    print_hex16
+        mov     dx, offset msg_hex_bytes
+        jmp     short report_block_text
+report_variable:
+        mov     dx, offset msg_variable
+report_block_text:
+        mov     ah, 09h
+        int     21h
+        mov     dx, offset msg_names
+        mov     ah, 09h
+        int     21h
+        mov     si, offset rmt_device_name
+        mov     cx, 8
+        call    print_fixed
+        mov     dl, ' '
+        call    print_char
+        mov     si, offset nrmt_device_name
+        mov     cx, 8
+        call    print_fixed
+        mov     dx, offset msg_crlf
+        mov     ah, 09h
+        int     21h
+report_tape_done:
+        pop     si
+        pop     dx
+        pop     cx
+        pop     ax
+        ret
+report_tape endp
+
+print_hex16 proc near
+        push    ax
+        mov     al, ah
+        call    print_hex8
+        pop     ax
+        call    print_hex8
+        ret
+print_hex16 endp
+
+; ASPI identity fields are fixed-width bytes, not DOS '$'-terminated strings.
+; Replace nonprintable bytes so manager data cannot control the console.
+print_fixed proc near
+fixed_next:
+        lodsb
+        cmp     al, 20h
+        jb      fixed_unprintable
+        cmp     al, 7Eh
+        jbe     fixed_print
+fixed_unprintable:
+        mov     al, '.'
+fixed_print:
+        mov     dl, al
+        call    print_char
+        loop    fixed_next
+        ret
+print_fixed endp
+
 manager_name        db  'SCSIMGR$', 0
 banner_found        db  'OpenASPI ASPITAP: tape found at $'
 banner_tail         db  '; tape device names ready', 13, 10, '$'
 banner_missing      db  'OpenASPI ASPITAP: no ASPI tape; not installed', 13, 10, '$'
 banner_bad_options  db  'OpenASPI ASPITAP: invalid or unsupported option; not installed', 13, 10, '$'
+msg_adapter_count   db  'ASPITAP: adapters=$'
+msg_adapter         db  'ASPITAP: HA $'
+msg_extensions      db  ' extensions=$'
+msg_manager         db  ' manager="$'
+msg_identity        db  '" adapter="$'
+msg_quote_crlf      db  '"', 13, 10, '$'
+msg_tape            db  'ASPITAP: tape $'
+msg_fixed           db  ' fixed block=$'
+msg_hex_bytes       db  'h bytes', 13, 10, '$'
+msg_variable        db  ' variable blocks', 13, 10, '$'
+msg_names           db  'ASPITAP: names=$'
+msg_crlf            db  13, 10, '$'
+msg_no_manager      db  'ASPITAP: ASPI manager unavailable or entry point invalid', 13, 10, '$'
+msg_bad_inquiry     db  'ASPITAP: host adapter inquiry failed', 13, 10, '$'
+msg_no_adapters     db  'ASPITAP: manager reports no host adapters', 13, 10, '$'
+msg_no_tape         db  'ASPITAP: no sequential-access device found', 13, 10, '$'
 
 aspi_entry          dd  0
 adapter_count       db  0
+discovery_reason    dw  0
 adapter_scsi_id     db  0
 adapter_ext_flags   dw  0
 target_count        db  8

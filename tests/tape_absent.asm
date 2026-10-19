@@ -1,4 +1,4 @@
-; Invalid CONFIG.SYS options must leave neither tape header installed.
+; Rejected initialization must leave neither tape header installed.
         .8086
         option casemap:none
         .model tiny
@@ -45,6 +45,6 @@ expect_absent endp
 
 rmt_name        db 'RMT0', 0
 nrmt_name       db 'NRMT0', 0
-success_message db 'OpenASPI invalid tape options rejected', 13, 10, '$'
-failure_message db 'OpenASPI invalid tape options FAILED', 13, 10, '$'
+success_message db 'OpenASPI missing tape headers verified', 13, 10, '$'
+failure_message db 'OpenASPI absent tape test FAILED', 13, 10, '$'
         end start

@@ -18,10 +18,19 @@ run_fixture() {
     local test_source="$ROOT/tests/tape_ioctl.asm"
     local success_text='OpenASPI tape IOCTL smoke test passed'
     local driver_line='DEVICE=ASPITAP.SYS'
+    local manager_line='DEVICE=MOCKASPI.SYS'
 
     case "$variant" in
         legacy) defines=(-DNO_RESIDUAL) ;;
         pathname) driver_line='DEVICE=ASPI-S\ASPITAP.SYS' ;;
+        verbose) driver_line='DEVICE=ASPITAP.SYS -v' ;;
+        debug) driver_line='DEVICE=ASPITAP.SYS /D' ;;
+        fixed-verbose)
+            defines=(-DFIXED_BLOCK)
+            test_source="$ROOT/tests/tape_fixed.asm"
+            success_text='OpenASPI fixed-block tape smoke test passed'
+            driver_line='DEVICE=ASPITAP.SYS -v'
+            ;;
         fixed)
             defines=(-DFIXED_BLOCK)
             test_source="$ROOT/tests/tape_fixed.asm"
@@ -36,20 +45,31 @@ run_fixture() {
             defines=(-DOPTION_OVERRIDES)
             test_source="$ROOT/tests/tape_options.asm"
             success_text='OpenASPI tape option smoke test passed'
-            driver_line='DEVICE=ASPITAP.SYS -ms$tS'
+            driver_line='DEVICE=ASPITAP.SYS -vms$tS'
             if test "$variant" = options-separated; then
                 driver_line='DEVICE=ASPITAP.SYS /M /S /ts /$'
             fi
             ;;
         invalid-*)
-            test_source="$ROOT/tests/tape_invalid_options.asm"
-            success_text='OpenASPI invalid tape options rejected'
+            test_source="$ROOT/tests/tape_absent.asm"
+            success_text='OpenASPI missing tape headers verified'
             case "$variant" in
                 invalid-target) driver_line='DEVICE=ASPITAP.SYS -t' ;;
                 invalid-target-space) driver_line='DEVICE=ASPITAP.SYS -t -s' ;;
                 invalid-target-digit) driver_line='DEVICE=ASPITAP.SYS -t1' ;;
                 invalid-unsupported) driver_line='DEVICE=ASPITAP.SYS -b' ;;
                 invalid-empty) driver_line='DEVICE=ASPITAP.SYS -' ;;
+            esac
+            ;;
+        no-manager|no-tape|no-adapters|bad-inquiry)
+            test_source="$ROOT/tests/tape_absent.asm"
+            success_text='OpenASPI missing tape headers verified'
+            driver_line='DEVICE=ASPITAP.SYS -v'
+            case "$variant" in
+                no-manager) manager_line='' ;;
+                no-tape) defines=(-DNO_TAPE) ;;
+                no-adapters) defines=(-DNO_ADAPTERS) ;;
+                bad-inquiry) defines=(-DBAD_INQUIRY) ;;
             esac
             ;;
     esac
@@ -61,6 +81,8 @@ run_fixture() {
         -Fo="$run_dir/TAPETEST.COM" "$test_source"
     "$JWASM" -q -bin -0 -W4 -WX \
         -Fo="$run_dir/QEXIT.COM" "$ROOT/tests/qexit.asm"
+    "$JWASM" -q -bin -0 -W4 -WX \
+        -Fo="$run_dir/BOOTLOG.COM" "$ROOT/tests/boot_screen.asm"
 
     unzip -p "$SVARDOS_ZIP" svdos-1.44M-disk-1.img > "$run_dir/boot.img"
     while IFS= read -r file; do
@@ -72,11 +94,12 @@ run_fixture() {
     done < <(mdir -b -i "$run_dir/boot.img" ::/)
 
     printf '%s\r\n' \
-        'DEVICE=MOCKASPI.SYS' \
+        "$manager_line" \
         "$driver_line" \
         'SHELL=COMMAND.COM /P' > "$run_dir/CONFIG.SYS"
     printf '%s\r\n' \
         '@ECHO OFF' \
+        'BOOTLOG > AUX' \
         'ASPISCAN > AUX' \
         'TAPECTL > AUX' \
         'TAPETEST > AUX' \
@@ -86,7 +109,8 @@ run_fixture() {
         "$run_dir/CONFIG.SYS" "$run_dir/AUTOEXEC.BAT" \
         "$run_dir/MOCKASPI.SYS" "$ROOT/build/dos/ASPITAP.SYS" \
         "$ROOT/build/dos/ASPISCAN.COM" "$ROOT/build/dos/TAPECTL.COM" \
-        "$run_dir/TAPETEST.COM" "$run_dir/QEXIT.COM" ::/
+        "$run_dir/TAPETEST.COM" "$run_dir/QEXIT.COM" \
+        "$run_dir/BOOTLOG.COM" ::/
 
     if test "$variant" = pathname; then
         mmd -i "$run_dir/boot.img" ::/ASPI-S
@@ -107,8 +131,10 @@ run_fixture() {
         exit 1
     fi
 
-    tr -d '\r' < "$run_dir/serial.log"
-    if [[ "$variant" = options* || "$variant" = invalid-* ]]; then
+    tr -d '\r' < "$run_dir/serial.log" | sed '/^[[:space:]]*$/d'
+    if [[ "$variant" = no-* || "$variant" = bad-inquiry ]]; then
+        grep -q 'Cannot open NRMT0' "$run_dir/serial.log"
+    elif [[ "$variant" = options* || "$variant" = invalid-* ]]; then
         grep -q 'ASPITAP RMT0 absent' "$run_dir/serial.log"
         grep -q 'Cannot open NRMT0' "$run_dir/serial.log"
     else
@@ -120,7 +146,40 @@ run_fixture() {
       legacy|fixed-legacy)
         grep -q 'extensions=0000' "$run_dir/serial.log"
         ;;
+      no-manager|no-adapters|bad-inquiry) ;;
       *) grep -q 'extensions=0002' "$run_dir/serial.log" ;;
+    esac
+    case "$variant" in
+        verbose|debug|fixed-verbose|options)
+            grep -q 'ASPITAP: adapters=01' "$run_dir/serial.log"
+            grep -q 'ASPITAP: HA 00 extensions=0002' "$run_dir/serial.log"
+            grep -Fq 'manager="MOCK$.ASPI      "' "$run_dir/serial.log"
+            grep -q 'ASPITAP: tape 00:00:00' "$run_dir/serial.log"
+            if test "$variant" = fixed-verbose; then
+                grep -q 'fixed block=0400h bytes' "$run_dir/serial.log"
+            else
+                grep -q 'variable blocks' "$run_dir/serial.log"
+            fi
+            if test "$variant" = options; then
+                grep -q 'ASPITAP: names=RST0\$.*NRST0\$' "$run_dir/serial.log"
+            fi
+            ;;
+        invalid-*)
+            grep -q 'invalid or unsupported option; not installed' "$run_dir/serial.log"
+            ;;
+        no-manager)
+            grep -q 'ASPITAP: ASPI manager unavailable or entry point invalid' "$run_dir/serial.log"
+            ;;
+        no-tape)
+            grep -q 'ASPITAP: no sequential-access device found' "$run_dir/serial.log"
+            ;;
+        no-adapters)
+            grep -q 'ASPITAP: manager reports no host adapters' "$run_dir/serial.log"
+            ;;
+        bad-inquiry)
+            grep -q 'ASPITAP: host adapter inquiry failed' "$run_dir/serial.log"
+            ;;
+        *) ! grep -q 'ASPITAP: adapters=' "$run_dir/serial.log" ;;
     esac
 }
 
@@ -136,5 +195,12 @@ run_fixture invalid-target-space
 run_fixture invalid-target-digit
 run_fixture invalid-unsupported
 run_fixture invalid-empty
+run_fixture verbose
+run_fixture debug
+run_fixture fixed-verbose
+run_fixture no-manager
+run_fixture no-tape
+run_fixture no-adapters
+run_fixture bad-inquiry
 
 echo 'OpenASPI emulated-tape smoke test passed'

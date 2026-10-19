@@ -40,6 +40,10 @@ character-device I/O. The historical `-m` (allow multiple-open transfers) and
 `-s` (allow single-byte I/O) `CONFIG.SYS` overrides are implemented. `-tX`
 changes the `M` in the device names, and `-$` appends a collision-avoiding
 dollar sign.
+`-v` and its `-d` alias show initialization details: ASPI adapter count and
+identities, extension flags, tape address, selected block mode and device
+names. Failed discovery reports whether the manager is unavailable, host
+inquiry failed, no adapters were reported, or no tape was found.
 Malformed options and switches not yet supported by OpenASPI prevent the
 driver from loading and produce an explicit initialization error.
 `RMT0` rewinds when its last tracked handle closes; `NRMT0`, `ASPISCAN` and
@@ -100,11 +104,13 @@ is open and that rewind occurs only on final close. Single-byte cooked-mode
 requests are rejected, while `NRMT0` never rewinds. Written-session tests
 verify read-after-write rejection and the final two-filemark/append positioning
 sequence. All variants use the same SvarDOS fixture.
-An additional boot fixture loads the clustered options `ASPITAP.SYS -ms$tS`,
+An additional boot fixture loads the clustered options `ASPITAP.SYS -vms$tS`,
 opens the resulting `RST0$`/`NRST0$` names, and verifies that both default
 transfer guards are disabled.
 Separate boot fixtures cover slash-prefixed, mixed-case options and rejection
 of incomplete `-t`, invalid name letters, unsupported switches and bare prefixes.
+The boot-screen capture verifies verbose output for both aliases, fixed-block
+sizes, renamed devices and discovery failures; normal startup stays concise.
 
 `make dos-mhvtl-smoke` uses QEMU's emulated Tekram-compatible DC-390 controller
 and `scsi-generic` passthrough to exercise `ASPITAP.SYS` against an mhVTL tape.
