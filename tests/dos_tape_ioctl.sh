@@ -17,6 +17,7 @@ run_fixture() {
     local variant=$1 run_dir="$OUT/$1" defines=()
     local test_source="$ROOT/tests/tape_ioctl.asm"
     local success_text='OpenASPI tape IOCTL smoke test passed'
+    local driver_line='DEVICE=ASPITAP.SYS'
 
     case "$variant" in
         legacy) defines=(-DNO_RESIDUAL) ;;
@@ -29,6 +30,12 @@ run_fixture() {
             defines=(-DFIXED_BLOCK -DNO_RESIDUAL)
             test_source="$ROOT/tests/tape_fixed.asm"
             success_text='OpenASPI fixed-block tape smoke test passed'
+            ;;
+        options)
+            defines=(-DOPTION_OVERRIDES)
+            test_source="$ROOT/tests/tape_options.asm"
+            success_text='OpenASPI tape option smoke test passed'
+            driver_line='DEVICE=ASPITAP.SYS -m -s'
             ;;
     esac
 
@@ -51,7 +58,7 @@ run_fixture() {
 
     printf '%s\r\n' \
         'DEVICE=MOCKASPI.SYS' \
-        'DEVICE=ASPITAP.SYS' \
+        "$driver_line" \
         'SHELL=COMMAND.COM /P' > "$run_dir/CONFIG.SYS"
     printf '%s\r\n' \
         '@ECHO OFF' \
@@ -96,5 +103,6 @@ run_fixture residual
 run_fixture legacy
 run_fixture fixed
 run_fixture fixed-legacy
+run_fixture options
 
 echo 'OpenASPI emulated-tape smoke test passed'

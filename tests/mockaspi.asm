@@ -167,6 +167,10 @@ execute_read:
         call    execute_fixed_read
         jmp     aspi_done
 execute_variable_read:
+ifdef OPTION_OVERRIDES
+        call    execute_option_read
+        jmp     aspi_done
+endif
 ifdef NO_RESIDUAL
         cmp     byte ptr es:[bx+SRB_Flags], SRB_DIR_IN
 else
@@ -304,6 +308,10 @@ execute_write proc near
         call    execute_fixed_write
         ret
 execute_variable_write:
+ifdef OPTION_OVERRIDES
+        call    execute_option_write
+        ret
+endif
 ifdef NO_RESIDUAL
         cmp     byte ptr es:[bx+SRB_Flags], SRB_DIR_OUT
 else
@@ -380,6 +388,64 @@ write_bad_scsi:
         mov     byte ptr es:[bx+SRB_Status], SS_ERR
         ret
 execute_write endp
+
+ifdef OPTION_OVERRIDES
+execute_option_read proc near
+        cmp     byte ptr es:[bx+SRB_Flags], SRB_DIR_IN or SRB_RESIDUAL
+        jne     option_read_bad
+        cmp     byte ptr es:[bx+SRB_CDBLen], 6
+        jne     option_read_bad
+        cmp     byte ptr es:[bx+SRB_SenseLen], 32
+        jne     option_read_bad
+        cmp     word ptr es:[bx+SRB_BufLen+2], 0
+        jne     option_read_bad
+        mov     al, byte ptr cs:[read_index]
+        inc     byte ptr cs:[read_index]
+        or      al, al
+        jnz     option_read_one
+        cmp     word ptr es:[bx+SRB_BufLen], 2
+        jne     option_read_bad
+        jmp     short option_read_complete
+option_read_one:
+        cmp     al, 1
+        jne     option_read_bad
+        cmp     word ptr es:[bx+SRB_BufLen], 1
+        jne     option_read_bad
+option_read_complete:
+        mov     word ptr es:[bx+SRB_BufLen], 0
+        mov     word ptr es:[bx+SRB_BufLen+2], 0
+        mov     byte ptr es:[bx+SRB_HaStat], 0
+        mov     byte ptr es:[bx+SRB_TargStat], 0
+        mov     byte ptr es:[bx+SRB_Status], SS_COMP
+        ret
+option_read_bad:
+        mov     byte ptr es:[bx+SRB_Status], SS_ERR
+        ret
+execute_option_read endp
+
+execute_option_write proc near
+        cmp     byte ptr es:[bx+SRB_Flags], SRB_DIR_OUT or SRB_RESIDUAL
+        jne     option_write_bad
+        cmp     byte ptr es:[bx+SRB_CDBLen], 6
+        jne     option_write_bad
+        cmp     byte ptr es:[bx+SRB_SenseLen], 32
+        jne     option_write_bad
+        cmp     word ptr es:[bx+SRB_BufLen], 1
+        jne     option_write_bad
+        cmp     word ptr es:[bx+SRB_BufLen+2], 0
+        jne     option_write_bad
+        cmp     byte ptr es:[bx+SRB_CDB+4], 1
+        jne     option_write_bad
+        mov     word ptr es:[bx+SRB_BufLen], 0
+        mov     byte ptr es:[bx+SRB_HaStat], 0
+        mov     byte ptr es:[bx+SRB_TargStat], 0
+        mov     byte ptr es:[bx+SRB_Status], SS_COMP
+        ret
+option_write_bad:
+        mov     byte ptr es:[bx+SRB_Status], SS_ERR
+        ret
+execute_option_write endp
+endif
 
 execute_fixed_read proc near
 ifdef NO_RESIDUAL
@@ -587,10 +653,14 @@ endif
         ret
 set_descriptor_condition endp
 
+ifdef OPTION_OVERRIDES
+EXPECTED_COUNT equ     2
+else
 ifdef FIXED_BLOCK
 EXPECTED_COUNT equ     2
 else
 EXPECTED_COUNT equ     12
+endif
 endif
 READ_COUNT     equ     7
 expected_index db      0
@@ -616,6 +686,10 @@ else
 block_limits_response db 00h, 00h, 0FFh, 0FFh, 00h, 01h
 endif
 expected_cdbs:
+ifdef OPTION_OVERRIDES
+        db      10h, 00h, 00h, 00h, 02h, 00h ; close: two filemarks
+        db      11h, 01h, 0FFh, 0FFh, 0FFh, 00h ; close: backspace one
+else
 ifdef FIXED_BLOCK
         db      10h, 00h, 00h, 00h, 02h, 00h ; close: two filemarks
         db      11h, 01h, 0FFh, 0FFh, 0FFh, 00h ; close: backspace one
@@ -632,6 +706,7 @@ else
         db      1Bh, 00h, 00h, 00h, 00h, 00h ; MTOFFL
         db      10h, 00h, 00h, 00h, 02h, 00h ; close: two filemarks
         db      11h, 01h, 0FFh, 0FFh, 0FFh, 00h ; close: backspace one
+endif
 endif
 
 resident_end label byte

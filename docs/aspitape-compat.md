@@ -66,9 +66,10 @@ By default, data reads and writes are accepted only while exactly one tape
 handle is open. Single-byte requests are rejected as likely DOS cooked-mode
 traffic; applications must select raw mode before transferring data. This
 matches the historical driver's default safeguards. Its `-m` override for
-multiple-open transfers and `-s` override for single-byte transfers are not
-implemented yet. Open and close requests themselves remain tracked so final
-close processing occurs at the correct time.
+multiple-open transfers and `-s` override for single-byte transfers are
+implemented as `CONFIG.SYS` arguments. Upper/lower case, `-`/`/` prefixes and
+option clusters such as `-ms` are accepted. Open and close requests themselves
+remain tracked so final-close processing occurs at the correct time.
 
 At installation, `READ BLOCK LIMITS` detects a drive whose minimum and maximum
 block sizes are the same. `mtget` then reports `FIXED_BLOCK` and that size.

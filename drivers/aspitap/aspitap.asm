@@ -25,6 +25,7 @@ REQ_FUNCTION    equ     0Eh
 REQ_PARAMETER   equ     13h
 REQ_TRANSFER    equ     0Eh
 REQ_COUNT       equ     12h
+REQ_INIT_ARGS   equ     12h
 
 CMD_INIT        equ     00h
 CMD_READ        equ     04h
@@ -66,6 +67,9 @@ MT_STATE_WRITTEN equ    008h
 MT_STATE_READ   equ     010h
 MT_STATE_EOF_NEXT equ   020h
 MT_STATE_EOM_EOF equ    040h
+
+OPT_ALLOW_SINGLE equ    001h
+OPT_ALLOW_MULTIPLE equ  002h
 
 SENSE_FILEMARK  equ     080h
 SENSE_EOM       equ     040h
@@ -153,6 +157,7 @@ write_request_success:
         jmp     request_success
 
 init_request:
+        call    parse_init_options
         call    discover_tape
         jc      init_failed
 
@@ -315,10 +320,16 @@ read_request proc near
         ret
 
 read_nonempty:
+        test    byte ptr [config_options], OPT_ALLOW_MULTIPLE
+        jnz     read_open_allowed
         cmp     byte ptr [tape_open_count], 1
         jne     read_access_error
+read_open_allowed:
         cmp     word ptr [requested_bytes], 1
-        je      read_access_error
+        jne     read_size_allowed
+        test    byte ptr [config_options], OPT_ALLOW_SINGLE
+        jz      read_access_error
+read_size_allowed:
         test    byte ptr [device_state], MT_STATE_WRITTEN
         jz      read_not_written
         call    zero_transfer_count
@@ -435,6 +446,8 @@ write_request proc near
         mov     ax, word ptr es:[bx+REQ_COUNT]
         mov     word ptr [requested_bytes], ax
         mov     word ptr es:[bx+REQ_COUNT], 0
+        test    byte ptr [config_options], OPT_ALLOW_MULTIPLE
+        jnz     write_open_exclusive
         cmp     byte ptr [tape_open_count], 1
         je      write_open_exclusive
         jmp     write_access_error
@@ -449,6 +462,8 @@ write_open_exclusive:
 write_issue:
         cmp     word ptr [requested_bytes], 1
         jne     write_size_allowed
+        test    byte ptr [config_options], OPT_ALLOW_SINGLE
+        jnz     write_size_allowed
         jmp     write_access_error
 write_size_allowed:
         call    clear_srb
@@ -1086,6 +1101,64 @@ discovery_failed:
         ret
 discover_tape endp
 
+; Parse the historical safety overrides from the CONFIG.SYS argument tail.
+; DOS supplies a far pointer in the initialization request. Both '-' and '/'
+; prefixes and upper/lower case are accepted; option clusters are permitted.
+parse_init_options proc near
+        mov     byte ptr [config_options], 0
+        les     bx, [request_ptr]
+        les     si, dword ptr es:[bx+REQ_INIT_ARGS]
+        mov     ax, es
+        or      ax, si
+        jz      init_options_done
+init_options_scan:
+        mov     al, byte ptr es:[si]
+        or      al, al
+        jz      init_options_done
+        cmp     al, 0Dh
+        je      init_options_done
+        cmp     al, 0Ah
+        je      init_options_done
+        cmp     al, '-'
+        je      init_options_prefix
+        cmp     al, '/'
+        je      init_options_prefix
+        inc     si
+        jmp     short init_options_scan
+init_options_prefix:
+        inc     si
+init_options_cluster:
+        mov     al, byte ptr es:[si]
+        or      al, al
+        jz      init_options_done
+        cmp     al, 0Dh
+        je      init_options_done
+        cmp     al, 0Ah
+        je      init_options_done
+        cmp     al, ' '
+        je      init_options_scan
+        cmp     al, 9
+        je      init_options_scan
+        cmp     al, '-'
+        je      init_options_prefix
+        cmp     al, '/'
+        je      init_options_prefix
+        and     al, 0DFh
+        cmp     al, 'S'
+        jne     init_option_not_single
+        or      byte ptr [config_options], OPT_ALLOW_SINGLE
+        jmp     short init_option_next
+init_option_not_single:
+        cmp     al, 'M'
+        jne     init_option_next
+        or      byte ptr [config_options], OPT_ALLOW_MULTIPLE
+init_option_next:
+        inc     si
+        jmp     short init_options_cluster
+init_options_done:
+        ret
+parse_init_options endp
+
 ; READ BLOCK LIMITS distinguishes drives which require a single fixed block
 ; size from variable-block drives. Version 1 of the ASPITAPE status ABI can
 ; report only a 16-bit size, so larger or ambiguous limits remain variable.
@@ -1220,6 +1293,7 @@ tape_ha             db  0
 tape_target         db  0
 tape_lun            db  0
 tape_fixed_block    dw  0
+config_options      db  0
 device_state        db  0
 tape_open_count     db  0
 last_scsi_status    db  0

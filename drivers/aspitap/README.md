@@ -27,7 +27,12 @@ Reads after a write in the same session are rejected.
 Data transfers require exactly one open tape handle and reject one-byte
 requests by default. The latter is the historical cooked-mode safeguard:
 applications are expected to put the character device into raw mode. The
-historical `-m` and `-s` configuration overrides are not implemented yet.
+historical `-m` and `-s` `CONFIG.SYS` overrides enable multiple-open and
+single-byte transfers respectively. For example:
+
+```text
+DEVICE=ASPITAP.SYS -m -s
+```
 
 CHECK CONDITION decoding accepts both fixed and descriptor sense. Descriptor
 information and stream-command descriptors provide residual ILI lengths,
@@ -42,8 +47,8 @@ Implementation order:
 4. [partial] implement open, close, raw mode, read and write request handling
    (variable-block reads and rewind/no-rewind close semantics are present;
    variable-block writes and mandatory fixed-block transfers are present;
-   default cooked-mode and multiple-open safeguards are present; historical
-   configuration overrides and optional buffering remain);
+   default cooked-mode and multiple-open safeguards and their `-s`/`-m`
+   overrides are present; historical optional buffering remains);
 5. [done] implement category `07h` generic IOCTL functions, including explicit
    `MTWEOF` filemark writing;
 6. [done] translate CHECK CONDITION fixed/descriptor sense data needed for
