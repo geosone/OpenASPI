@@ -66,6 +66,13 @@ Failed and short writes retain their diagnostic snapshot across readiness
 checks, rejected operations, close and reopen. Recovery requires a complete
 successful physical write, not merely accepting bytes into the cache.
 
+Raw-write cases exercise the same persistent diagnostics with variable/fixed
+blocks, residual/legacy managers and both status layouts. Short writes,
+EOT with and without error suppression, and invalid manager residuals must
+remain failed DOS writes without an automatic remainder WRITE. The saved
+tuple survives readiness checks, guard/IOCTL errors and reopen. Explicit
+successful raw recovery is checked both in the same session and after reopen.
+
 Finalization cases inject errors in filemarks, append backspacing and close
 rewind through raw and buffered names, including immediate rewind and the
 16-byte status ABI. The sequence must stop at the failed step and the status

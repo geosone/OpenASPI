@@ -743,13 +743,26 @@ write_success:
         ; Buffered acceptance, short transfers and ignored CHECK CONDITION
         ; are not proof that a later physical record was fully written.
         cmp     byte ptr [srb+SRB_Status], SS_COMP
-        jne     write_success_state
+        jne     write_incomplete
         cmp     word ptr [residual_bytes], 0
-        jne     write_success_state
+        jne     write_incomplete
         mov     byte ptr [write_error_valid], 0
+        jmp     short write_success_state
+write_incomplete:
+        call    save_raw_write_error
 write_success_state:
         and     byte ptr [device_state], not MT_STATE_EOF_NEXT
         or      byte ptr [device_state], MT_STATE_WRITTEN
+        ; DOS may loop a successful short character-device write and submit
+        ; the remainder as another tape record. Fail raw short writes so the
+        ; caller, not DOS, chooses recovery. Keep the actual residual in status.
+        cmp     byte ptr [buffer_internal_io], 0
+        jne     write_complete
+        cmp     word ptr [residual_bytes], 0
+        je      write_complete
+        stc
+        ret
+write_complete:
         clc
         ret
 
@@ -772,10 +785,12 @@ write_scsi_failed:
 write_zero_failed:
         call    zero_transfer_count
 write_condition_error:
+        call    save_raw_write_error
         stc
         ret
 write_bad_residual:
         call    zero_transfer_count
+        call    save_raw_write_error
         stc
         ret
 write_access_error:
@@ -783,6 +798,17 @@ write_access_error:
         stc
         ret
 write_request endp
+
+; Snapshot only after a physical raw WRITE was submitted, not for bad sizes,
+; single-byte/mixed-mode guards or a failed pre-write readiness barrier.
+; Buffered requests retain their separate all-or-nothing record handling.
+save_raw_write_error proc near
+        cmp     byte ptr [buffer_internal_io], 0
+        jne     raw_write_error_done
+        call    save_write_error
+raw_write_error_done:
+        ret
+save_raw_write_error endp
 
 ; The buffered aliases reuse the raw request handlers with a resident private
 ; request packet. Cache state belongs to the single physical tape session.

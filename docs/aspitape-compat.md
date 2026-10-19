@@ -155,10 +155,12 @@ The SCSI status and sense remain inspectable after reopen. Applications must
 check tape status for delayed write errors because DOS may disregard device
 close errors.
 
-A failed or short physical buffered write saves its diagnostic tuple:
+A failed or short physical raw or buffered write saves its diagnostic tuple:
 SCSI status, sense key, opcode, residual byte count and driver error.
-If a readiness barrier fails before the data CDB is sent, the snapshot's
-opcode identifies that failing readiness command instead. Both
+If a buffered request's readiness barrier fails before the data CDB is sent,
+the snapshot's opcode identifies that failing readiness command instead. Raw
+access guards, invalid block sizes and pre-write readiness failures do not
+replace an older saved physical-write diagnostic. Both
 status layouts return this saved tuple even after successful `MTNOP`, other
 controls, rejected retries, close or reopen. The 16-byte ABI marks this with
 the OpenASPI-only state bit `0200h` (`OA_MT16_STATE_WRITE_ERROR`); its state
@@ -177,16 +179,30 @@ the ordinary live status; they are not classified as failed writes.
 After a buffered data failure, the active session remains locked against data
 retries and automatic finalization. Finalization failures occur on final close,
 so the session has already ended; a duplicate close does not retry any steps.
-A new session may write again. The diagnostic snapshot is
-cleared only by a full physical data write completed with ASPI success and
+A new session may write again. Raw sessions permit explicit subsequent write
+requests; the driver does not replay a failed raw record itself. The diagnostic
+snapshot is cleared only by a full physical data write completed with ASPI success and
 zero residual, through either raw or buffered aliases. Merely opening a new
 session, accepting bytes into the software cache, a zero-length write,
 writing filemarks, moving tape, or a partial/ignored-EOT transfer does not
-acknowledge the failure. Another buffered write or written-session
+acknowledge the failure. A complete raw write may clear the snapshot in the
+same raw session; a buffered failure requires a new session because its data
+path is locked. Another failed/short data write or written-session
 finalization failure replaces the snapshot with its own failure. This protects
-delayed errors without silently replaying potentially consumed records. It does not restore tape
-position or make appending after an error safe; the caller must choose the
+delayed errors without silently replaying potentially consumed records. It
+does not restore tape position or make appending after an error safe; the caller must choose the
 appropriate media recovery and positioning before starting a new session.
+
+Raw short writes are failed DOS requests even when ASPI reports command
+success or the ignore-EOT policy is enabled. Returning a successful short
+character-device write can make DOS resubmit the remaining bytes as another
+physical record; the SvarDOS fixture detects this unwanted extra WRITE. The
+driver preserves the residual count and original SCSI result in status, but
+does not claim the entire requested record was written. Buffered short
+physical writes retain their existing error-and-session-lock handling. Raw
+control and final-close behavior is unchanged: applications must inspect the
+saved write diagnostic rather than infer backup success from a later close,
+filemark operation or `MTNOP` result.
 
 After any write, later reads in the same open session are rejected. On final
 close, a written session receives two filemarks. `RMT0` then rewinds; `NRMT0`

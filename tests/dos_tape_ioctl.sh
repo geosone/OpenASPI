@@ -21,6 +21,31 @@ run_fixture() {
     local manager_line='DEVICE=MOCKASPI.SYS'
 
     case "$variant" in
+        raw-write-*|raw-short-*|raw-eot-*)
+            defines=(-DBUFFERED_TEST -DBUFFER_ERROR -DBUFFER_WRITE_ERROR -DRAW_WRITE_TEST)
+            test_source="$ROOT/tests/tape_buffered.asm"
+            success_text='OpenASPI buffered tape smoke test passed'
+            case "$variant" in
+                *-legacy) defines+=(-DNO_RESIDUAL) ;;
+                *-fixed) defines+=(-DFIXED_BLOCK) ;;
+                *-status16) defines+=(-DSTATUS16); driver_line='DEVICE=ASPITAP.SYS -2w' ;;
+            esac
+            case "$variant" in
+                raw-short-*|raw-eot-*) defines+=(-DBUFFER_SHORT_WRITE) ;;
+            esac
+            case "$variant" in
+                raw-short-*|raw-eot-ignored) defines+=(-DRAW_SHORT_WRITTEN) ;;
+            esac
+            case "$variant" in
+                raw-eot-*) defines+=(-DRAW_EOT) ;;
+            esac
+            case "$variant" in
+                raw-eot-ignored) defines+=(-DRAW_EOT_IGNORE) ;;
+                raw-write-bad-residual) defines+=(-DRAW_BAD_RESIDUAL) ;;
+                *-recovery) defines+=(-DBUFFER_RECOVERY -DBUFFER_RAW_RECOVERY) ;;
+                *-retry) defines+=(-DBUFFER_RECOVERY -DBUFFER_RAW_RECOVERY -DRAW_RETRY) ;;
+            esac
+            ;;
         final-*)
             defines=(-DBUFFERED_TEST -DBUFFER_ERROR -DBUFFER_CLOSE_ERROR -DFINAL_ERROR)
             test_source="$ROOT/tests/tape_buffered.asm"
@@ -236,7 +261,7 @@ run_fixture() {
     grep -q "$success_text" "$run_dir/serial.log"
     ! grep -q 'FAILED' "$run_dir/serial.log"
     case "$variant" in
-      legacy|fixed-legacy|buffered-legacy|buffered-fixed-legacy|buffered-write-error-legacy|buffered-close-error-legacy|final-*-legacy)
+      legacy|fixed-legacy|buffered-legacy|buffered-fixed-legacy|buffered-write-error-legacy|buffered-close-error-legacy|final-*-legacy|raw-write-error-legacy)
         grep -q 'extensions=0000' "$run_dir/serial.log"
         ;;
       no-manager|no-adapters|bad-inquiry) ;;
@@ -350,6 +375,17 @@ run_fixture final-rewind-status16
 run_fixture final-rewind-immed
 run_fixture final-empty
 run_fixture final-empty-raw
+run_fixture raw-write-error
+run_fixture raw-write-error-legacy
+run_fixture raw-write-error-fixed
+run_fixture raw-write-error-status16
+run_fixture raw-short-write
+run_fixture raw-write-recovery
+run_fixture raw-write-retry
+run_fixture raw-short-recovery
+run_fixture raw-eot-write
+run_fixture raw-eot-ignored
+run_fixture raw-write-bad-residual
 fi
 
 echo 'OpenASPI emulated-tape smoke test passed'

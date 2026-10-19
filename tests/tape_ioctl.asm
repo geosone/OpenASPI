@@ -63,6 +63,14 @@ start:
         mov     byte ptr [stage], 'H'
         cmp     byte ptr [status+4], 06h
         fail_if_not_equal failed_close
+        mov     word ptr [control], 8    ; unknown operation, before any write
+        call    run_mtop
+        fail_if_no_carry failed_close
+        call    get_status
+        fail_if_carry failed_close
+        cmp     byte ptr [status_extended+7], 21
+        fail_if_not_equal failed_close
+        mov     word ptr [control], 7
 
         ; Open RMT0 twice. Closing the first handle must leave the tape alone;
         ; an intervening TUR proves that rewind is deferred until final close.
@@ -388,11 +396,15 @@ endif
         fail_if_carry failed_close
         call    get_status
         fail_if_carry failed_close
-        cmp     word ptr [status+0Ah], 1800h
+ifdef NO_RESIDUAL
+        cmp     word ptr [status+0Ah], 100Ah
+else
+        cmp     word ptr [status+0Ah], 140Ah
+endif
         fail_if_not_equal failed_close
-        cmp     byte ptr [status+8], 0
+        cmp     byte ptr [status+8], 2
         fail_if_not_equal failed_close
-        cmp     byte ptr [status+9], 0
+        cmp     byte ptr [status+9], 7
         fail_if_not_equal failed_close
 
         mov     byte ptr [stage], '8'
@@ -464,13 +476,17 @@ endif
         fail_if_no_carry failed_close
         call    get_status
         fail_if_carry failed_close
-        cmp     byte ptr [status_extended+7], 21
+        cmp     byte ptr [status_extended+7], 7
         fail_if_not_equal failed_close
-        cmp     word ptr [status+0Ah], 181Bh
+ifdef NO_RESIDUAL
+        cmp     word ptr [status+0Ah], 100Ah
+else
+        cmp     word ptr [status+0Ah], 140Ah
+endif
         fail_if_not_equal failed_close
-        cmp     byte ptr [status+8], 0
+        cmp     byte ptr [status+8], 2
         fail_if_not_equal failed_close
-        cmp     byte ptr [status+9], 0
+        cmp     byte ptr [status+9], 7
         fail_if_not_equal failed_close
 
         call    close_handle

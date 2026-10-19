@@ -264,6 +264,9 @@ endif
 ifdef BUFFER_ERROR
 error_scenario:
         mov byte ptr [stage], 'E'
+ifdef RAW_WRITE_TEST
+        mov dx, offset raw_name
+else
 ifdef FINAL_RAW
 ifdef FINAL_REWIND_ERROR
         mov dx, offset rmt_raw_name
@@ -275,6 +278,7 @@ ifdef FINAL_REWIND_ERROR
         mov dx, offset mt_name
 else
         mov dx, offset nmt_name
+endif
 endif
 endif
         call open_raw
@@ -289,26 +293,65 @@ endif
 ifdef BUFFER_WRITE_ERROR
         mov bx, word ptr [handle]
         mov dx, offset buffer
+ifdef RAW_WRITE_TEST
+        mov cx, 1024
+else
         mov cx, 1100
+endif
+ifdef RAW_EOT_IGNORE
+        mov cx, 0703h
+        mov dx, offset status
+        mov ax, 440Ch
+        int 21h
+        expect_ok
+        mov bx, word ptr [handle]
+        mov dx, offset buffer
+        mov cx, 1024
+endif
         mov ah, 40h
         int 21h
         expect_error
+        mov byte ptr [stage], 'a'
         call verify_write_error
         mov word ptr [control], 7
+        mov byte ptr [stage], 'b'
         call run_mtop                ; readiness must not erase the write error
         expect_ok
+        mov byte ptr [stage], 'c'
         call verify_write_error
         mov word ptr [control], 8
         call run_mtop                ; nor may a later invalid operation
         expect_error
+        mov byte ptr [stage], 'd'
         call verify_write_error
         mov bx, word ptr [handle]
         mov dx, offset buffer
+ifdef RAW_WRITE_TEST
+        mov cx, 1                    ; guard rejection must not replace cause
+else
         mov cx, 2
+endif
         mov ah, 40h
         int 21h
-        expect_error                 ; a failed physical record is not replayed
+        expect_error
+        mov byte ptr [stage], 'e'
         call verify_write_error
+ifdef RAW_WRITE_TEST
+ifdef FIXED_BLOCK
+        mov bx, word ptr [handle]
+        mov dx, offset buffer
+        mov cx, 2                    ; not an integral mandatory tape block
+        mov ah, 40h
+        int 21h
+        expect_error
+        call verify_write_error
+endif
+endif
+ifdef RAW_RETRY
+        mov cx, 1024
+        call write_expect            ; explicit raw retry, never driver replay
+        call verify_write_recovered
+endif
 else
 ifdef FINAL_EMPTY
         xor cx, cx
@@ -327,14 +370,20 @@ else
 endif
 endif
 endif
+        mov byte ptr [stage], 'f'
         call close_handle            ; DOS may ignore device-close errors
         mov dx, offset raw_name
         call open_raw
         expect_ok
         mov word ptr [handle], ax
+        mov byte ptr [stage], 'g'
         call get_status
         expect_ok
+ifdef RAW_RETRY
+        call verify_write_recovered
+else
         call verify_write_error
+endif
         jmp final_tur
 endif
 check_final_event:
@@ -348,12 +397,18 @@ final_tur:
         call run_mtop                ; proves every prior expected CDB occurred
         expect_ok
 ifdef BUFFER_ERROR
+ifdef RAW_RETRY
+        call verify_write_recovered
+else
         call verify_write_error
+endif
 endif
         call close_handle
         expect_ok
 ifdef BUFFER_RECOVERY
+ifndef RAW_RETRY
         call recover_write
+endif
 endif
 endif
 success:
@@ -407,8 +462,20 @@ endif
 endif
         expect_equal
 else
+ifdef RAW_BAD_RESIDUAL
+        cmp word ptr [status+8], 0
+        expect_equal
+        cmp byte ptr [status_extended+7], 31
+        expect_equal
+        cmp word ptr [status+12], 1024
+        expect_equal
+else
 ifdef BUFFER_SHORT_WRITE
+ifdef RAW_EOT
+        cmp byte ptr [status+8], 2
+else
         cmp byte ptr [status+8], 0
+endif
         expect_equal
         cmp byte ptr [status+9], 0
         expect_equal
@@ -425,6 +492,7 @@ else
         expect_equal
         cmp word ptr [status+12], 1024
         expect_equal
+endif
 endif
         cmp byte ptr [status+10], 0Ah
         expect_equal

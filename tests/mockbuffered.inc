@@ -176,15 +176,28 @@ ifdef BUFFER_RECOVERY
         cmp byte ptr cs:[buffer_event], 1
         jne buffered_recovered_write
 endif
+ifdef RAW_BAD_RESIDUAL
+        mov word ptr es:[bx+SRB_BufLen], 1025
+        jmp buffered_good
+else
 ifdef BUFFER_SHORT_WRITE
         mov word ptr es:[bx+SRB_BufLen], 512
+ifdef RAW_EOT
+        mov byte ptr es:[bx+SRB_CDB+16], 70h
+        mov byte ptr es:[bx+SRB_CDB+18], 40h ; EOM, no other sense key
+        mov byte ptr es:[bx+SRB_TargStat], 2
+        mov byte ptr es:[bx+SRB_Status], SS_ERR
+        ret
+else
         jmp buffered_good
+endif
 else
         mov byte ptr es:[bx+SRB_CDB+16], 70h
         mov byte ptr es:[bx+SRB_CDB+18], 7 ; DATA PROTECT
         mov byte ptr es:[bx+SRB_TargStat], 2
         mov byte ptr es:[bx+SRB_Status], SS_ERR
         ret
+endif
 endif
 ifdef BUFFER_RECOVERY
 buffered_recovered_write:
@@ -319,13 +332,19 @@ BUFFER_EVENT_COUNT equ 4
 else
 ifdef BUFFER_ERROR
 ifdef BUFFER_WRITE_ERROR
-        db 0Ah, 00h, 00h
+        db 0Ah, 00h
+ifdef RAW_RETRY
+        db 0Ah, 10h, 11h, 00h
+else
+ifdef RAW_SHORT_WRITTEN
+        db 10h, 11h
+endif
+        db 00h
 ifdef BUFFER_RECOVERY
         db 0Ah, 10h, 11h, 00h
-BUFFER_EVENT_COUNT equ 7
-else
-BUFFER_EVENT_COUNT equ 3
 endif
+endif
+BUFFER_EVENT_COUNT equ $ - buffer_events
 else
         db 0Ah, 00h
 BUFFER_EVENT_COUNT equ 2

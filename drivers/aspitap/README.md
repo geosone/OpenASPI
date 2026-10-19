@@ -72,6 +72,20 @@ Finalization stops on the first error and does not retry on a duplicate close.
 It remains visible across reopening and successful readiness checks, because
 DOS may otherwise discard the close failure.
 
+Raw physical write failures and short raw writes save the same diagnostic
+snapshot. A short raw write returns an error instead of successful partial
+completion: DOS can otherwise resubmit the remainder as another tape record.
+The residual byte count remains available in status, including with the
+ignore-EOT policy selected. Invalid block sizes and access guards do not
+replace an earlier saved physical-write failure.
+
+Unlike a failed buffered session, a raw session is not locked against explicit
+later writes. A complete successful physical write clears its saved error,
+including within the same raw session; choosing safe positioning/recovery is
+the caller's responsibility. Existing raw control/final-close behavior is
+unchanged, so a successful close or readiness check is not proof that earlier
+data writes completed.
+
 ## Rewind and interruption
 
 By default, a final `RMT0` close sends REWIND with IMMED set. Reopening and
