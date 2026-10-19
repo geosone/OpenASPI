@@ -20,6 +20,7 @@ run_fixture() {
     local driver_line='DEVICE=ASPITAP.SYS -w'
     local manager_line='DEVICE=MOCKASPI.SYS'
     local post_tapectl='' expected_tapectl_exit=0
+    local initial_tapectl='TAPECTL' post_result='saved' device_marker=''
     local autoexec_lines=()
 
     case "$variant" in
@@ -37,10 +38,43 @@ run_fixture() {
                     if test "$variant" = tapectl-ready-not-ready; then
                         defines+=(-DTAPECTL_NOT_READY)
                         expected_tapectl_exit=1
+                        post_result='not-ready'
                     fi ;;
                 tapectl-recovered)
                     defines+=(-DBUFFER_RECOVERY)
                     expected_tapectl_exit=0 ;;
+                tapectl-device-renamed|tapectl-device-buffered-renamed|tapectl-device-renamed-ready)
+                    defines+=(-DBUFFER_RENAMED)
+                    driver_line='DEVICE=ASPITAP.SYS -bwtS$'
+                    initial_tapectl='TAPECTL /device:nrst0$'
+                    post_tapectl='TAPECTL /DEVICE:NRST0$'
+                    device_marker='NRST0$ ASPI address'
+                    if test "$variant" = tapectl-device-buffered-renamed; then
+                        post_tapectl='TAPECTL -DeViCe:nst0$'
+                        device_marker='NST0$ ASPI address'
+                    elif test "$variant" = tapectl-device-renamed-ready; then
+                        defines+=(-DTAPECTL_READY)
+                        post_tapectl='TAPECTL /device:nrst0$ /rEaDy'
+                    fi ;;
+                tapectl-device-already)
+                    post_tapectl='TAPECTL /ALREADY /DEVICE:NRMT0' ;;
+                tapectl-device-invalid-rmt|tapectl-device-invalid-path|tapectl-device-empty|tapectl-device-duplicate)
+                    post_result='usage'
+                    expected_tapectl_exit=1
+                    case "$variant" in
+                        tapectl-device-invalid-rmt) post_tapectl='TAPECTL /DEVICE:RMT0' ;;
+                        tapectl-device-invalid-path) post_tapectl='TAPECTL /DEVICE:C:\NRMT0' ;;
+                        tapectl-device-empty) post_tapectl='TAPECTL /DEVICE:' ;;
+                        tapectl-device-duplicate) post_tapectl='TAPECTL /READY /DEVICE:NRMT0 /DEVICE:NMT0' ;;
+                    esac ;;
+                tapectl-device-file)
+                    post_result='nondevice'
+                    expected_tapectl_exit=1
+                    post_tapectl='TAPECTL /DEVICE:NRAT0' ;;
+                tapectl-device-unavailable)
+                    post_result='open'
+                    expected_tapectl_exit=1
+                    post_tapectl='TAPECTL /DEVICE:NRMT3' ;;
                 tapectl-raw-short)
                     defines+=(-DRAW_WRITE_TEST -DBUFFER_SHORT_WRITE -DRAW_SHORT_WRITTEN)
                     driver_line='DEVICE=ASPITAP.SYS -w' ;;
@@ -249,7 +283,7 @@ run_fixture() {
         '@ECHO OFF'
         'BOOTLOG > AUX'
         'ASPISCAN > AUX'
-        'TAPECTL > AUX'
+        "$initial_tapectl > AUX"
         'TAPETEST > AUX'
     )
     if test -n "$post_tapectl"; then
@@ -275,6 +309,10 @@ run_fixture() {
         "$ROOT/build/dos/ASPISCAN.COM" "$ROOT/build/dos/TAPECTL.COM" \
         "$run_dir/TAPETEST.COM" "$run_dir/QEXIT.COM" \
         "$run_dir/BOOTLOG.COM" ::/
+
+    if test "$variant" = tapectl-device-file; then
+        mcopy -i "$run_dir/boot.img" "$ROOT/LICENSE" ::/NRAT0
+    fi
 
     if test "$variant" = pathname; then
         mmd -i "$run_dir/boot.img" ::/ASPI-S
@@ -308,7 +346,17 @@ run_fixture() {
     ! grep -q 'FAILED' "$run_dir/serial.log"
     if test -n "$post_tapectl"; then
         grep -q 'TAPECTL EXIT CHECK PASSED' "$run_dir/serial.log"
-        if test "$expected_tapectl_exit" -eq 0; then
+        if test "$post_result" = usage; then
+            grep -q 'Invalid device selection' "$run_dir/serial.log"
+            ! grep -q 'WARNING: saved tape write/finalization failure' "$run_dir/serial.log"
+        elif test "$post_result" = nondevice; then
+            grep -q 'Selected name is not a DOS character device' "$run_dir/serial.log"
+            grep -q 'Cannot open NRAT0' "$run_dir/serial.log"
+            mtype -i "$run_dir/boot.img" ::/NRAT0 | cmp - "$ROOT/LICENSE"
+        elif test "$post_result" = open; then
+            grep -q 'Cannot open NRMT3' "$run_dir/serial.log"
+            ! grep -q 'Invalid device selection' "$run_dir/serial.log"
+        elif test "$expected_tapectl_exit" -eq 0; then
             ! grep -q 'WARNING: saved tape write/finalization failure' "$run_dir/serial.log"
         else
             grep -q 'WARNING: saved tape write/finalization failure' "$run_dir/serial.log"
@@ -318,11 +366,14 @@ run_fixture() {
                 grep -q 'TEST UNIT READY failed' "$run_dir/serial.log"
             fi
         fi
+        if test -n "$device_marker"; then
+            grep -Fq "$device_marker" "$run_dir/serial.log"
+        fi
         case "$variant" in
-            tapectl-ready-error|tapectl-ready-not-ready)
+            tapectl-ready-error|tapectl-ready-not-ready|tapectl-device-renamed-ready)
                 test "$(grep -c 'WARNING: saved tape write/finalization failure' "$run_dir/serial.log")" -eq 2
                 grep -q 'flags=0202 driver-error=07 SCSI=02 sense=07' "$run_dir/serial.log"
-                if test "$variant" = tapectl-ready-error; then
+                if test "$post_result" != not-ready; then
                     grep -q 'TEST UNIT READY completed' "$run_dir/serial.log"
                 fi
                 ;;
@@ -461,6 +512,16 @@ run_fixture tapectl-recovered
 run_fixture tapectl-raw-short
 run_fixture tapectl-final-error
 run_fixture tapectl-status16-error
+run_fixture tapectl-device-renamed
+run_fixture tapectl-device-buffered-renamed
+run_fixture tapectl-device-renamed-ready
+run_fixture tapectl-device-already
+run_fixture tapectl-device-invalid-rmt
+run_fixture tapectl-device-invalid-path
+run_fixture tapectl-device-empty
+run_fixture tapectl-device-duplicate
+run_fixture tapectl-device-file
+run_fixture tapectl-device-unavailable
 fi
 
 echo 'OpenASPI emulated-tape smoke test passed'

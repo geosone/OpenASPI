@@ -18,9 +18,15 @@ start:
         pop     ds
 
         ; PSP:80h is also DOS' default DTA. Save the parsed action before any
-        ; file/device call can overwrite the command tail.
-        call    parse_action
-        mov     byte ptr [action], al
+        ; file/device call can overwrite the command tail. Resolve the device
+        ; selection here as well, before opening anything.
+        call    parse_options
+        jnc     options_ready
+        mov     dx, offset option_error
+        call    print_string
+        mov     ax, 4C01h
+        int     21h
+options_ready:
 
         mov     dx, offset tape_name
         call    open_raw
@@ -60,6 +66,9 @@ saved_failure_reported:
 open_failed:
         mov     word ptr [last_error], ax
         mov     dx, offset open_error
+        call    print_string
+        call    print_tape_name
+        mov     dx, offset dos_error_suffix
         jmp     short report_error
 
 ioctl_failed_close:
@@ -91,59 +100,201 @@ report_error:
         mov     ax, 4C01h
         int     21h
 
-; Return AL=1 when READY occurs in the command tail, otherwise AL=0. Some old
-; command interpreters leave their own /P tail or redirection text in a child
-; PSP, so unrelated tokens are deliberately ignored.
-parse_action proc near
+; Parse bounded PSP tokens before DOS may reuse its command-tail/DTA area.
+; Ignore unrelated old-shell tokens, but recognize READY only as a complete
+; token. DEVICE must have one colon-delimited, validated non-rewinding name.
+parse_options proc near
         xor     cx, cx
         mov     cl, byte ptr [80h]
         mov     si, 81h
         cmp     cx, 127
-        jbe     parse_scan
+        jbe     options_scan
         mov     cx, 127
-parse_scan:
-        jcxz    parse_none
+options_scan:
+        or      cx, cx
+        jnz     options_scan_char
+        jmp     options_done
+options_scan_char:
         mov     al, byte ptr [si]
         or      al, al
-        jz      parse_none
+        jnz     options_not_nul
+        jmp     options_done
+options_not_nul:
         cmp     al, 0Dh
-        je      parse_none
-        and     al, 0DFh
-        cmp     al, 'R'
-        je      parse_ready_candidate
+        jne     options_not_cr
+        jmp     options_done
+options_not_cr:
+        cmp     al, ' '
+        je      options_skip_space
+        cmp     al, 9
+        jne     options_begin_token
+options_skip_space:
         inc     si
         dec     cx
-        jmp     short parse_scan
-parse_ready_candidate:
-        cmp     cx, 5
-        jb      parse_none
+        jmp     options_scan
+options_begin_token:
+        mov     di, si
+        xor     bx, bx
+options_token:
+        inc     si
+        inc     bx
+        dec     cx
+        jz      options_token_ready
+        mov     al, byte ptr [si]
+        or      al, al
+        jz      options_token_ready
+        cmp     al, 0Dh
+        je      options_token_ready
+        cmp     al, ' '
+        je      options_token_ready
+        cmp     al, 9
+        jne     options_token
+options_token_ready:
         push    cx
         push    si
+        mov     si, di
+        mov     cx, bx
+        mov     al, byte ptr [si]
+        cmp     al, '/'
+        je      options_strip_prefix
+        cmp     al, '-'
+        jne     options_match_ready
+options_strip_prefix:
+        inc     si
+        dec     cx
+options_match_ready:
+        cmp     cx, 5
+        jne     options_match_device
         mov     di, offset ready_word
-        mov     bx, 5
-parse_ready_loop:
+        call    match_option_word
+        jc      options_match_device
+        mov     byte ptr [action], 1
+        jmp     short options_next
+options_match_device:
+        cmp     cx, 6
+        jb      options_next
+        push    cx
+        mov     cx, 6
+        mov     di, offset device_word
+        call    match_option_word
+        pop     cx
+        jc      options_next
+        cmp     cx, 7
+        jbe     options_invalid
+        cmp     byte ptr [si+6], ':'
+        jne     options_invalid
+        cmp     byte ptr [device_selected], 0
+        jne     options_invalid
+        add     si, 7
+        sub     cx, 7
+        call    validate_tape_name
+        jc      options_invalid
+        mov     di, offset tape_name
+options_copy_name:
+        mov     al, byte ptr [si]
+        inc     si
+        cmp     al, 'a'
+        jb      options_copy_char
+        cmp     al, 'z'
+        ja      options_copy_char
+        sub     al, 20h
+options_copy_char:
+        mov     byte ptr [di], al
+        inc     di
+        loop    options_copy_name
+        mov     byte ptr [di], 0
+        mov     byte ptr [device_selected], 1
+options_next:
+        pop     si
+        pop     cx
+        jmp     options_scan
+options_invalid:
+        pop     si
+        pop     cx
+        stc
+        ret
+options_done:
+        clc
+        ret
+parse_options endp
+
+; Compare exactly CX option letters without consuming the caller's token.
+match_option_word proc near
+        push    si
+        push    di
+        push    cx
+match_option_next:
         mov     al, byte ptr [si]
         and     al, 0DFh
         cmp     al, byte ptr [di]
-        jne     parse_ready_mismatch
+        jne     match_option_bad
         inc     si
         inc     di
-        dec     bx
-        jnz     parse_ready_loop
-        pop     si
+        loop    match_option_next
+        clc
+        jmp     short match_option_done
+match_option_bad:
+        stc
+match_option_done:
         pop     cx
-        mov     al, 1
+        pop     di
+        pop     si
         ret
-parse_ready_mismatch:
-        pop     si
-        pop     cx
-        inc     si
+match_option_word endp
+
+; Allow N?T0..3 or NR?T0..3, optionally followed by '$'. No paths,
+; rewind-on-close aliases, wildcards or other DOS devices are accepted.
+; Keep CX (the actual copy length) and SI unchanged, including on failure.
+validate_tape_name proc near
+        push    cx
+        cmp     cx, 4
+        jb      tape_name_bad
+        cmp     cx, 6
+        ja      tape_name_bad
+        mov     di, si
+        add     di, cx
+        cmp     byte ptr [di-1], '$'
+        jne     tape_name_base
         dec     cx
-        jmp     short parse_scan
-parse_none:
-        xor     al, al
+tape_name_base:
+        mov     al, byte ptr [si]
+        and     al, 0DFh
+        cmp     al, 'N'
+        jne     tape_name_bad
+        mov     di, si
+        inc     di
+        cmp     cx, 4
+        je      tape_name_letter
+        cmp     cx, 5
+        jne     tape_name_bad
+        mov     al, byte ptr [di]
+        and     al, 0DFh
+        cmp     al, 'R'
+        jne     tape_name_bad
+        inc     di
+tape_name_letter:
+        mov     al, byte ptr [di]
+        and     al, 0DFh
+        cmp     al, 'A'
+        jb      tape_name_bad
+        cmp     al, 'Z'
+        ja      tape_name_bad
+        mov     al, byte ptr [di+1]
+        and     al, 0DFh
+        cmp     al, 'T'
+        jne     tape_name_bad
+        cmp     byte ptr [di+2], '0'
+        jb      tape_name_bad
+        cmp     byte ptr [di+2], '3'
+        ja      tape_name_bad
+        clc
+        pop     cx
         ret
-parse_action endp
+tape_name_bad:
+        stc
+        pop     cx
+        ret
+validate_tape_name endp
 
 open_raw proc near
         mov     ax, 3D00h
@@ -153,6 +304,13 @@ open_raw proc near
         mov     ax, 4400h
         int     21h
         jc      open_raw_failed
+        test    dl, 80h                ; reject an ordinary file with this name
+        jnz     open_character_device
+        mov     dx, offset nondevice_error
+        call    print_string
+        mov     ax, 1
+        jmp     short open_raw_failed
+open_character_device:
         or      dl, 20h
         xor     dh, dh
         mov     ax, 4401h
@@ -225,6 +383,7 @@ test_ready proc near
 test_ready endp
 
 print_status proc near
+        call    print_tape_name
         mov     dx, offset address_message
         call    print_string
         mov     al, byte ptr [status+0]
@@ -278,6 +437,28 @@ print_status_done:
         ret
 print_status endp
 
+; DOS function 09h terminates at '$'; names must instead use a zero-terminated
+; character loop so collision-avoiding device suffixes are printed intact.
+print_tape_name proc near
+        push    ax
+        push    dx
+        push    si
+        mov     si, offset tape_name
+print_name_next:
+        mov     al, byte ptr [si]
+        inc     si
+        or      al, al
+        jz      print_name_done
+        mov     dl, al
+        call    print_char
+        jmp     short print_name_next
+print_name_done:
+        pop     si
+        pop     dx
+        pop     ax
+        ret
+print_tape_name endp
+
 print_hex16 proc near
         push    ax
         mov     al, ah
@@ -329,8 +510,10 @@ print_newline proc near
         jmp     short print_string
 print_newline endp
 
-tape_name        db      'NRMT0', 0
+tape_name        db      'NRMT0', 0, 2 dup (0)
 ready_word       db      'READY'
+device_word      db      'DEVICE'
+device_selected db      0
 action           db      0
 handle           dw      0
 last_error       dw      0
@@ -342,7 +525,7 @@ status_flags     dw      0
 status_error     db      0
 write_failure_seen db    0
 
-address_message  db      'NRMT0 ASPI address $'
+address_message  db      ' ASPI address $'
 flags_message    db      ' flags=$'
 driver_error_message db  ' driver-error=$'
 scsi_message     db      ' SCSI=$'
@@ -354,7 +537,10 @@ success_message  db      'OpenASPI TAPECTL status passed', 13, 10, '$'
 saved_failure_message db 'OpenASPI TAPECTL saved write failure reported', 13, 10, '$'
 write_warning    db      'WARNING: saved tape write/finalization failure.', 13, 10, '$'
 recovery_warning db      'Readiness does not confirm backup success; application recovery is required.', 13, 10, '$'
-open_error       db      'Cannot open NRMT0, DOS error $'
+open_error       db      'Cannot open $'
+dos_error_suffix db      ', DOS error $'
+nondevice_error  db      'Selected name is not a DOS character device.', 13, 10, '$'
+option_error    db      'Invalid device selection. Use /DEVICE:NRMT0 or /DEVICE:NMT0 (non-rewinding names).', 13, 10, '$'
 ioctl_error      db      'Cannot read ASPITAPE status, DOS error $'
 ready_error      db      'TEST UNIT READY failed, DOS error $'
 newline          db      13, 10, '$'

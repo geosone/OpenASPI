@@ -28,6 +28,35 @@ retrieves status again. An empty/not-ready drive can return an error.
 Neither mode reads or writes tape data, changes tape position or attempts
 media recovery.
 
+## Device selection
+
+The default is `NRMT0`. Use `/DEVICE:name` for a different non-rewinding alias,
+for example after configuring the driver with `-tS -$`:
+
+```dos
+TAPECTL /DEVICE:NRST0$
+TAPECTL /READY /DEVICE:NRST0$
+TAPECTL /DEVICE:NST0$
+```
+
+The last example selects the optional buffered alias and requires driver
+option `-b`. Device selection and `/READY` may appear in either order and are
+case-insensitive. A `-` option prefix is also accepted. Specify the device
+once, without quotes, paths or a trailing DOS colon.
+
+Accepted names are `NR` + letter + `T` + unit (raw), or `N` + letter + `T` +
+unit (buffered), optionally followed by `$`. Letters are A through Z and
+units are 0 through 3; accepting a name does not create additional drives
+(the current driver exposes only unit 0). Displayed names retain the dollar
+suffix. `/READY` must be a complete token; `/ALREADY` does not request I/O.
+
+Rewind-on-close names such as `RMT0` and `MT0`, other DOS devices, wildcards
+and file paths are rejected before opening. After a valid name is opened,
+TAPECTL verifies that DOS reports a character device before setting raw mode
+or issuing tape queries. An ordinary file with that name is closed without
+modification. The selected non-rewinding name is shown in status and open-error
+messages. An unavailable but valid unit name returns an open error.
+
 ## Saved write warnings
 
 OpenASPI state bit `0200h` identifies a saved write/finalization diagnostic.
@@ -48,7 +77,7 @@ Its lifetime and application recovery rules are described in the
 | Code | Meaning |
 |------|---------|
 | 0 | Status retrieved (and readiness successful when requested), with no saved-write flag observed. |
-| 1 | Open, status query or requested readiness check failed. This takes priority over code 2. |
+| 1 | Invalid device selection, a non-device file, or an open/query/readiness failure. This takes priority over code 2. |
 | 2 | Queries succeeded, but a saved write/finalization failure was observed. |
 
 Code 0 confirms the diagnostic operation, not backup integrity or media

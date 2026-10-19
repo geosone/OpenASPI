@@ -26,6 +26,8 @@ command.
 TAPECTL exit status: 0 = queried, 1 = query/readiness error, 2 = saved write
 failure. Successful readiness does not confirm that earlier writes succeeded.
 Warning fields describe the saved failure; the tool does not perform recovery.
+For renamed drivers, use TAPECTL /DEVICE:NRST0$ (or the configured non-rewinding
+name). Rewinding aliases and paths are rejected; the default remains NRMT0.
 
 WINCHECK.COM distinguishes DOS, a Windows 3.x DOS box and Windows 9x/ME for
 conditional setup choices. WINCHECK.EXE is the companion 16-bit Windows probe

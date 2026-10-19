@@ -92,6 +92,13 @@ still displaying the saved write cause. After successful physical recovery,
 status-only queries return 0 without a stale warning. The mock rejects any
 unexpected media command, including recovery or repositioning by the utility.
 
+Device-selection fixtures cover renamed raw/buffered aliases, dollar suffixes,
+mixed case, option order and `/READY` token boundaries. Invalid paths,
+rewind-on-close names, missing values and repeated selections must fail before
+opening; unavailable valid units must produce an open error. A normal file
+whose name matches the device pattern must be rejected as a non-device, with
+its contents unchanged. These checks require no driver-side name special cases.
+
 ## Focused runs
 
 Pass fixture names to the script to run a subset:
