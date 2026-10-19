@@ -35,7 +35,9 @@ multiples and are translated to fixed-block SCSI transfers. Broader sense/error
 translation remains a later stage. The write path is emulator-tested but not
 yet qualified for production backups on real media.
 `RMT0` rewinds when its last tracked handle closes; `NRMT0`, `ASPISCAN` and
-`TAPECTL` leave the tape position unchanged.
+`TAPECTL` leave an unwritten tape position unchanged. A written final close
+adds the historical two-filemark terminator; `NRMT0` then backspaces one mark,
+whereas `RMT0` rewinds.
 
 The installer runs package-defined probes rather than containing OpenASPI
 hardware rules. `ASPISCAN /Q /TAPE`, `/DISK`, `/FDD` and `/CDA` preselect the
@@ -86,7 +88,9 @@ media. Separate fixtures emulate a fixed 1024-byte drive and verify block-limit
 detection, integral-request enforcement, and fixed read/write CDBs. Every
 transfer fixture runs both with and without ASPI residual support. Nested
 `RMT0` opens verify that rewind occurs only on final close, while `NRMT0` never
-rewinds. All variants use the same SvarDOS fixture.
+rewinds. Written-session tests verify read-after-write rejection and the final
+two-filemark/append positioning sequence. All variants use the same SvarDOS
+fixture.
 
 `make dos-mhvtl-smoke` uses QEMU's emulated Tekram-compatible DC-390 controller
 and `scsi-generic` passthrough to exercise `ASPITAP.SYS` against an mhVTL tape.

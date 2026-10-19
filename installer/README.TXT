@@ -40,7 +40,8 @@ EOF, write protection and the selectable EOM policy are supported. Fixed-block
 drives are detected with READ BLOCK LIMITS and use their required block size.
 Only one tape drive is exposed; medium-changer/library control is not part of
 this stage. The write path is not yet qualified for production backups on real
-media.
+media. Closing a written session adds two terminating filemarks; NRMT0 then
+backspaces one mark, while RMT0 rewinds.
 
 The installer is the GeosOne DOS Installer: https://github.com/geosone/gdi
 License: GNU General Public License version 3.

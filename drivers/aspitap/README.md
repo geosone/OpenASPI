@@ -20,6 +20,10 @@ optional `MT0`/`NMT0` 1024-byte buffering layer is a separate feature and is
 not yet exposed. The write path is not yet qualified for production backups
 on real media.
 
+The final close of a written session emits two filemarks. `RMT0` then rewinds;
+`NRMT0` backspaces one filemark to preserve the historical append position.
+Reads after a write in the same session are rejected.
+
 Implementation order:
 
 1. [done] locate the DOS ASPI manager and call its entry point safely;

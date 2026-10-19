@@ -550,7 +550,11 @@ endif
         ret
 set_read_condition endp
 
-EXPECTED_COUNT equ     10
+ifdef FIXED_BLOCK
+EXPECTED_COUNT equ     2
+else
+EXPECTED_COUNT equ     12
+endif
 READ_COUNT     equ     7
 expected_index db      0
 read_index     db      0
@@ -575,6 +579,10 @@ else
 block_limits_response db 00h, 00h, 0FFh, 0FFh, 00h, 01h
 endif
 expected_cdbs:
+ifdef FIXED_BLOCK
+        db      10h, 00h, 00h, 00h, 02h, 00h ; close: two filemarks
+        db      11h, 01h, 0FFh, 0FFh, 0FFh, 00h ; close: backspace one
+else
         db      00h, 00h, 00h, 00h, 00h, 00h ; MTNOP between RMT0 closes
         db      01h, 00h, 00h, 00h, 00h, 00h ; final RMT0 close rewinds
         db      00h, 00h, 00h, 00h, 00h, 00h ; MTNOP / TEST UNIT READY
@@ -585,6 +593,9 @@ expected_cdbs:
         db      11h, 00h, 0FFh, 0FFh, 0FCh, 00h ; MTBSR 4
         db      01h, 00h, 00h, 00h, 00h, 00h ; MTREW
         db      1Bh, 00h, 00h, 00h, 00h, 00h ; MTOFFL
+        db      10h, 00h, 00h, 00h, 02h, 00h ; close: two filemarks
+        db      11h, 01h, 0FFh, 0FFh, 0FFh, 00h ; close: backspace one
+endif
 
 resident_end label byte
 

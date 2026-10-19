@@ -320,6 +320,16 @@ endif
         cmp     word ptr [status+0Ch], 0
         fail_if_not_equal failed_close
 
+        ; Historical ASPITAPE permits a read-then-write session, but rejects
+        ; every read after the first successful write.
+        mov     byte ptr [stage], 'd'
+        mov     bx, word ptr [handle]
+        mov     cx, 16
+        mov     dx, offset read_buffer
+        mov     ah, 3Fh
+        int     21h
+        fail_if_no_carry failed_close
+
         ; A DATA PROTECT condition must remain a failed DOS write and expose
         ; the SCSI sense key through mtget.
         mov     byte ptr [stage], 'p'

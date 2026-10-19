@@ -191,25 +191,31 @@ init_failed:
 
 unsupported:
         mov     word ptr es:[bx+REQ_STATUS], 8103h
-        jmp     short request_done
+        jmp     request_done
 
 open_request:
-        cmp     byte ptr [request_rewind], 0
-        je      request_success
-        cmp     byte ptr [rmt_open_count], 0FFh
+        cmp     byte ptr [tape_open_count], 0FFh
         je      request_error
-        inc     byte ptr [rmt_open_count]
+        cmp     byte ptr [tape_open_count], 0
+        jne     open_increment
+        and     byte ptr [device_state], MT_STATE_EOM_EOF
+open_increment:
+        inc     byte ptr [tape_open_count]
         jmp     short request_success
 
 close_request:
-        cmp     byte ptr [request_rewind], 0
+        cmp     byte ptr [tape_open_count], 0
         je      request_success
-        cmp     byte ptr [rmt_open_count], 0
-        je      request_success
-        dec     byte ptr [rmt_open_count]
+        dec     byte ptr [tape_open_count]
         jne     request_success
+        call    finish_written_tape
+        jc      request_error
+        cmp     byte ptr [request_rewind], 0
+        je      close_complete
         call    rewind_on_close
         jc      request_error
+close_complete:
+        and     byte ptr [device_state], MT_STATE_EOM_EOF
         jmp     short request_success
 
 generic_ioctl:
@@ -309,6 +315,12 @@ read_request proc near
         ret
 
 read_nonempty:
+        test    byte ptr [device_state], MT_STATE_WRITTEN
+        jz      read_not_written
+        call    zero_transfer_count
+        stc
+        ret
+read_not_written:
         test    byte ptr [device_state], MT_STATE_EOF_NEXT
         jz      read_issue
         and     byte ptr [device_state], not MT_STATE_EOF_NEXT
@@ -416,6 +428,8 @@ write_request proc near
         mov     word ptr es:[bx+REQ_COUNT], 0
         or      ax, ax
         jnz     write_issue
+        and     byte ptr [device_state], not MT_STATE_EOF_NEXT
+        or      byte ptr [device_state], MT_STATE_WRITTEN
         clc
         ret
 
@@ -620,6 +634,33 @@ rewind_on_close proc near
         call    execute_control_srb
         ret
 rewind_on_close endp
+
+; Match the historical close contract after a write: terminate the tape file
+; with two filemarks. A no-rewind close then spaces backward over one filemark
+; so the next writer can append at the expected position.
+finish_written_tape proc near
+        test    byte ptr [device_state], MT_STATE_WRITTEN
+        jnz     finish_tape_write_marks
+        clc
+        ret
+finish_tape_write_marks:
+        call    prepare_control_srb
+        mov     byte ptr [srb+SRB_CDB], SCSI_WRITE_FILEMARKS
+        mov     byte ptr [srb+SRB_CDB+4], 2
+        call    execute_control_srb
+        jc      finish_tape_done
+        cmp     byte ptr [request_rewind], 0
+        jne     finish_tape_done
+        call    prepare_control_srb
+        mov     byte ptr [srb+SRB_CDB], SCSI_SPACE
+        mov     byte ptr [srb+SRB_CDB+1], SPACE_FILEMARKS
+        mov     byte ptr [srb+SRB_CDB+2], 0FFh
+        mov     byte ptr [srb+SRB_CDB+3], 0FFh
+        mov     byte ptr [srb+SRB_CDB+4], 0FFh
+        call    execute_control_srb
+finish_tape_done:
+        ret
+finish_written_tape endp
 
 ; Translate the documented ASPITAPE mtop operations to six-byte sequential-
 ; access CDBs.  The four-byte count in mtop must fit the signed or unsigned
@@ -1101,7 +1142,7 @@ tape_target         db  0
 tape_lun            db  0
 tape_fixed_block    dw  0
 device_state        db  0
-rmt_open_count      db  0
+tape_open_count     db  0
 last_scsi_status    db  0
 last_sense_key      db  0
 last_scsi_opcode    dw  0

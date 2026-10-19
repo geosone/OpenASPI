@@ -124,6 +124,14 @@ else
 endif
         fail_if_not_equal failed_close
 
+        mov     byte ptr [stage], '7'
+        mov     bx, word ptr [handle]
+        mov     cx, 1024
+        mov     dx, offset transfer_buffer
+        mov     ah, 3Fh
+        int     21h
+        fail_if_no_carry failed_close
+
         call    close_handle
         call    restore_int24
         mov     dx, offset success_message

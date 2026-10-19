@@ -33,8 +33,10 @@ The byte-exact structures and flags are declared in
 
 The baseline operations are write filemark, forward/backward space file,
 forward/backward space record, rewind, rewind-and-unload, and no-op/Test Unit
-Ready. OpenASPI implements all of them. `MTWEOF` is never implicit: a zero-byte
-DOS write is a no-op, and only an explicit `MTWEOF` writes filemarks.
+Ready. OpenASPI implements all of them. Explicit `MTWEOF` writes filemarks
+immediately. A zero-byte DOS write issues no immediate SCSI command. As in the
+historical driver, the final close of a session which has written data
+terminates it with two filemarks.
 
 Compatibility behavior still requiring verification against the historical
 binary includes exact DOS error mapping, buffering, partial-transfer corner
@@ -66,10 +68,17 @@ the SCSI fixed bit and converts the byte count to a block count. This mandatory
 fixed-drive handling is distinct from the historical optional `MTx`/`NMTx`
 1024-byte buffering mode, which is not implemented yet.
 
+After any write, later reads in the same open session are rejected. On final
+close, a written session receives two filemarks. `RMT0` then rewinds; `NRMT0`
+spaces backward over one filemark and leaves the tape positioned between the
+pair for a later append. A zero-byte DOS write marks the session as written for
+this close processing but does not create a zero-length data record.
+
 The current implementation discovers and exposes only the first tape drive.
 Medium changers and tape-library robotics are outside this stage.
 
 Both device headers advertise DOS open/close notifications. OpenASPI counts
-`RMT0` opens and issues synchronous SCSI REWIND only when its final tracked
-handle closes. Closing `NRMT0` never changes position. OpenASPI's own scan and
-status tools therefore use `NRMT0`.
+all opens and performs finalization only when the last tracked handle closes.
+An unwritten `RMT0` session issues synchronous SCSI REWIND; an unwritten
+`NRMT0` session never changes position. OpenASPI's own scan and status tools
+therefore use `NRMT0`.
