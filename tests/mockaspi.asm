@@ -337,10 +337,10 @@ write_validated:
         je      write_first
         cmp     al, 1
         jne     write_bad_scsi
-        cmp     word ptr es:[bx+SRB_BufLen], 1
+        cmp     word ptr es:[bx+SRB_BufLen], 2
         jne     write_bad_scsi
 ifndef NO_RESIDUAL
-        mov     word ptr es:[bx+SRB_BufLen], 1
+        mov     word ptr es:[bx+SRB_BufLen], 2
 endif
         mov     byte ptr es:[bx+SRB_CDB+16], 70h
         mov     byte ptr es:[bx+SRB_CDB+18], 07h ; DATA PROTECT

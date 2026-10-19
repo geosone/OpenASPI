@@ -34,6 +34,10 @@ which require fixed-size blocks; their byte requests must be integral block
 multiples and are translated to fixed-block SCSI transfers. Broader sense/error
 translation remains a later stage. The write path is emulator-tested but not
 yet qualified for production backups on real media.
+Data reads and writes require exactly one open tape handle. Single-byte data
+requests are rejected by default, matching ASPITAPE's guard against DOS cooked
+character-device I/O. The historical `-m` (allow multiple opens) and `-s`
+(allow single-byte I/O) configuration overrides are not implemented yet.
 `RMT0` rewinds when its last tracked handle closes; `NRMT0`, `ASPISCAN` and
 `TAPECTL` leave an unwritten tape position unchanged. A written final close
 adds the historical two-filemark terminator; `NRMT0` then backspaces one mark,
@@ -87,10 +91,11 @@ and the exact CDBs for readiness, spacing, rewind and unload without touching
 real tape media. Separate fixtures emulate a fixed 1024-byte drive and verify
 block-limit detection, integral-request enforcement, and fixed read/write CDBs. Every
 transfer fixture runs both with and without ASPI residual support. Nested
-`RMT0` opens verify that rewind occurs only on final close, while `NRMT0` never
-rewinds. Written-session tests verify read-after-write rejection and the final
-two-filemark/append positioning sequence. All variants use the same SvarDOS
-fixture.
+`RMT0` opens verify that data transfer is rejected while more than one handle
+is open and that rewind occurs only on final close. Single-byte cooked-mode
+requests are rejected, while `NRMT0` never rewinds. Written-session tests
+verify read-after-write rejection and the final two-filemark/append positioning
+sequence. All variants use the same SvarDOS fixture.
 
 `make dos-mhvtl-smoke` uses QEMU's emulated Tekram-compatible DC-390 controller
 and `scsi-generic` passthrough to exercise `ASPITAP.SYS` against an mhVTL tape.

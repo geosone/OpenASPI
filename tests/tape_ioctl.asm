@@ -70,6 +70,13 @@ start:
         call    open_raw
         fail_if_carry failed_close
         mov     word ptr [handle2], ax
+        mov     byte ptr [stage], 'm'
+        mov     bx, word ptr [handle2]
+        mov     cx, 2
+        mov     dx, offset read_buffer
+        mov     ah, 3Fh
+        int     21h
+        fail_if_no_carry failed_close2
         mov     byte ptr [stage], 'o'
         call    close_handle
         fail_if_carry failed_close2
@@ -115,6 +122,22 @@ start:
         fail_if_carry failed_close
         cmp     byte ptr [status+4], 00h
         fail_if_not_equal failed_close
+
+        ; DOS cooked mode reduces character-device traffic to single-byte
+        ; requests. Historical ASPITAPE rejects those by default.
+        mov     byte ptr [stage], 's'
+        mov     bx, word ptr [handle]
+        mov     cx, 1
+        mov     dx, offset read_buffer
+        mov     ah, 3Fh
+        int     21h
+        fail_if_no_carry failed_close
+        mov     bx, word ptr [handle]
+        mov     cx, 1
+        mov     dx, offset write_payload
+        mov     ah, 40h
+        int     21h
+        fail_if_no_carry failed_close
 
         mov     byte ptr [stage], 'R'
         mov     bx, word ptr [handle]
@@ -334,7 +357,7 @@ endif
         ; the SCSI sense key through mtget.
         mov     byte ptr [stage], 'p'
         mov     bx, word ptr [handle]
-        mov     cx, 1
+        mov     cx, 2
         mov     dx, offset write_payload
         mov     ah, 40h
         int     21h
@@ -347,7 +370,7 @@ endif
         fail_if_not_equal failed_close
         cmp     byte ptr [status+9], 7
         fail_if_not_equal failed_close
-        cmp     word ptr [status+0Ch], 1
+        cmp     word ptr [status+0Ch], 2
         fail_if_not_equal failed_close
 
         mov     byte ptr [stage], '7'

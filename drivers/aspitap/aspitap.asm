@@ -315,6 +315,10 @@ read_request proc near
         ret
 
 read_nonempty:
+        cmp     byte ptr [tape_open_count], 1
+        jne     read_access_error
+        cmp     word ptr [requested_bytes], 1
+        je      read_access_error
         test    byte ptr [device_state], MT_STATE_WRITTEN
         jz      read_not_written
         call    zero_transfer_count
@@ -325,6 +329,11 @@ read_not_written:
         jz      read_issue
         and     byte ptr [device_state], not MT_STATE_EOF_NEXT
         clc
+        ret
+
+read_access_error:
+        call    zero_transfer_count
+        stc
         ret
 
 read_issue:
@@ -420,12 +429,16 @@ read_condition_error:
 read_request endp
 
 ; Process one DOS output request as one variable-length SCSI tape record.
-; A zero-byte DOS write is a no-op; filemarks are written only by MTWEOF.
+; A zero-byte DOS write marks the session written without issuing a data CDB.
 write_request proc near
         les     bx, [request_ptr]
         mov     ax, word ptr es:[bx+REQ_COUNT]
         mov     word ptr [requested_bytes], ax
         mov     word ptr es:[bx+REQ_COUNT], 0
+        cmp     byte ptr [tape_open_count], 1
+        je      write_open_exclusive
+        jmp     write_access_error
+write_open_exclusive:
         or      ax, ax
         jnz     write_issue
         and     byte ptr [device_state], not MT_STATE_EOF_NEXT
@@ -434,6 +447,10 @@ write_request proc near
         ret
 
 write_issue:
+        cmp     word ptr [requested_bytes], 1
+        jne     write_size_allowed
+        jmp     write_access_error
+write_size_allowed:
         call    clear_srb
         mov     byte ptr [srb+SRB_Cmd], SC_EXEC_SCSI_CMD
         mov     al, byte ptr [tape_ha]
@@ -517,6 +534,10 @@ write_condition_error:
         stc
         ret
 write_bad_residual:
+        call    zero_transfer_count
+        stc
+        ret
+write_access_error:
         call    zero_transfer_count
         stc
         ret

@@ -40,7 +40,7 @@ terminates it with two filemarks.
 
 Compatibility behavior still requiring verification against the historical
 binary includes exact DOS error mapping, buffering, partial-transfer corner
-cases, raw-mode enforcement, and exact close/rewind timing.
+cases, and exact close/rewind timing.
 
 ## Current transfer subset
 
@@ -61,6 +61,14 @@ One non-empty DOS write maps to one variable-block SCSI `WRITE(6)`. A complete
 write returns the input byte count. ASPI residuals are validated when the
 manager supports them; write protection and other CHECK CONDITION results stay
 failed DOS requests and remain visible through `mtget`.
+
+By default, data reads and writes are accepted only while exactly one tape
+handle is open. Single-byte requests are rejected as likely DOS cooked-mode
+traffic; applications must select raw mode before transferring data. This
+matches the historical driver's default safeguards. Its `-m` override for
+multiple-open transfers and `-s` override for single-byte transfers are not
+implemented yet. Open and close requests themselves remain tracked so final
+close processing occurs at the correct time.
 
 At installation, `READ BLOCK LIMITS` detects a drive whose minimum and maximum
 block sizes are the same. `mtget` then reports `FIXED_BLOCK` and that size.
