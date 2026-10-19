@@ -48,7 +48,8 @@ One DOS character-device read maps to one variable-block SCSI `READ(6)`.
 Managers advertising ASPI extension flag `0002h` return a residual count, so
 short records produce the correct DOS byte count. With older managers, such as
 the tested Tekram 1.60 manager, an exact-size record works directly and a valid
-fixed-format ILI information field supplies the length of a short record.
+fixed- or descriptor-format ILI information field supplies the length of a
+short record. Descriptor stream-command flags also carry FILEMARK and EOM.
 
 A filemark with no data completes as one zero-byte read; a filemark delivered
 with data defers that zero-byte result until the next read. EOM is an error by

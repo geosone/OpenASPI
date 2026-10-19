@@ -24,6 +24,10 @@ The final close of a written session emits two filemarks. `RMT0` then rewinds;
 `NRMT0` backspaces one filemark to preserve the historical append position.
 Reads after a write in the same session are rejected.
 
+CHECK CONDITION decoding accepts both fixed and descriptor sense. Descriptor
+information and stream-command descriptors provide residual ILI lengths,
+FILEMARK and EOM without requiring the ASPI residual extension.
+
 Implementation order:
 
 1. [done] locate the DOS ASPI manager and call its entry point safely;
@@ -36,7 +40,8 @@ Implementation order:
    historical optional buffering remains);
 5. [done] implement category `07h` generic IOCTL functions, including explicit
    `MTWEOF` filemark writing;
-6. translate CHECK CONDITION and fixed/descriptor sense data;
+6. [done] translate CHECK CONDITION fixed/descriptor sense data needed for
+   FILEMARK, EOM, ILI and the reported sense key;
 7. [partial] add fixed- and variable-block tests (emulator coverage is present;
    real-drive fixed-block qualification remains).
 

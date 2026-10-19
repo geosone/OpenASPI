@@ -18,7 +18,7 @@ This repository is at the bootstrap stage.  It currently contains:
   and tape positioning through the generic IOCTL interface;
 - the documented ASPITAPE compatibility ABI;
 - portable builders for the initial SCSI sequential-access commands;
-- fixed-format SCSI sense decoding;
+- fixed- and descriptor-format SCSI sense decoding;
 - host-side unit tests for those protocol helpers;
 - 8086 DOS binaries built with JWasm.
 
@@ -26,10 +26,10 @@ The generated `ASPITAP.SYS` installs `RMT0` and `NRMT0` only when it finds an
 ASPI sequential-access device. Variable-block reads and writes, explicit
 filemark writing, status, readiness, forward/backward spacing, rewind and
 unload are implemented. Short-record lengths use the ASPI residual extension
-when available and fixed-format ILI sense with older managers. A filemark
-returns one zero-byte read; EOM remains an error unless the application selects
-the documented ignore-EOT policy. Write-protection errors remain failed DOS
-writes and are visible through `mtget`. `READ BLOCK LIMITS` detects drives
+when available and fixed- or descriptor-format ILI information otherwise. A
+filemark returns one zero-byte read; EOM remains an error unless the application
+selects the documented ignore-EOT policy. Write-protection errors remain failed
+DOS writes and are visible through `mtget`. `READ BLOCK LIMITS` detects drives
 which require fixed-size blocks; their byte requests must be integral block
 multiples and are translated to fixed-block SCSI transfers. Broader sense/error
 translation remains a later stage. The write path is emulator-tested but not
@@ -81,11 +81,11 @@ an emulated ATAPI CD-ROM.  It requires the private test media described in
 
 `make dos-tape-smoke` boots a test-only ASPI manager that exposes an emulated
 tape. It verifies both device names, DOS raw-mode setup, full and residual
-variable-block reads, fixed-sense ILI short records, filemarks, both EOM
-policies, variable-block writes, write protection, `MTWEOF`, `mtget`, and the
-exact CDBs for readiness, spacing, rewind and unload without touching real tape
-media. Separate fixtures emulate a fixed 1024-byte drive and verify block-limit
-detection, integral-request enforcement, and fixed read/write CDBs. Every
+variable-block reads, fixed- and descriptor-sense ILI short records, filemarks,
+both EOM policies, variable-block writes, write protection, `MTWEOF`, `mtget`,
+and the exact CDBs for readiness, spacing, rewind and unload without touching
+real tape media. Separate fixtures emulate a fixed 1024-byte drive and verify
+block-limit detection, integral-request enforcement, and fixed read/write CDBs. Every
 transfer fixture runs both with and without ASPI residual support. Nested
 `RMT0` opens verify that rewind occurs only on final close, while `NRMT0` never
 rewinds. Written-session tests verify read-after-write rejection and the final

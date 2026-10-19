@@ -36,8 +36,9 @@ detectors; the embedded DOS engine performs the transactional installation.
 The current ASPITAP.SYS finds the first ASPI tape and installs RMT0 and NRMT0.
 Variable-block reads and writes, status, readiness, forward/backward spacing,
 rewind, unload and explicit filemark controls work. Short-record ILI, filemark
-EOF, write protection and the selectable EOM policy are supported. Fixed-block
-drives are detected with READ BLOCK LIMITS and use their required block size.
+EOF, write protection, fixed/descriptor sense and the selectable EOM policy are
+supported. Fixed-block drives are detected with READ BLOCK LIMITS and use their
+required block size.
 Only one tape drive is exposed; medium-changer/library control is not part of
 this stage. The write path is not yet qualified for production backups on real
 media. Closing a written session adds two terminating filemarks; NRMT0 then

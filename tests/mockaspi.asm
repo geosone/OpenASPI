@@ -210,7 +210,7 @@ read_index_valid:
         cmp     al, 4
         je      read_eom
         cmp     al, 5
-        je      read_eom
+        je      read_descriptor_eom
         jmp     short read_negative_ili
 
 read_first:
@@ -231,8 +231,8 @@ ifndef NO_RESIDUAL
 endif
         mov     al, 20h                 ; ILI, no-sense key
         mov     dx, 16-ILI_PAYLOAD_SIZE ; requested minus actual
-        call    set_read_condition
-        jmp     short aspi_done
+        call    set_descriptor_condition
+        jmp     aspi_done
 
 read_filemark:
         mov     al, 80h                 ; FILEMARK, no-sense key
@@ -253,6 +253,12 @@ read_eom:
         mov     al, 40h                 ; EOM, no-sense key
         mov     dx, 16                  ; no bytes transferred
         call    set_read_condition
+        jmp     short aspi_done
+
+read_descriptor_eom:
+        mov     al, 40h                 ; EOM in stream-command descriptor
+        mov     dx, 16
+        call    set_descriptor_condition
         jmp     short aspi_done
 
 read_negative_ili:
@@ -549,6 +555,37 @@ endif
         mov     byte ptr es:[bx+SRB_Status], SS_ERR
         ret
 set_read_condition endp
+
+; Return descriptor-format CHECK CONDITION sense. AL contains the stream
+; FILEMARK/EOM/ILI bits and DX contains requested-minus-actual bytes.
+set_descriptor_condition proc near
+ifndef NO_RESIDUAL
+        mov     word ptr es:[bx+SRB_BufLen], dx
+endif
+        mov     word ptr es:[bx+SRB_BufLen+2], 0
+        mov     byte ptr es:[bx+SRB_CDB+16], 72h
+        mov     byte ptr es:[bx+SRB_CDB+17], 00h
+        mov     byte ptr es:[bx+SRB_CDB+18], 00h
+        mov     byte ptr es:[bx+SRB_CDB+19], 00h
+        mov     byte ptr es:[bx+SRB_CDB+23], 16
+        mov     byte ptr es:[bx+SRB_CDB+24], 00h
+        mov     byte ptr es:[bx+SRB_CDB+25], 0Ah
+        mov     byte ptr es:[bx+SRB_CDB+26], 80h
+        mov     byte ptr es:[bx+SRB_CDB+27], 00h
+        mov     word ptr es:[bx+SRB_CDB+28], 0
+        mov     word ptr es:[bx+SRB_CDB+30], 0
+        mov     word ptr es:[bx+SRB_CDB+32], 0
+        mov     byte ptr es:[bx+SRB_CDB+34], dh
+        mov     byte ptr es:[bx+SRB_CDB+35], dl
+        mov     byte ptr es:[bx+SRB_CDB+36], 04h
+        mov     byte ptr es:[bx+SRB_CDB+37], 02h
+        mov     byte ptr es:[bx+SRB_CDB+38], 00h
+        mov     byte ptr es:[bx+SRB_CDB+39], al
+        mov     byte ptr es:[bx+SRB_HaStat], 0
+        mov     byte ptr es:[bx+SRB_TargStat], 2
+        mov     byte ptr es:[bx+SRB_Status], SS_ERR
+        ret
+set_descriptor_condition endp
 
 ifdef FIXED_BLOCK
 EXPECTED_COUNT equ     2

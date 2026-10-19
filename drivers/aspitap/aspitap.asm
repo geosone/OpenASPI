@@ -853,18 +853,76 @@ remember_sense_key proc near
         mov     al, byte ptr [srb+SRB_CDB+16]
         and     al, 7Fh
         cmp     al, 70h
-        je      fixed_sense
+        jne     sense_not_fixed_current
+        jmp     fixed_sense
+sense_not_fixed_current:
         cmp     al, 71h
-        je      fixed_sense
+        jne     sense_not_fixed_deferred
+        jmp     fixed_sense
+sense_not_fixed_deferred:
         cmp     al, 72h
         je      descriptor_sense
         cmp     al, 73h
-        jne     sense_done
+        je      descriptor_sense
+        jmp     sense_done
 descriptor_sense:
         mov     al, byte ptr [srb+SRB_CDB+17]
         and     al, 0Fh
         mov     byte ptr [last_sense_key], al
-        ret
+        xor     cx, cx
+        mov     cl, byte ptr [srb+SRB_CDB+23]
+        cmp     cx, 24
+        jbe     descriptor_length_ready
+        mov     cx, 24
+descriptor_length_ready:
+        mov     si, offset srb+SRB_CDB+24
+descriptor_loop:
+        cmp     cx, 2
+        jae     descriptor_header_ready
+        jmp     sense_done
+descriptor_header_ready:
+        xor     bx, bx
+        mov     bl, byte ptr [si+1]
+        add     bx, 2
+        cmp     bx, cx
+        jbe     descriptor_size_ready
+        jmp     sense_done
+descriptor_size_ready:
+        cmp     byte ptr [si], 0
+        je      descriptor_information
+        cmp     byte ptr [si], 4
+        je      descriptor_stream
+        jmp     short descriptor_next
+
+descriptor_information:
+        cmp     byte ptr [si+1], 0Ah
+        jb      descriptor_next
+        test    byte ptr [si+2], 80h
+        jz      descriptor_next
+        cmp     word ptr [si+4], 0
+        jne     descriptor_next
+        cmp     word ptr [si+6], 0
+        jne     descriptor_next
+        mov     ah, byte ptr [si+8]
+        mov     al, byte ptr [si+9]
+        mov     word ptr [sense_info_high], ax
+        mov     ah, byte ptr [si+10]
+        mov     al, byte ptr [si+11]
+        mov     word ptr [sense_info_low], ax
+        mov     byte ptr [sense_info_valid], 1
+        jmp     short descriptor_next
+
+descriptor_stream:
+        cmp     byte ptr [si+1], 2
+        jb      descriptor_next
+        mov     al, byte ptr [si+3]
+        and     al, SENSE_FILEMARK or SENSE_EOM or SENSE_ILI
+        or      byte ptr [sense_flags], al
+
+descriptor_next:
+        add     si, bx
+        sub     cx, bx
+        jmp     descriptor_loop
 fixed_sense:
         mov     al, byte ptr [srb+SRB_CDB+16]
         test    al, 80h

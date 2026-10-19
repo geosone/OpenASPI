@@ -68,13 +68,23 @@ static void test_fixed_sense(void)
 
 static void test_descriptor_sense(void)
 {
-    const oa_u8 data[4] = { 0x72u, 0x06u, 0x28u, 0x00u };
+    const oa_u8 data[24] = {
+        0x72u, 0x06u, 0x28u, 0x00u, 0x00u, 0x00u, 0x00u, 0x10u,
+        0x00u, 0x0Au, 0x80u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+        0x00u, 0x00u, 0x00u, 0x20u,
+        0x04u, 0x02u, 0x00u, 0xE0u
+    };
     struct oa_tape_sense sense;
 
     assert(oa_scsi_decode_sense(data, sizeof(data), &sense) == 0);
     assert(sense.sense_key == OA_SENSE_UNIT_ATTENTION);
     assert(sense.asc == 0x28u);
     assert(sense.ascq == 0x00u);
+    assert(sense.information_valid == 1u);
+    assert(sense.information == 0x20u);
+    assert(sense.filemark == 1u);
+    assert(sense.end_of_medium == 1u);
+    assert(sense.incorrect_length == 1u);
 }
 
 int main(void)
