@@ -1,7 +1,7 @@
 ; ASPITAP.SYS bootstrap driver for OpenASPI.
 ;
 ; The driver locates SCSIMGR$, claims the first ASPI sequential-access device,
-; and exposes the historical RMT0/NRMT0 names.  The non-destructive generic
+; and exposes the historical RMT0/NRMT0 names. The non-destructive generic
 ; IOCTL interface provides status, EOT policy, spacing, rewind, unload and
 ; readiness operations. Variable-block reads use residual counts when the ASPI
 ; manager provides them and retain exact-length compatibility with older
@@ -50,6 +50,7 @@ MTNOP           equ     07h
 
 SCSI_TUR        equ     00h
 SCSI_REWIND     equ     01h
+SCSI_READ_BLOCK_LIMITS equ 05h
 SCSI_READ       equ     08h
 SCSI_WRITE      equ     0Ah
 SCSI_WRITE_FILEMARKS equ 10h
@@ -59,6 +60,7 @@ SPACE_BLOCKS    equ     00h
 SPACE_FILEMARKS equ     01h
 
 MT_PARAM_ASPI   equ     080h
+MT_PARAM_FIXED  equ     001h
 MT_STATE_REWIND equ     004h
 MT_STATE_WRITTEN equ    008h
 MT_STATE_READ   equ     010h
@@ -270,12 +272,18 @@ fill_mtget proc near
         mov     byte ptr es:[di+1], al
         mov     al, byte ptr [tape_lun]
         mov     byte ptr es:[di+2], al
-        mov     byte ptr es:[di+3], MT_PARAM_ASPI
+        mov     al, MT_PARAM_ASPI
+        cmp     word ptr [tape_fixed_block], 0
+        je      mtget_parameters_ready
+        or      al, MT_PARAM_FIXED
+mtget_parameters_ready:
+        mov     byte ptr es:[di+3], al
         mov     al, byte ptr [device_state]
         or      al, byte ptr [request_rewind]
         mov     byte ptr es:[di+4], al
         mov     byte ptr es:[di+5], 0
-        mov     word ptr es:[di+6], 0
+        mov     ax, word ptr [tape_fixed_block]
+        mov     word ptr es:[di+6], ax
         mov     al, byte ptr [last_scsi_status]
         mov     byte ptr es:[di+8], al
         mov     al, byte ptr [last_sense_key]
@@ -332,13 +340,27 @@ read_flags_ready:
         mov     byte ptr [srb+SRB_SenseLen], 32
         mov     byte ptr [srb+SRB_CDBLen], 6
         mov     byte ptr [srb+SRB_CDB], SCSI_READ
+        cmp     word ptr [tape_fixed_block], 0
+        je      read_variable_length
+        xor     dx, dx
         mov     ax, word ptr [requested_bytes]
+        div     word ptr [tape_fixed_block]
+        or      dx, dx
+        jnz     read_bad_block_size
+        or      byte ptr [srb+SRB_CDB+1], 1
+        jmp     short read_length_ready
+read_variable_length:
+        mov     ax, word ptr [requested_bytes]
+read_length_ready:
         mov     byte ptr [srb+SRB_CDB+3], ah
         mov     byte ptr [srb+SRB_CDB+4], al
 
         xor     ax, ax
         mov     al, byte ptr [srb+SRB_CDB]
         mov     ah, byte ptr [srb+SRB_Flags]
+        mov     dl, byte ptr [srb+SRB_CDB+1]
+        and     dl, 7
+        or      ah, dl
         mov     word ptr [last_scsi_opcode], ax
         call    call_aspi
 
@@ -351,6 +373,11 @@ read_flags_ready:
         jc      read_bad_residual
         or      byte ptr [device_state], MT_STATE_READ
         clc
+        ret
+
+read_bad_block_size:
+        call    zero_transfer_count
+        stc
         ret
 
 read_bad_residual:
@@ -417,13 +444,27 @@ write_flags_ready:
         mov     byte ptr [srb+SRB_SenseLen], 32
         mov     byte ptr [srb+SRB_CDBLen], 6
         mov     byte ptr [srb+SRB_CDB], SCSI_WRITE
+        cmp     word ptr [tape_fixed_block], 0
+        je      write_variable_length
+        xor     dx, dx
         mov     ax, word ptr [requested_bytes]
+        div     word ptr [tape_fixed_block]
+        or      dx, dx
+        jnz     write_bad_block_size
+        or      byte ptr [srb+SRB_CDB+1], 1
+        jmp     short write_length_ready
+write_variable_length:
+        mov     ax, word ptr [requested_bytes]
+write_length_ready:
         mov     byte ptr [srb+SRB_CDB+3], ah
         mov     byte ptr [srb+SRB_CDB+4], al
 
         xor     ax, ax
         mov     al, byte ptr [srb+SRB_CDB]
         mov     ah, byte ptr [srb+SRB_Flags]
+        mov     dl, byte ptr [srb+SRB_CDB+1]
+        and     dl, 7
+        or      ah, dl
         mov     word ptr [last_scsi_opcode], ax
         call    call_aspi
 
@@ -438,6 +479,11 @@ write_success:
         and     byte ptr [device_state], not MT_STATE_EOF_NEXT
         or      byte ptr [device_state], MT_STATE_WRITTEN
         clc
+        ret
+
+write_bad_block_size:
+        call    zero_transfer_count
+        stc
         ret
 
 write_scsi_failed:
@@ -506,6 +552,12 @@ finish_read_sense_count proc near
         cmp     word ptr [sense_info_high], 0
         jne     finish_sense_invalid
         mov     ax, word ptr [sense_info_low]
+        cmp     word ptr [tape_fixed_block], 0
+        je      finish_sense_bytes_ready
+        mul     word ptr [tape_fixed_block]
+        or      dx, dx
+        jnz     finish_sense_invalid
+finish_sense_bytes_ready:
         cmp     ax, word ptr [requested_bytes]
         ja      finish_sense_invalid
         mov     word ptr [residual_bytes], ax
@@ -540,6 +592,8 @@ read_sense_filemark:
         jmp     short read_sense_success
 
 read_sense_ili:
+        cmp     word ptr [tape_fixed_block], 0
+        jne     read_sense_error
         cmp     byte ptr [sense_info_valid], 0
         je      read_sense_error
         cmp     word ptr [sense_info_high], 0
@@ -672,6 +726,9 @@ execute_control_srb proc near
         xor     ax, ax
         mov     al, byte ptr [srb+SRB_CDB]
         mov     ah, byte ptr [srb+SRB_Flags]
+        mov     dl, byte ptr [srb+SRB_CDB+1]
+        and     dl, 7
+        or      ah, dl
         mov     word ptr [last_scsi_opcode], ax
         mov     word ptr [residual_bytes], 0
         call    call_aspi
@@ -884,6 +941,7 @@ scan_lun_loop:
         mov     byte ptr [tape_target], al
         mov     al, byte ptr [scan_lun]
         mov     byte ptr [tape_lun], al
+        call    detect_block_limits
         clc
         ret
 
@@ -907,6 +965,49 @@ discovery_failed:
         stc
         ret
 discover_tape endp
+
+; READ BLOCK LIMITS distinguishes drives which require a single fixed block
+; size from variable-block drives. Version 1 of the ASPITAPE status ABI can
+; report only a 16-bit size, so larger or ambiguous limits remain variable.
+detect_block_limits proc near
+        mov     word ptr [tape_fixed_block], 0
+        call    clear_srb
+        mov     byte ptr [srb+SRB_Cmd], SC_EXEC_SCSI_CMD
+        mov     al, byte ptr [tape_ha]
+        mov     byte ptr [srb+SRB_HaId], al
+        mov     byte ptr [srb+SRB_Flags], SRB_DIR_IN
+        test    word ptr [adapter_ext_flags], HA_EXT_RESIDUAL
+        jz      block_limits_flags_ready
+        or      byte ptr [srb+SRB_Flags], SRB_RESIDUAL
+block_limits_flags_ready:
+        mov     al, byte ptr [tape_target]
+        mov     byte ptr [srb+SRB_Target], al
+        mov     al, byte ptr [tape_lun]
+        mov     byte ptr [srb+SRB_Lun], al
+        mov     word ptr [srb+SRB_BufLen], 6
+        mov     word ptr [srb+SRB_BufLen+2], 0
+        mov     word ptr [srb+SRB_BufPointer], offset block_limits
+        mov     word ptr [srb+SRB_BufPointer+2], cs
+        mov     byte ptr [srb+SRB_SenseLen], 32
+        mov     byte ptr [srb+SRB_CDBLen], 6
+        mov     byte ptr [srb+SRB_CDB], SCSI_READ_BLOCK_LIMITS
+        call    call_aspi
+        cmp     byte ptr [srb+SRB_Status], SS_COMP
+        jne     block_limits_done
+        cmp     byte ptr [block_limits+1], 0
+        jne     block_limits_done
+        mov     ah, byte ptr [block_limits+2]
+        mov     al, byte ptr [block_limits+3]
+        mov     dh, byte ptr [block_limits+4]
+        mov     dl, byte ptr [block_limits+5]
+        cmp     ax, dx
+        jne     block_limits_done
+        or      ax, ax
+        jz      block_limits_done
+        mov     word ptr [tape_fixed_block], ax
+block_limits_done:
+        ret
+detect_block_limits endp
 
 call_aspi proc near
         push    ds
@@ -998,6 +1099,7 @@ scan_lun            db  0
 tape_ha             db  0
 tape_target         db  0
 tape_lun            db  0
+tape_fixed_block    dw  0
 device_state        db  0
 rmt_open_count      db  0
 last_scsi_status    db  0
@@ -1009,6 +1111,7 @@ sense_flags         db  0
 sense_info_valid    db  0
 sense_info_high     dw  0
 sense_info_low      dw  0
+block_limits        db  6 dup (0)
 srb                  db  ASPI_SRB_SIZE dup (0)
 
 resident_end label byte

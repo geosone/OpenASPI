@@ -115,6 +115,11 @@ no_device:
         jmp     aspi_done
 
 execute_scsi:
+        cmp     byte ptr es:[bx+SRB_CDB], 05h
+        jne     execute_data
+        call    execute_read_block_limits
+        jmp     aspi_done
+execute_data:
         cmp     byte ptr es:[bx+SRB_CDB], 08h
         je      execute_read
         cmp     byte ptr es:[bx+SRB_CDB], 0Ah
@@ -157,6 +162,11 @@ control_bad_scsi:
         jmp     bad_scsi
 
 execute_read:
+        cmp     byte ptr es:[bx+SRB_CDB+1], 1
+        jne     execute_variable_read
+        call    execute_fixed_read
+        jmp     aspi_done
+execute_variable_read:
 ifdef NO_RESIDUAL
         cmp     byte ptr es:[bx+SRB_Flags], SRB_DIR_IN
 else
@@ -283,6 +293,11 @@ aspi_entry endp
 ; Validate and complete the two writes issued by the DOS test. ES:BX points
 ; at the SRB and remains valid when this routine returns.
 execute_write proc near
+        cmp     byte ptr es:[bx+SRB_CDB+1], 1
+        jne     execute_variable_write
+        call    execute_fixed_write
+        ret
+execute_variable_write:
 ifdef NO_RESIDUAL
         cmp     byte ptr es:[bx+SRB_Flags], SRB_DIR_OUT
 else
@@ -360,6 +375,144 @@ write_bad_scsi:
         ret
 execute_write endp
 
+execute_fixed_read proc near
+ifdef NO_RESIDUAL
+        cmp     byte ptr es:[bx+SRB_Flags], SRB_DIR_IN
+else
+        cmp     byte ptr es:[bx+SRB_Flags], SRB_DIR_IN or SRB_RESIDUAL
+endif
+        jne     fixed_read_bad
+        cmp     byte ptr es:[bx+SRB_CDBLen], 6
+        jne     fixed_read_bad
+        cmp     byte ptr es:[bx+SRB_SenseLen], 32
+        jne     fixed_read_bad
+        cmp     word ptr es:[bx+SRB_BufLen], 1024
+        jne     fixed_read_bad
+        cmp     word ptr es:[bx+SRB_BufLen+2], 0
+        jne     fixed_read_bad
+        cmp     byte ptr es:[bx+SRB_CDB+2], 0
+        jne     fixed_read_bad
+        cmp     byte ptr es:[bx+SRB_CDB+3], 0
+        jne     fixed_read_bad
+        cmp     byte ptr es:[bx+SRB_CDB+4], 1
+        jne     fixed_read_bad
+        cmp     byte ptr es:[bx+SRB_CDB+5], 0
+        jne     fixed_read_bad
+
+        push    es
+        mov     ax, word ptr es:[bx+SRB_BufPointer+2]
+        mov     di, word ptr es:[bx+SRB_BufPointer]
+        mov     es, ax
+        mov     al, 5Ah
+        mov     cx, 1024
+        rep     stosb
+        pop     es
+ifndef NO_RESIDUAL
+        mov     word ptr es:[bx+SRB_BufLen], 0
+endif
+        mov     word ptr es:[bx+SRB_BufLen+2], 0
+        mov     byte ptr es:[bx+SRB_HaStat], 0
+        mov     byte ptr es:[bx+SRB_TargStat], 0
+        mov     byte ptr es:[bx+SRB_Status], SS_COMP
+        ret
+fixed_read_bad:
+        mov     byte ptr es:[bx+SRB_Status], SS_ERR
+        ret
+execute_fixed_read endp
+
+execute_fixed_write proc near
+ifdef NO_RESIDUAL
+        cmp     byte ptr es:[bx+SRB_Flags], SRB_DIR_OUT
+else
+        cmp     byte ptr es:[bx+SRB_Flags], SRB_DIR_OUT or SRB_RESIDUAL
+endif
+        jne     fixed_write_bad
+        cmp     byte ptr es:[bx+SRB_CDBLen], 6
+        jne     fixed_write_bad
+        cmp     byte ptr es:[bx+SRB_SenseLen], 32
+        jne     fixed_write_bad
+        cmp     word ptr es:[bx+SRB_BufLen], 1024
+        jne     fixed_write_bad
+        cmp     word ptr es:[bx+SRB_BufLen+2], 0
+        jne     fixed_write_bad
+        cmp     byte ptr es:[bx+SRB_CDB+2], 0
+        jne     fixed_write_bad
+        cmp     byte ptr es:[bx+SRB_CDB+3], 0
+        jne     fixed_write_bad
+        cmp     byte ptr es:[bx+SRB_CDB+4], 1
+        jne     fixed_write_bad
+        cmp     byte ptr es:[bx+SRB_CDB+5], 0
+        jne     fixed_write_bad
+
+        push    es
+        mov     ax, word ptr es:[bx+SRB_BufPointer+2]
+        mov     si, word ptr es:[bx+SRB_BufPointer]
+        mov     es, ax
+        mov     cx, 1024
+fixed_write_compare:
+        cmp     byte ptr es:[si], 0A5h
+        jne     fixed_write_payload_bad
+        inc     si
+        loop    fixed_write_compare
+        pop     es
+ifndef NO_RESIDUAL
+        mov     word ptr es:[bx+SRB_BufLen], 0
+endif
+        mov     word ptr es:[bx+SRB_BufLen+2], 0
+        mov     byte ptr es:[bx+SRB_HaStat], 0
+        mov     byte ptr es:[bx+SRB_TargStat], 0
+        mov     byte ptr es:[bx+SRB_Status], SS_COMP
+        ret
+fixed_write_payload_bad:
+        pop     es
+fixed_write_bad:
+        mov     byte ptr es:[bx+SRB_Status], SS_ERR
+        ret
+execute_fixed_write endp
+
+execute_read_block_limits proc near
+ifdef NO_RESIDUAL
+        cmp     byte ptr es:[bx+SRB_Flags], SRB_DIR_IN
+else
+        cmp     byte ptr es:[bx+SRB_Flags], SRB_DIR_IN or SRB_RESIDUAL
+endif
+        jne     block_limits_bad
+        cmp     byte ptr es:[bx+SRB_CDBLen], 6
+        jne     block_limits_bad
+        cmp     byte ptr es:[bx+SRB_SenseLen], 32
+        jne     block_limits_bad
+        cmp     word ptr es:[bx+SRB_BufLen], 6
+        jne     block_limits_bad
+        cmp     word ptr es:[bx+SRB_BufLen+2], 0
+        jne     block_limits_bad
+
+        push    ds
+        push    es
+        push    bx
+        mov     ax, word ptr es:[bx+SRB_BufPointer+2]
+        mov     di, word ptr es:[bx+SRB_BufPointer]
+        mov     es, ax
+        push    cs
+        pop     ds
+        mov     si, offset block_limits_response
+        mov     cx, 6
+        rep     movsb
+        pop     bx
+        pop     es
+        pop     ds
+ifndef NO_RESIDUAL
+        mov     word ptr es:[bx+SRB_BufLen], 0
+endif
+        mov     word ptr es:[bx+SRB_BufLen+2], 0
+        mov     byte ptr es:[bx+SRB_HaStat], 0
+        mov     byte ptr es:[bx+SRB_TargStat], 0
+        mov     byte ptr es:[bx+SRB_Status], SS_COMP
+        ret
+block_limits_bad:
+        mov     byte ptr es:[bx+SRB_Status], SS_ERR
+        ret
+execute_read_block_limits endp
+
 ; Copy CX bytes from CS:SI to the caller's transfer buffer while preserving
 ; the SRB pointer in ES:BX.
 copy_read_payload proc near
@@ -416,6 +569,11 @@ AFTER_FILEMARK_SIZE equ 16
 after_filemark_payload db 'AFTER-FILEMARK!!'
 WRITE_PAYLOAD_SIZE equ 12
 write_payload  db      'WRITE-RECORD'
+ifdef FIXED_BLOCK
+block_limits_response db 00h, 00h, 04h, 00h, 04h, 00h
+else
+block_limits_response db 00h, 00h, 0FFh, 0FFh, 00h, 01h
+endif
 expected_cdbs:
         db      00h, 00h, 00h, 00h, 00h, 00h ; MTNOP between RMT0 closes
         db      01h, 00h, 00h, 00h, 00h, 00h ; final RMT0 close rewinds

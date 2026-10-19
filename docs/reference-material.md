@@ -32,6 +32,16 @@ These are black-box compatibility fixtures.  Record hashes, command-line
 options and observed behavior in test logs; do not check the binaries into the
 OpenASPI repository.
 
+The original 1992 `ASPITAPE.ZIP` distribution and its `ASPITAPE.4` manual are
+available from the [Pier Shareware 1 archive](https://cdrom.classicistranieri.com/Pier%20Shareware%201/017A/ASPITAPE.ZIP).
+They confirm that mandatory SCSI fixed-block operation is selected using
+`READ BLOCK LIMITS`, whereas optional `MTx`/`NMTx` names implement a separate
+1024-byte software buffer. The archive is reference material only and is not
+redistributed by OpenASPI.
+
+Reference archive SHA-256:
+`62f5d4a75e8fa6baefce5aaea5e62642b72bd1e10c12784cdaf0c497e1495917`.
+
 ## Virtual tape integration
 
 - mhVTL provides Linux virtual SCSI tape drives and media changers.

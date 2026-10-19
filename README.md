@@ -29,9 +29,11 @@ unload are implemented. Short-record lengths use the ASPI residual extension
 when available and fixed-format ILI sense with older managers. A filemark
 returns one zero-byte read; EOM remains an error unless the application selects
 the documented ignore-EOT policy. Write-protection errors remain failed DOS
-writes and are visible through `mtget`. Fixed-block transfers and broader
-sense/error translation are the next implementation stages. The write path is
-emulator-tested but not yet qualified for production backups on real media.
+writes and are visible through `mtget`. `READ BLOCK LIMITS` detects drives
+which require fixed-size blocks; their byte requests must be integral block
+multiples and are translated to fixed-block SCSI transfers. Broader sense/error
+translation remains a later stage. The write path is emulator-tested but not
+yet qualified for production backups on real media.
 `RMT0` rewinds when its last tracked handle closes; `NRMT0`, `ASPISCAN` and
 `TAPECTL` leave the tape position unchanged.
 
@@ -80,9 +82,11 @@ tape. It verifies both device names, DOS raw-mode setup, full and residual
 variable-block reads, fixed-sense ILI short records, filemarks, both EOM
 policies, variable-block writes, write protection, `MTWEOF`, `mtget`, and the
 exact CDBs for readiness, spacing, rewind and unload without touching real tape
-media. Nested `RMT0` opens verify that rewind occurs only on final close, while
-`NRMT0` never rewinds. The test also runs against an old-manager fixture
-without residual support and uses the same SvarDOS fixture.
+media. Separate fixtures emulate a fixed 1024-byte drive and verify block-limit
+detection, integral-request enforcement, and fixed read/write CDBs. Every
+transfer fixture runs both with and without ASPI residual support. Nested
+`RMT0` opens verify that rewind occurs only on final close, while `NRMT0` never
+rewinds. All variants use the same SvarDOS fixture.
 
 `make dos-mhvtl-smoke` uses QEMU's emulated Tekram-compatible DC-390 controller
 and `scsi-generic` passthrough to exercise `ASPITAP.SYS` against an mhVTL tape.

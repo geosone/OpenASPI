@@ -13,9 +13,12 @@ manager's residual count to return short record lengths to DOS when available;
 exact-length reads also work with older managers without that extension.
 `RMT0` rewinds only when its final tracked handle closes; `NRMT0` never rewinds
 on close. Variable-block writes and explicit `MTWEOF` filemarks are emulator-
-tested, including a failed write-protected request. Fixed-block transfers
-remain unavailable, and the write path is not yet qualified for production
-backups on real media.
+tested, including a failed write-protected request. Fixed-block transfers are
+selected automatically for drives whose SCSI `READ BLOCK LIMITS` response
+requires one block size; nonintegral DOS requests are rejected. The historical
+optional `MT0`/`NMT0` 1024-byte buffering layer is a separate feature and is
+not yet exposed. The write path is not yet qualified for production backups
+on real media.
 
 Implementation order:
 
@@ -25,11 +28,13 @@ Implementation order:
    and `NRMT0` are present; units 1 through 3 follow multi-device discovery);
 4. [partial] implement open, close, raw mode, read and write request handling
    (variable-block reads and rewind/no-rewind close semantics are present;
-   variable-block writes are present; fixed-block transfers remain);
+   variable-block writes and mandatory fixed-block transfers are present;
+   historical optional buffering remains);
 5. [done] implement category `07h` generic IOCTL functions, including explicit
    `MTWEOF` filemark writing;
 6. translate CHECK CONDITION and fixed/descriptor sense data;
-7. add fixed- and variable-block tests using an emulator and real drives.
+7. [partial] add fixed- and variable-block tests (emulator coverage is present;
+   real-drive fixed-block qualification remains).
 
 The device uses attributes `8840h`, advertising the implemented open/close and
 generic IOCTL handlers but not legacy IOCTL support. Non-destructive diagnostic

@@ -57,8 +57,14 @@ than the caller's buffer) remains an error.
 One non-empty DOS write maps to one variable-block SCSI `WRITE(6)`. A complete
 write returns the input byte count. ASPI residuals are validated when the
 manager supports them; write protection and other CHECK CONDITION results stay
-failed DOS requests and remain visible through `mtget`. Fixed-block mode
-remains unavailable.
+failed DOS requests and remain visible through `mtget`.
+
+At installation, `READ BLOCK LIMITS` detects a drive whose minimum and maximum
+block sizes are the same. `mtget` then reports `FIXED_BLOCK` and that size.
+DOS reads and writes must contain an integral number of blocks; the driver sets
+the SCSI fixed bit and converts the byte count to a block count. This mandatory
+fixed-drive handling is distinct from the historical optional `MTx`/`NMTx`
+1024-byte buffering mode, which is not implemented yet.
 
 The current implementation discovers and exposes only the first tape drive.
 Medium changers and tape-library robotics are outside this stage.

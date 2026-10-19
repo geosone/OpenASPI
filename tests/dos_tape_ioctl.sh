@@ -15,16 +15,28 @@ mkdir -p "$OUT"
 
 run_fixture() {
     local variant=$1 run_dir="$OUT/$1" defines=()
+    local test_source="$ROOT/tests/tape_ioctl.asm"
+    local success_text='OpenASPI tape IOCTL smoke test passed'
 
-    if test "$variant" = legacy; then
-        defines=(-DNO_RESIDUAL)
-    fi
+    case "$variant" in
+        legacy) defines=(-DNO_RESIDUAL) ;;
+        fixed)
+            defines=(-DFIXED_BLOCK)
+            test_source="$ROOT/tests/tape_fixed.asm"
+            success_text='OpenASPI fixed-block tape smoke test passed'
+            ;;
+        fixed-legacy)
+            defines=(-DFIXED_BLOCK -DNO_RESIDUAL)
+            test_source="$ROOT/tests/tape_fixed.asm"
+            success_text='OpenASPI fixed-block tape smoke test passed'
+            ;;
+    esac
 
     mkdir -p "$run_dir"
     "$JWASM" -q -bin -0 -W4 -WX "${defines[@]}" -I"$ROOT/" \
         -Fo="$run_dir/MOCKASPI.SYS" "$ROOT/tests/mockaspi.asm"
     "$JWASM" -q -bin -0 -W4 -WX "${defines[@]}" \
-        -Fo="$run_dir/TAPETEST.COM" "$ROOT/tests/tape_ioctl.asm"
+        -Fo="$run_dir/TAPETEST.COM" "$test_source"
     "$JWASM" -q -bin -0 -W4 -WX \
         -Fo="$run_dir/QEXIT.COM" "$ROOT/tests/qexit.asm"
 
@@ -70,16 +82,19 @@ run_fixture() {
 
     tr -d '\r' < "$run_dir/serial.log"
     grep -q 'OpenASPI TAPECTL status passed' "$run_dir/serial.log"
-    grep -q 'OpenASPI tape IOCTL smoke test passed' "$run_dir/serial.log"
+    grep -q "$success_text" "$run_dir/serial.log"
     ! grep -q 'FAILED' "$run_dir/serial.log"
-    if test "$variant" = residual; then
-        grep -q 'extensions=0002' "$run_dir/serial.log"
-    else
+    case "$variant" in
+      legacy|fixed-legacy)
         grep -q 'extensions=0000' "$run_dir/serial.log"
-    fi
+        ;;
+      *) grep -q 'extensions=0002' "$run_dir/serial.log" ;;
+    esac
 }
 
 run_fixture residual
 run_fixture legacy
+run_fixture fixed
+run_fixture fixed-legacy
 
 echo 'OpenASPI emulated-tape smoke test passed'
