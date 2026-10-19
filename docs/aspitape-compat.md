@@ -155,7 +155,7 @@ The SCSI status and sense remain inspectable after reopen. Applications must
 check tape status for delayed write errors because DOS may disregard device
 close errors.
 
-A failed or short physical buffered write also saves its diagnostic tuple:
+A failed or short physical buffered write saves its diagnostic tuple:
 SCSI status, sense key, opcode, residual byte count and driver error.
 If a readiness barrier fails before the data CDB is sent, the snapshot's
 opcode identifies that failing readiness command instead. Both
@@ -166,23 +166,38 @@ bits still describe the current session, but the diagnostic fields refer to
 the failed write, not the latest readiness/control command. The 14-byte ABI
 has no spare state bit and returns the same saved diagnostic fields.
 
-The active session remains locked against data retries and automatic
-finalization. A new session may write again. The diagnostic snapshot is
+Failed written-session finalization saves the same diagnostic tuple for both
+raw and buffered aliases: writing the two filemarks, `NRMT0`/`NMT0` backspacing
+over the last filemark, or `RMT0`/`MT0` submitting the close rewind. Finalization
+stops at the first failed step. In particular, failed filemarks do not trigger
+spacing or rewind afterwards. DOS may ignore the close error, but a new open
+and successful `MTNOP` cannot hide it. Read-only close rewind failures retain
+the ordinary live status; they are not classified as failed writes.
+
+After a buffered data failure, the active session remains locked against data
+retries and automatic finalization. Finalization failures occur on final close,
+so the session has already ended; a duplicate close does not retry any steps.
+A new session may write again. The diagnostic snapshot is
 cleared only by a full physical data write completed with ASPI success and
 zero residual, through either raw or buffered aliases. Merely opening a new
 session, accepting bytes into the software cache, a zero-length write,
 writing filemarks, moving tape, or a partial/ignored-EOT transfer does not
-acknowledge the failure. Another failed physical buffered write replaces
-the snapshot with its own failure. This protects delayed errors without
-silently replaying potentially consumed records. It does not restore tape
+acknowledge the failure. Another buffered write or written-session
+finalization failure replaces the snapshot with its own failure. This protects
+delayed errors without silently replaying potentially consumed records. It does not restore tape
 position or make appending after an error safe; the caller must choose the
 appropriate media recovery and positioning before starting a new session.
 
 After any write, later reads in the same open session are rejected. On final
 close, a written session receives two filemarks. `RMT0` then rewinds; `NRMT0`
 spaces backward over one filemark and leaves the tape positioned between the
-pair for a later append. A zero-byte DOS write marks the session as written for
-this close processing but does not create a zero-length data record.
+pair for a later append. A zero-byte write request delivered to the driver
+marks the session as written for this close processing but does not create a
+zero-length data record. This does not make a zero-byte DOS API write a portable
+way to request filemarks: the tested SvarDOS kernel returns zero without
+delivering that call to the character driver. Tests verify that such an empty
+non-rewinding session issues no data or filemark commands. Applications should
+use explicit `MTWEOF` when they need to write filemarks.
 
 The current implementation discovers and exposes only the first tape drive.
 Medium changers and tape-library robotics are outside this stage.

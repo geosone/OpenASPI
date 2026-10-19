@@ -264,7 +264,19 @@ endif
 ifdef BUFFER_ERROR
 error_scenario:
         mov byte ptr [stage], 'E'
+ifdef FINAL_RAW
+ifdef FINAL_REWIND_ERROR
+        mov dx, offset rmt_raw_name
+else
+        mov dx, offset raw_name
+endif
+else
+ifdef FINAL_REWIND_ERROR
+        mov dx, offset mt_name
+else
         mov dx, offset nmt_name
+endif
+endif
         call open_raw
         expect_ok
         mov word ptr [handle], ax
@@ -298,8 +310,22 @@ ifdef BUFFER_WRITE_ERROR
         expect_error                 ; a failed physical record is not replayed
         call verify_write_error
 else
+ifdef FINAL_EMPTY
+        xor cx, cx
+        call write_expect            ; SvarDOS short-circuits empty DOS writes
+        call get_status
+        expect_ok
+        test byte ptr [status+4], 8
+        expect_equal                 ; no written-session state was delivered
+else
+ifdef FINAL_RAW
+        mov cx, 1024
+        call write_expect            ; finalization fails after a full raw write
+else
         mov cx, 3
         call write_expect            ; error will occur while padding on close
+endif
+endif
 endif
         call close_handle            ; DOS may ignore device-close errors
         mov dx, offset raw_name
@@ -352,6 +378,35 @@ ifdef BUFFER_ERROR
 verify_write_error proc near
         call get_status
         expect_ok
+ifdef FINAL_EMPTY
+        cmp word ptr [status+8], 0
+        expect_equal
+        cmp byte ptr [status_extended+7], 0
+        expect_equal
+        test word ptr [status_extended+4], 0200h
+        expect_equal
+        ret
+else
+ifdef FINAL_ERROR
+        cmp byte ptr [status+8], 2
+        expect_equal
+        cmp byte ptr [status+9], 3
+        expect_equal
+        cmp byte ptr [status_extended+7], 3
+        expect_equal
+        cmp word ptr [status+12], 0
+        expect_equal
+ifdef FINAL_MARK_ERROR
+        cmp byte ptr [status+10], 10h
+else
+ifdef FINAL_SPACE_ERROR
+        cmp byte ptr [status+10], 11h
+else
+        cmp byte ptr [status+10], 1
+endif
+endif
+        expect_equal
+else
 ifdef BUFFER_SHORT_WRITE
         cmp byte ptr [status+8], 0
         expect_equal
@@ -371,13 +426,15 @@ else
         cmp word ptr [status+12], 1024
         expect_equal
 endif
+        cmp byte ptr [status+10], 0Ah
+        expect_equal
+endif
         mov ax, word ptr [status_extended+4]
         and ax, 0200h
         cmp ax, 0200h
         expect_equal
-        cmp byte ptr [status+10], 0Ah
-        expect_equal
         ret
+endif
 verify_write_error endp
 endif
 
@@ -524,6 +581,7 @@ mt_name db 'MT0', 0
 nmt_name db 'NMT0', 0
 raw_name db 'NRMT0', 0
 endif
+rmt_raw_name db 'RMT0', 0
 stage db '?'
 handle dw 0
 handle2 dw 0

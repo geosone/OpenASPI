@@ -17,9 +17,13 @@ buffered_event_in_range:
         jmp buffered_bad
 buffered_opcode_ok:
         cmp byte ptr es:[bx+SRB_CDBLen], 6
-        jne buffered_bad
+        je buffered_cdb_length_ok
+        jmp buffered_bad
+buffered_cdb_length_ok:
         cmp byte ptr es:[bx+SRB_SenseLen], 32
-        jne buffered_bad
+        je buffered_sense_length_ok
+        jmp buffered_bad
+buffered_sense_length_ok:
         inc byte ptr cs:[buffer_event]
         cmp al, 8
         je buffered_data
@@ -53,6 +57,32 @@ buffered_backspace:
         cmp byte ptr es:[bx+SRB_CDB+4], 0FFh
         jne buffered_bad
 buffered_good:
+ifdef FINAL_ERROR
+ifdef FINAL_MARK_ERROR
+        cmp byte ptr es:[bx+SRB_CDB], 10h
+else
+ifdef FINAL_SPACE_ERROR
+        cmp byte ptr es:[bx+SRB_CDB], 11h
+else
+        cmp byte ptr es:[bx+SRB_CDB], 1
+endif
+endif
+        jne buffered_final_good
+ifdef FINAL_REWIND_ERROR
+ifdef FINAL_IMMED
+        cmp byte ptr es:[bx+SRB_CDB+1], 1
+else
+        cmp byte ptr es:[bx+SRB_CDB+1], 0
+endif
+        jne buffered_bad
+endif
+        mov byte ptr es:[bx+SRB_CDB+16], 70h
+        mov byte ptr es:[bx+SRB_CDB+18], 3 ; MEDIUM ERROR
+        mov byte ptr es:[bx+SRB_TargStat], 2
+        mov byte ptr es:[bx+SRB_Status], SS_ERR
+        ret
+buffered_final_good:
+endif
         mov byte ptr es:[bx+SRB_Status], SS_COMP
         ret
 buffered_bad:
@@ -97,6 +127,12 @@ ifdef BUFFER_WRITE_ERROR
         jc buffered_payload_bad
 else
 ifdef BUFFER_CLOSE_ERROR
+ifdef FINAL_RAW
+        mov cx, 1024
+        mov al, 'Z'
+        call buffered_compare
+        jc buffered_payload_bad
+else
         mov cx, 3
         mov al, 'Z'
         call buffered_compare
@@ -105,6 +141,7 @@ ifdef BUFFER_CLOSE_ERROR
         xor al, al
         call buffered_compare
         jc buffered_payload_bad
+endif
 else
         cmp byte ptr cs:[buffer_event], 11
         jne buffered_tail_payload
@@ -130,6 +167,10 @@ endif
 endif
 buffered_payload_ok:
         pop es
+ifdef FINAL_ERROR
+        mov word ptr es:[bx+SRB_BufLen], 0
+        jmp buffered_good
+else
 ifdef BUFFER_ERROR
 ifdef BUFFER_RECOVERY
         cmp byte ptr cs:[buffer_event], 1
@@ -155,6 +196,7 @@ ifndef NO_RESIDUAL
         mov word ptr es:[bx+SRB_BufLen], 0
 endif
         jmp buffered_good
+endif
 endif
 buffered_payload_bad:
         pop es
@@ -253,6 +295,24 @@ buffered_compare endp
 buffer_event db 0
 buffer_protocol_error db 0
 buffer_events:
+ifdef FINAL_ERROR
+ifdef FINAL_EMPTY
+        db 00h                       ; no WRITE/marks for a suppressed DOS write
+else
+        db 0Ah
+        db 10h
+ifdef FINAL_MARK_ERROR
+        db 00h
+else
+ifdef FINAL_SPACE_ERROR
+        db 11h, 00h
+else
+        db 01h, 00h
+endif
+endif
+endif
+BUFFER_EVENT_COUNT equ $ - buffer_events
+else
 ifdef BUFFER_DISCARD
         db 11h, 10h, 11h, 00h
 BUFFER_EVENT_COUNT equ 4
@@ -274,5 +334,6 @@ else
         db 01h, 08h, 08h, 00h, 08h, 08h, 08h, 08h
         db 11h, 08h, 0Ah, 00h, 0Ah, 10h, 11h, 00h
 BUFFER_EVENT_COUNT equ 16
+endif
 endif
 endif

@@ -298,11 +298,17 @@ close_last_handle:
         call    flush_tape_buffer
         jc      request_error
         call    finish_written_tape
-        jc      request_error
+        jc      close_write_error
         cmp     byte ptr [request_rewind], 0
         je      close_complete
         call    rewind_on_close
-        jc      request_error
+        jnc     close_complete
+        test    byte ptr [device_state], MT_STATE_WRITTEN
+        jnz     close_write_error
+        jmp     request_error
+close_write_error:
+        call    save_write_error
+        jmp     request_error
 close_complete:
         and     byte ptr [device_state], MT_STATE_EOM_EOF
         jmp     request_success
@@ -637,7 +643,8 @@ read_condition_error:
 read_request endp
 
 ; Process one DOS output request as one variable-length SCSI tape record.
-; A zero-byte DOS write marks the session written without issuing a data CDB.
+; A zero-byte driver write request marks the session written without a data
+; CDB; some DOS kernels suppress zero-byte API writes before driver dispatch.
 write_request proc near
         mov     byte ptr [driver_error], 17
         les     bx, [request_ptr]
@@ -1028,6 +1035,15 @@ write_buffer_record proc near
         clc
         ret
 write_buffer_failed:
+        call    save_write_error
+        mov     byte ptr [buffer_write_failed], 1
+        stc
+        ret
+write_buffer_record endp
+
+; Shared by data flush and written-session finalization. DOS may ignore a
+; close error, so failed filemarks/positioning need the same durable status.
+save_write_error proc near
         call    record_driver_error
         mov     al, byte ptr [driver_error]
         mov     byte ptr [write_error_code], al
@@ -1040,10 +1056,8 @@ write_buffer_failed:
         mov     ax, word ptr [residual_bytes]
         mov     word ptr [write_error_residual], ax
         mov     byte ptr [write_error_valid], 1
-        mov     byte ptr [buffer_write_failed], 1
-        stc
         ret
-write_buffer_record endp
+save_write_error endp
 
 flush_tape_buffer proc near
         cmp     byte ptr [session_buffered], 0

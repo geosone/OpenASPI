@@ -21,6 +21,28 @@ run_fixture() {
     local manager_line='DEVICE=MOCKASPI.SYS'
 
     case "$variant" in
+        final-*)
+            defines=(-DBUFFERED_TEST -DBUFFER_ERROR -DBUFFER_CLOSE_ERROR -DFINAL_ERROR)
+            test_source="$ROOT/tests/tape_buffered.asm"
+            success_text='OpenASPI buffered tape smoke test passed'
+            driver_line='DEVICE=ASPITAP.SYS -bw'
+            case "$variant" in
+                final-marks*) defines+=(-DFINAL_MARK_ERROR) ;;
+                final-space*) defines+=(-DFINAL_SPACE_ERROR) ;;
+                final-rewind*) defines+=(-DFINAL_REWIND_ERROR) ;;
+                final-empty*) defines+=(-DFINAL_MARK_ERROR -DFINAL_EMPTY) ;;
+            esac
+            case "$variant" in
+                *-empty*) defines+=(-DFINAL_EMPTY) ;;
+            esac
+            case "$variant" in
+                *-raw) defines+=(-DFINAL_RAW); driver_line='DEVICE=ASPITAP.SYS -w' ;;
+                *-legacy) defines+=(-DNO_RESIDUAL) ;;
+                *-fixed) defines+=(-DFIXED_BLOCK) ;;
+                *-status16) defines+=(-DSTATUS16); driver_line='DEVICE=ASPITAP.SYS -2bw' ;;
+                *-immed) defines+=(-DFINAL_IMMED); driver_line='DEVICE=ASPITAP.SYS -b' ;;
+            esac
+            ;;
         status16|status16-fixed|status16-buffered|status16-rewind)
             defines=(-DSTATUS16)
             driver_line='DEVICE=ASPITAP.SYS -2w'
@@ -214,7 +236,7 @@ run_fixture() {
     grep -q "$success_text" "$run_dir/serial.log"
     ! grep -q 'FAILED' "$run_dir/serial.log"
     case "$variant" in
-      legacy|fixed-legacy|buffered-legacy|buffered-fixed-legacy|buffered-write-error-legacy|buffered-close-error-legacy)
+      legacy|fixed-legacy|buffered-legacy|buffered-fixed-legacy|buffered-write-error-legacy|buffered-close-error-legacy|final-*-legacy)
         grep -q 'extensions=0000' "$run_dir/serial.log"
         ;;
       no-manager|no-adapters|bad-inquiry) ;;
@@ -316,6 +338,18 @@ run_fixture status16
 run_fixture status16-fixed
 run_fixture status16-buffered
 run_fixture status16-rewind
+run_fixture final-marks
+run_fixture final-space
+run_fixture final-rewind
+run_fixture final-marks-raw
+run_fixture final-space-raw
+run_fixture final-rewind-raw
+run_fixture final-marks-legacy
+run_fixture final-space-fixed
+run_fixture final-rewind-status16
+run_fixture final-rewind-immed
+run_fixture final-empty
+run_fixture final-empty-raw
 fi
 
 echo 'OpenASPI emulated-tape smoke test passed'

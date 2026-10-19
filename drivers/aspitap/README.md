@@ -48,6 +48,12 @@ DOS may ignore a failed device-close request,
 so delayed flush errors must also be checked through tape status. The extra
 1024-byte cache is retained in DOS memory only with `-b`.
 
+The same diagnostic snapshot also records failed final-close filemarks,
+backspacing and written-session rewind commands for raw and buffered names.
+Finalization stops on the first error and does not retry on a duplicate close.
+It remains visible across reopening and successful readiness checks, because
+DOS may otherwise discard the close failure.
+
 By default, a final `RMT0` close sends REWIND with IMMED set. Reopening and
 querying status remain possible while `mtget` reports `REWINDING`. The next
 read, write, tape operation or additional rewind waits for readiness, polling
