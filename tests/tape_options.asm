@@ -11,6 +11,20 @@ start:
         push    cs
         pop     ds
 
+        ; -tS and -$ rename RMT0/NRMT0 to RST0$/NRST0$.
+        mov     dx, offset rmt_name
+        call    open_raw
+        jnc     rmt_opened
+        jmp     failed
+rmt_opened:
+        mov     word ptr [handle1], ax
+        mov     bx, ax
+        mov     ah, 3Eh
+        int     21h
+        jnc     rmt_closed
+        jmp     failed
+rmt_closed:
+
         mov     dx, offset nrmt_name
         call    open_raw
         jc      failed
@@ -104,7 +118,8 @@ open_failed:
         ret
 open_raw endp
 
-nrmt_name       db      'NRMT0', 0
+rmt_name        db      'RST0$', 0
+nrmt_name       db      'NRST0$', 0
 handle1         dw      0
 handle2         dw      0
 buffer          db      2 dup (0)

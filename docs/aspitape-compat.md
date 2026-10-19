@@ -8,10 +8,13 @@ Interrupt List for Greg Shenaut's `ASPITAPE.SYS`.
 - `RMT0` through `RMT3`: rewind on final close;
 - `NRMT0` through `NRMT3`: no rewind on close;
 - optional `MT0`/`NMT0` forms: historical 1024-byte defaults;
-- optional `$` suffix variants for name disambiguation.
+- optional `-$` suffix variants for name disambiguation;
+- optional `-tX` replacement of the `M` in every device name.
 
 Only names backed by detected devices should be exposed.  Programs must put an
 opened device into DOS raw mode before transferring tape data.
+OpenASPI implements `-tX` and `-$`; for example, `-tS -$` exposes `RST0$`
+and `NRST0$` for the currently supported first drive.
 
 ## Generic IOCTL
 

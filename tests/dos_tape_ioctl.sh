@@ -35,7 +35,7 @@ run_fixture() {
             defines=(-DOPTION_OVERRIDES)
             test_source="$ROOT/tests/tape_options.asm"
             success_text='OpenASPI tape option smoke test passed'
-            driver_line='DEVICE=ASPITAP.SYS -m -s'
+            driver_line='DEVICE=ASPITAP.SYS -ms$tS'
             ;;
     esac
 
@@ -88,7 +88,12 @@ run_fixture() {
     fi
 
     tr -d '\r' < "$run_dir/serial.log"
-    grep -q 'OpenASPI TAPECTL status passed' "$run_dir/serial.log"
+    if test "$variant" = options; then
+        grep -q 'ASPITAP RMT0 absent' "$run_dir/serial.log"
+        grep -q 'Cannot open NRMT0' "$run_dir/serial.log"
+    else
+        grep -q 'OpenASPI TAPECTL status passed' "$run_dir/serial.log"
+    fi
     grep -q "$success_text" "$run_dir/serial.log"
     ! grep -q 'FAILED' "$run_dir/serial.log"
     case "$variant" in

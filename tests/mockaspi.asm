@@ -654,7 +654,7 @@ endif
 set_descriptor_condition endp
 
 ifdef OPTION_OVERRIDES
-EXPECTED_COUNT equ     2
+EXPECTED_COUNT equ     3
 else
 ifdef FIXED_BLOCK
 EXPECTED_COUNT equ     2
@@ -687,6 +687,7 @@ block_limits_response db 00h, 00h, 0FFh, 0FFh, 00h, 01h
 endif
 expected_cdbs:
 ifdef OPTION_OVERRIDES
+        db      01h, 00h, 00h, 00h, 00h, 00h ; RST0$ close: rewind
         db      10h, 00h, 00h, 00h, 02h, 00h ; close: two filemarks
         db      11h, 01h, 0FFh, 0FFh, 0FFh, 00h ; close: backspace one
 else

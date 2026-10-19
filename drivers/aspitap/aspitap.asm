@@ -70,6 +70,7 @@ MT_STATE_EOM_EOF equ    040h
 
 OPT_ALLOW_SINGLE equ    001h
 OPT_ALLOW_MULTIPLE equ  002h
+OPT_NAME_SUFFIX  equ    004h
 
 SENSE_FILEMARK  equ     080h
 SENSE_EOM       equ     040h
@@ -80,14 +81,14 @@ driver_start:
         dw      DEV_ATTR
         dw      strategy_rmt
         dw      interrupt
-        db      'RMT0    '
+rmt_device_name db      'RMT0    '
 
 nrmt_header:
         dd      0FFFFFFFFh              ; end of DOS device chain
         dw      DEV_ATTR
         dw      strategy_nrmt
         dw      interrupt
-        db      'NRMT0   '
+nrmt_device_name db     'NRMT0   '
 
 request_ptr     dd      0
 request_rewind  db      0
@@ -140,7 +141,7 @@ dispatch_read:
         je      read_request_dispatch
         cmp     al, CMD_WRITE
         je      write_request_dispatch
-        jmp     short unsupported
+        jmp     unsupported
 
 read_request_dispatch:
         call    read_request
@@ -158,6 +159,7 @@ write_request_success:
 
 init_request:
         call    parse_init_options
+        call    apply_device_names
         call    discover_tape
         jc      init_failed
 
@@ -1110,15 +1112,22 @@ parse_init_options proc near
         les     si, dword ptr es:[bx+REQ_INIT_ARGS]
         mov     ax, es
         or      ax, si
-        jz      init_options_done
+        jnz     init_options_scan
+        jmp     init_options_done
 init_options_scan:
         mov     al, byte ptr es:[si]
         or      al, al
-        jz      init_options_done
+        jnz     init_options_scan_cr
+        jmp     init_options_done
+init_options_scan_cr:
         cmp     al, 0Dh
-        je      init_options_done
+        jne     init_options_scan_lf
+        jmp     init_options_done
+init_options_scan_lf:
         cmp     al, 0Ah
-        je      init_options_done
+        jne     init_options_scan_prefix
+        jmp     init_options_done
+init_options_scan_prefix:
         cmp     al, '-'
         je      init_options_prefix
         cmp     al, '/'
@@ -1130,19 +1139,38 @@ init_options_prefix:
 init_options_cluster:
         mov     al, byte ptr es:[si]
         or      al, al
-        jz      init_options_done
+        jnz     init_options_cluster_cr
+        jmp     init_options_done
+init_options_cluster_cr:
         cmp     al, 0Dh
-        je      init_options_done
+        jne     init_options_cluster_lf
+        jmp     init_options_done
+init_options_cluster_lf:
         cmp     al, 0Ah
-        je      init_options_done
+        jne     init_options_cluster_space
+        jmp     init_options_done
+init_options_cluster_space:
         cmp     al, ' '
-        je      init_options_scan
+        jne     init_option_skip_tab
+        jmp     init_options_scan
+init_option_skip_tab:
         cmp     al, 9
-        je      init_options_scan
+        jne     init_option_skip_dash
+        jmp     init_options_scan
+init_option_skip_dash:
         cmp     al, '-'
-        je      init_options_prefix
+        jne     init_option_skip_slash
+        jmp     init_options_prefix
+init_option_skip_slash:
         cmp     al, '/'
-        je      init_options_prefix
+        jne     init_option_skip_next
+        jmp     init_options_prefix
+init_option_skip_next:
+        cmp     al, '$'
+        jne     init_option_letter
+        or      byte ptr [config_options], OPT_NAME_SUFFIX
+        jmp     short init_option_next
+init_option_letter:
         and     al, 0DFh
         cmp     al, 'S'
         jne     init_option_not_single
@@ -1150,14 +1178,68 @@ init_options_cluster:
         jmp     short init_option_next
 init_option_not_single:
         cmp     al, 'M'
-        jne     init_option_next
+        jne     init_option_not_multiple
         or      byte ptr [config_options], OPT_ALLOW_MULTIPLE
+        jmp     short init_option_next
+init_option_not_multiple:
+        cmp     al, 'T'
+        jne     init_option_skip_token
+        inc     si
+        mov     al, byte ptr es:[si]
+        and     al, 0DFh
+        cmp     al, 'A'
+        jb      init_option_skip_token
+        cmp     al, 'Z'
+        ja      init_option_skip_token
+        mov     byte ptr [config_name_letter], al
 init_option_next:
         inc     si
         jmp     short init_options_cluster
+init_option_skip_token:
+        inc     si
+init_option_skip_loop:
+        mov     al, byte ptr es:[si]
+        or      al, al
+        jz      init_options_done
+        cmp     al, 0Dh
+        je      init_options_done
+        cmp     al, 0Ah
+        je      init_options_done
+        cmp     al, ' '
+        jne     init_option_skip_loop_tab
+        jmp     init_options_scan
+init_option_skip_loop_tab:
+        cmp     al, 9
+        jne     init_option_skip_loop_dash
+        jmp     init_options_scan
+init_option_skip_loop_dash:
+        cmp     al, '-'
+        jne     init_option_skip_loop_slash
+        jmp     init_options_prefix
+init_option_skip_loop_slash:
+        cmp     al, '/'
+        jne     init_option_skip_loop_next
+        jmp     init_options_prefix
+init_option_skip_loop_next:
+        inc     si
+        jmp     short init_option_skip_loop
 init_options_done:
         ret
 parse_init_options endp
+
+; Apply the historical -tX base-letter replacement and -$ collision suffix
+; before DOS links the resident character-device headers into its name table.
+apply_device_names proc near
+        mov     al, byte ptr [config_name_letter]
+        mov     byte ptr [rmt_device_name+1], al
+        mov     byte ptr [nrmt_device_name+2], al
+        test    byte ptr [config_options], OPT_NAME_SUFFIX
+        jz      device_names_done
+        mov     byte ptr [rmt_device_name+4], '$'
+        mov     byte ptr [nrmt_device_name+5], '$'
+device_names_done:
+        ret
+apply_device_names endp
 
 ; READ BLOCK LIMITS distinguishes drives which require a single fixed block
 ; size from variable-block drives. Version 1 of the ASPITAPE status ABI can
@@ -1278,7 +1360,7 @@ print_nibble endp
 
 manager_name        db  'SCSIMGR$', 0
 banner_found        db  'OpenASPI ASPITAP: tape found at $'
-banner_tail         db  '; RMT0 and NRMT0 ready', 13, 10, '$'
+banner_tail         db  '; tape device names ready', 13, 10, '$'
 banner_missing      db  'OpenASPI ASPITAP: no ASPI tape; not installed', 13, 10, '$'
 
 aspi_entry          dd  0
@@ -1294,6 +1376,7 @@ tape_target         db  0
 tape_lun            db  0
 tape_fixed_block    dw  0
 config_options      db  0
+config_name_letter  db  'M'
 device_state        db  0
 tape_open_count     db  0
 last_scsi_status    db  0

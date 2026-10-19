@@ -42,7 +42,8 @@ required block size.
 Tape data transfer requires one exclusive open handle and DOS raw mode;
 single-byte cooked-mode requests are rejected by default. Add -m to the
 ASPITAP.SYS CONFIG.SYS line to permit multiple-open transfers, and -s to permit
-single-byte transfers.
+single-byte transfers. The -tX option replaces the M in the device names with
+letter X; -$ appends a collision-avoiding dollar sign.
 Only one tape drive is exposed; medium-changer/library control is not part of
 this stage. The write path is not yet qualified for production backups on real
 media. Closing a written session adds two terminating filemarks; NRMT0 then

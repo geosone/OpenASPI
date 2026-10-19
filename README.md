@@ -37,7 +37,9 @@ yet qualified for production backups on real media.
 Data reads and writes require exactly one open tape handle. Single-byte data
 requests are rejected by default, matching ASPITAPE's guard against DOS cooked
 character-device I/O. The historical `-m` (allow multiple-open transfers) and
-`-s` (allow single-byte I/O) `CONFIG.SYS` overrides are implemented.
+`-s` (allow single-byte I/O) `CONFIG.SYS` overrides are implemented. `-tX`
+changes the `M` in the device names, and `-$` appends a collision-avoiding
+dollar sign.
 `RMT0` rewinds when its last tracked handle closes; `NRMT0`, `ASPISCAN` and
 `TAPECTL` leave an unwritten tape position unchanged. A written final close
 adds the historical two-filemark terminator; `NRMT0` then backspaces one mark,
@@ -96,8 +98,9 @@ is open and that rewind occurs only on final close. Single-byte cooked-mode
 requests are rejected, while `NRMT0` never rewinds. Written-session tests
 verify read-after-write rejection and the final two-filemark/append positioning
 sequence. All variants use the same SvarDOS fixture.
-An additional boot fixture loads `ASPITAP.SYS -m -s` and verifies that both
-default transfer guards are disabled.
+An additional boot fixture loads the clustered options `ASPITAP.SYS -ms$tS`,
+opens the resulting `RST0$`/`NRST0$` names, and verifies that both default
+transfer guards are disabled.
 
 `make dos-mhvtl-smoke` uses QEMU's emulated Tekram-compatible DC-390 controller
 and `scsi-generic` passthrough to exercise `ASPITAP.SYS` against an mhVTL tape.

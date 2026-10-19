@@ -28,11 +28,15 @@ Data transfers require exactly one open tape handle and reject one-byte
 requests by default. The latter is the historical cooked-mode safeguard:
 applications are expected to put the character device into raw mode. The
 historical `-m` and `-s` `CONFIG.SYS` overrides enable multiple-open and
-single-byte transfers respectively. For example:
+single-byte transfers respectively. `-tX` replaces the `M` in all device
+names with letter `X`, while `-$` appends a dollar sign to reduce DOS filename
+collisions. Options may be clustered. For example:
 
 ```text
-DEVICE=ASPITAP.SYS -m -s
+DEVICE=ASPITAP.SYS -ms$tS
 ```
+
+This example installs `RST0$` and `NRST0$`.
 
 CHECK CONDITION decoding accepts both fixed and descriptor sense. Descriptor
 information and stream-command descriptors provide residual ILI lengths,
