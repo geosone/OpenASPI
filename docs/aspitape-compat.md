@@ -73,6 +73,10 @@ multiple-open transfers and `-s` override for single-byte transfers are
 implemented as `CONFIG.SYS` arguments. Upper/lower case, `-`/`/` prefixes and
 option clusters such as `-ms` are accepted. Open and close requests themselves
 remain tracked so final-close processing occurs at the correct time.
+Malformed or unsupported options abort installation before ASPI discovery;
+they are not silently ignored. `-t` requires an immediate alphabetic name
+letter. Historical buffering (`-b`), rewind timing (`-w`), Ctrl-Break (`-i`)
+and verbose output (`-v`/`-d`) switches remain unimplemented.
 
 At installation, `READ BLOCK LIMITS` detects a drive whose minimum and maximum
 block sizes are the same. `mtget` then reports `FIXED_BLOCK` and that size.

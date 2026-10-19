@@ -37,6 +37,12 @@ DEVICE=ASPITAP.SYS -ms$tS
 ```
 
 This example installs `RST0$` and `NRST0$`.
+The name letter must follow `-t` immediately and be in `A` through `Z` (case
+insensitive). An incomplete `-t`, an invalid letter, an empty option prefix,
+or an unsupported switch aborts installation with an error message. In
+particular, `-b`, `-w`, `-i`, `-v` and `-d` are not implemented and must not
+be supplied. The driver pathname is skipped as a whole token, so hyphens in
+directory names do not enable options.
 
 CHECK CONDITION decoding accepts both fixed and descriptor sense. Descriptor
 information and stream-command descriptors provide residual ILI lengths,

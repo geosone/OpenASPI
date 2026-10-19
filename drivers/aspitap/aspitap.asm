@@ -159,6 +159,10 @@ write_request_success:
 
 init_request:
         call    parse_init_options
+        jnc     init_options_valid
+        mov     dx, offset banner_bad_options
+        jmp     init_report_failure
+init_options_valid:
         call    apply_device_names
         call    discover_tape
         jc      init_failed
@@ -187,11 +191,12 @@ init_request:
         jmp     request_done
 
 init_failed:
+        mov     dx, offset banner_missing
+init_report_failure:
         les     bx, [request_ptr]
         mov     word ptr es:[bx+0Eh], 0
         mov     word ptr es:[bx+10h], cs
         mov     word ptr es:[bx+REQ_STATUS], 810Ch
-        mov     dx, offset banner_missing
         mov     ah, 09h
         int     21h
         jmp     request_done
@@ -1108,6 +1113,7 @@ discover_tape endp
 ; prefixes and upper/lower case are accepted; option clusters are permitted.
 parse_init_options proc near
         mov     byte ptr [config_options], 0
+        mov     byte ptr [config_name_letter], 'M'
         les     bx, [request_ptr]
         les     si, dword ptr es:[bx+REQ_INIT_ARGS]
         mov     ax, es
@@ -1128,14 +1134,43 @@ init_options_scan_lf:
         jne     init_options_scan_prefix
         jmp     init_options_done
 init_options_scan_prefix:
+        cmp     al, ' '
+        je      init_options_whitespace
+        cmp     al, 9
+        je      init_options_whitespace
         cmp     al, '-'
         je      init_options_prefix
         cmp     al, '/'
         je      init_options_prefix
+        ; DOS may include the driver pathname before the arguments. Skip
+        ; that whole token so a '-' within a pathname is not an option.
+init_options_skip_path:
+        inc     si
+        mov     al, byte ptr es:[si]
+        or      al, al
+        jz      init_options_path_done
+        cmp     al, 0Dh
+        je      init_options_path_done
+        cmp     al, 0Ah
+        je      init_options_path_done
+        cmp     al, ' '
+        je      init_options_scan
+        cmp     al, 9
+        jne     init_options_skip_path
+        jmp     short init_options_scan
+init_options_path_done:
+        clc
+        ret
+init_options_whitespace:
         inc     si
         jmp     short init_options_scan
 init_options_prefix:
         inc     si
+        mov     al, byte ptr es:[si]
+        cmp     al, ' '
+        ja      init_options_cluster
+        stc
+        ret
 init_options_cluster:
         mov     al, byte ptr es:[si]
         or      al, al
@@ -1183,47 +1218,23 @@ init_option_not_single:
         jmp     short init_option_next
 init_option_not_multiple:
         cmp     al, 'T'
-        jne     init_option_skip_token
+        jne     init_options_invalid
         inc     si
         mov     al, byte ptr es:[si]
         and     al, 0DFh
         cmp     al, 'A'
-        jb      init_option_skip_token
+        jb      init_options_invalid
         cmp     al, 'Z'
-        ja      init_option_skip_token
+        ja      init_options_invalid
         mov     byte ptr [config_name_letter], al
 init_option_next:
         inc     si
         jmp     short init_options_cluster
-init_option_skip_token:
-        inc     si
-init_option_skip_loop:
-        mov     al, byte ptr es:[si]
-        or      al, al
-        jz      init_options_done
-        cmp     al, 0Dh
-        je      init_options_done
-        cmp     al, 0Ah
-        je      init_options_done
-        cmp     al, ' '
-        jne     init_option_skip_loop_tab
-        jmp     init_options_scan
-init_option_skip_loop_tab:
-        cmp     al, 9
-        jne     init_option_skip_loop_dash
-        jmp     init_options_scan
-init_option_skip_loop_dash:
-        cmp     al, '-'
-        jne     init_option_skip_loop_slash
-        jmp     init_options_prefix
-init_option_skip_loop_slash:
-        cmp     al, '/'
-        jne     init_option_skip_loop_next
-        jmp     init_options_prefix
-init_option_skip_loop_next:
-        inc     si
-        jmp     short init_option_skip_loop
+init_options_invalid:
+        stc
+        ret
 init_options_done:
+        clc
         ret
 parse_init_options endp
 
@@ -1362,6 +1373,7 @@ manager_name        db  'SCSIMGR$', 0
 banner_found        db  'OpenASPI ASPITAP: tape found at $'
 banner_tail         db  '; tape device names ready', 13, 10, '$'
 banner_missing      db  'OpenASPI ASPITAP: no ASPI tape; not installed', 13, 10, '$'
+banner_bad_options  db  'OpenASPI ASPITAP: invalid or unsupported option; not installed', 13, 10, '$'
 
 aspi_entry          dd  0
 adapter_count       db  0

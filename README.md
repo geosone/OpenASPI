@@ -40,6 +40,8 @@ character-device I/O. The historical `-m` (allow multiple-open transfers) and
 `-s` (allow single-byte I/O) `CONFIG.SYS` overrides are implemented. `-tX`
 changes the `M` in the device names, and `-$` appends a collision-avoiding
 dollar sign.
+Malformed options and switches not yet supported by OpenASPI prevent the
+driver from loading and produce an explicit initialization error.
 `RMT0` rewinds when its last tracked handle closes; `NRMT0`, `ASPISCAN` and
 `TAPECTL` leave an unwritten tape position unchanged. A written final close
 adds the historical two-filemark terminator; `NRMT0` then backspaces one mark,
@@ -101,6 +103,8 @@ sequence. All variants use the same SvarDOS fixture.
 An additional boot fixture loads the clustered options `ASPITAP.SYS -ms$tS`,
 opens the resulting `RST0$`/`NRST0$` names, and verifies that both default
 transfer guards are disabled.
+Separate boot fixtures cover slash-prefixed, mixed-case options and rejection
+of incomplete `-t`, invalid name letters, unsupported switches and bare prefixes.
 
 `make dos-mhvtl-smoke` uses QEMU's emulated Tekram-compatible DC-390 controller
 and `scsi-generic` passthrough to exercise `ASPITAP.SYS` against an mhVTL tape.

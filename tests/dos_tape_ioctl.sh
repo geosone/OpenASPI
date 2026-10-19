@@ -21,6 +21,7 @@ run_fixture() {
 
     case "$variant" in
         legacy) defines=(-DNO_RESIDUAL) ;;
+        pathname) driver_line='DEVICE=ASPI-S\ASPITAP.SYS' ;;
         fixed)
             defines=(-DFIXED_BLOCK)
             test_source="$ROOT/tests/tape_fixed.asm"
@@ -31,11 +32,25 @@ run_fixture() {
             test_source="$ROOT/tests/tape_fixed.asm"
             success_text='OpenASPI fixed-block tape smoke test passed'
             ;;
-        options)
+        options|options-separated)
             defines=(-DOPTION_OVERRIDES)
             test_source="$ROOT/tests/tape_options.asm"
             success_text='OpenASPI tape option smoke test passed'
             driver_line='DEVICE=ASPITAP.SYS -ms$tS'
+            if test "$variant" = options-separated; then
+                driver_line='DEVICE=ASPITAP.SYS /M /S /ts /$'
+            fi
+            ;;
+        invalid-*)
+            test_source="$ROOT/tests/tape_invalid_options.asm"
+            success_text='OpenASPI invalid tape options rejected'
+            case "$variant" in
+                invalid-target) driver_line='DEVICE=ASPITAP.SYS -t' ;;
+                invalid-target-space) driver_line='DEVICE=ASPITAP.SYS -t -s' ;;
+                invalid-target-digit) driver_line='DEVICE=ASPITAP.SYS -t1' ;;
+                invalid-unsupported) driver_line='DEVICE=ASPITAP.SYS -b' ;;
+                invalid-empty) driver_line='DEVICE=ASPITAP.SYS -' ;;
+            esac
             ;;
     esac
 
@@ -73,6 +88,11 @@ run_fixture() {
         "$ROOT/build/dos/ASPISCAN.COM" "$ROOT/build/dos/TAPECTL.COM" \
         "$run_dir/TAPETEST.COM" "$run_dir/QEXIT.COM" ::/
 
+    if test "$variant" = pathname; then
+        mmd -i "$run_dir/boot.img" ::/ASPI-S
+        mcopy -i "$run_dir/boot.img" "$ROOT/build/dos/ASPITAP.SYS" ::/ASPI-S/
+    fi
+
     set +e
     timeout "${TIMEOUT:-60}" "$QEMU_BIN" \
         -machine pc -m 16 -display none -vga std \
@@ -88,7 +108,7 @@ run_fixture() {
     fi
 
     tr -d '\r' < "$run_dir/serial.log"
-    if test "$variant" = options; then
+    if [[ "$variant" = options* || "$variant" = invalid-* ]]; then
         grep -q 'ASPITAP RMT0 absent' "$run_dir/serial.log"
         grep -q 'Cannot open NRMT0' "$run_dir/serial.log"
     else
@@ -109,5 +129,12 @@ run_fixture legacy
 run_fixture fixed
 run_fixture fixed-legacy
 run_fixture options
+run_fixture options-separated
+run_fixture pathname
+run_fixture invalid-target
+run_fixture invalid-target-space
+run_fixture invalid-target-digit
+run_fixture invalid-unsupported
+run_fixture invalid-empty
 
 echo 'OpenASPI emulated-tape smoke test passed'
