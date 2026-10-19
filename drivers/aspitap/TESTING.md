@@ -82,6 +82,16 @@ DOS writes: an otherwise unwritten, non-rewinding session must issue neither
 data writes nor filemarks. See the
 [compatibility notes](../../docs/aspitape-compat.md) for this DOS API distinction.
 
+### TAPECTL reporting
+
+Post-scenario utility runs check explicit saved-write warnings and DOS exit
+status 2 for buffered/raw-short/finalization failures and the 16-byte legacy
+entry point. A successful `/READY` must retain that warning and exit status;
+a failed readiness check must instead return operational-error status 1 while
+still displaying the saved write cause. After successful physical recovery,
+status-only queries return 0 without a stale warning. The mock rejects any
+unexpected media command, including recovery or repositioning by the utility.
+
 ## Focused runs
 
 Pass fixture names to the script to run a subset:

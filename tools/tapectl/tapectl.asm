@@ -11,6 +11,7 @@ IOCTL_TAPE      equ     07h
 IOCTL_MTOP      equ     01h
 IOCTL_MTGET     equ     02h
 MTNOP           equ     07h
+STATE_WRITE_ERROR equ   0200h
 
 start:
         push    cs
@@ -43,9 +44,17 @@ start:
 
 status_passed:
         call    close_handle
+        cmp     byte ptr [write_failure_seen], 0
+        jne     saved_failure_reported
         mov     dx, offset success_message
         call    print_string
         mov     ax, 4C00h
+        int     21h
+
+saved_failure_reported:
+        mov     dx, offset saved_failure_message
+        call    print_string
+        mov     ax, 4C02h
         int     21h
 
 open_failed:
@@ -62,7 +71,8 @@ ready_failed_close:
         mov     word ptr [last_error], ax
         ; The command reached the driver even when the drive reports NOT
         ; READY (for example, an empty mhVTL drive). Preserve the DOS error,
-        ; but show the recorded SCSI status and sense key before exiting.
+        ; but show status before exiting. A saved write snapshot still refers
+        ; to that earlier failure, not this readiness command; print its warning.
         call    get_status
         jc      ready_failed_report
         call    print_status
@@ -189,6 +199,7 @@ get_status proc near
         clc
         ret
 get_status_legacy:
+        mov     byte ptr [status_error], 0
         mov     bx, word ptr [handle]
         mov     ch, IOCTL_TAPE
         mov     cl, IOCTL_MTGET
@@ -255,7 +266,16 @@ print_status proc near
         call    print_string
         mov     ax, word ptr [status+0Ch]
         call    print_hex16
-        jmp     short print_newline
+        call    print_newline
+        test    word ptr [status_flags], STATE_WRITE_ERROR
+        jz      print_status_done
+        mov     byte ptr [write_failure_seen], 1
+        mov     dx, offset write_warning
+        call    print_string
+        mov     dx, offset recovery_warning
+        call    print_string
+print_status_done:
+        ret
 print_status endp
 
 print_hex16 proc near
@@ -320,6 +340,7 @@ control:
 status           db      16 dup (0)
 status_flags     dw      0
 status_error     db      0
+write_failure_seen db    0
 
 address_message  db      'NRMT0 ASPI address $'
 flags_message    db      ' flags=$'
@@ -330,6 +351,9 @@ opcode_message   db      ' opcode=$'
 residual_message db      ' residual=$'
 ready_message    db      'TEST UNIT READY completed', 13, 10, '$'
 success_message  db      'OpenASPI TAPECTL status passed', 13, 10, '$'
+saved_failure_message db 'OpenASPI TAPECTL saved write failure reported', 13, 10, '$'
+write_warning    db      'WARNING: saved tape write/finalization failure.', 13, 10, '$'
+recovery_warning db      'Readiness does not confirm backup success; application recovery is required.', 13, 10, '$'
 open_error       db      'Cannot open NRMT0, DOS error $'
 ioctl_error      db      'Cannot read ASPITAPE status, DOS error $'
 ready_error      db      'TEST UNIT READY failed, DOS error $'

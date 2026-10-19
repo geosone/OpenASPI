@@ -19,8 +19,38 @@ run_fixture() {
     local success_text='OpenASPI tape IOCTL smoke test passed'
     local driver_line='DEVICE=ASPITAP.SYS -w'
     local manager_line='DEVICE=MOCKASPI.SYS'
+    local post_tapectl='' expected_tapectl_exit=0
+    local autoexec_lines=()
 
     case "$variant" in
+        tapectl-*)
+            defines=(-DBUFFERED_TEST -DBUFFER_ERROR -DBUFFER_WRITE_ERROR)
+            test_source="$ROOT/tests/tape_buffered.asm"
+            success_text='OpenASPI buffered tape smoke test passed'
+            driver_line='DEVICE=ASPITAP.SYS -bw'
+            post_tapectl='TAPECTL'
+            expected_tapectl_exit=2
+            case "$variant" in
+                tapectl-ready-error|tapectl-ready-not-ready)
+                    defines+=(-DTAPECTL_READY)
+                    post_tapectl='TAPECTL /READY'
+                    if test "$variant" = tapectl-ready-not-ready; then
+                        defines+=(-DTAPECTL_NOT_READY)
+                        expected_tapectl_exit=1
+                    fi ;;
+                tapectl-recovered)
+                    defines+=(-DBUFFER_RECOVERY)
+                    expected_tapectl_exit=0 ;;
+                tapectl-raw-short)
+                    defines+=(-DRAW_WRITE_TEST -DBUFFER_SHORT_WRITE -DRAW_SHORT_WRITTEN)
+                    driver_line='DEVICE=ASPITAP.SYS -w' ;;
+                tapectl-final-error)
+                    defines=(-DBUFFERED_TEST -DBUFFER_ERROR -DBUFFER_CLOSE_ERROR -DFINAL_ERROR -DFINAL_MARK_ERROR) ;;
+                tapectl-status16-error)
+                    defines+=(-DSTATUS16)
+                    driver_line='DEVICE=ASPITAP.SYS -2bw' ;;
+            esac
+            ;;
         raw-write-*|raw-short-*|raw-eot-*)
             defines=(-DBUFFERED_TEST -DBUFFER_ERROR -DBUFFER_WRITE_ERROR -DRAW_WRITE_TEST)
             test_source="$ROOT/tests/tape_buffered.asm"
@@ -215,13 +245,29 @@ run_fixture() {
         "$manager_line" \
         "$driver_line" \
         'SHELL=COMMAND.COM /P' > "$run_dir/CONFIG.SYS"
-    printf '%s\r\n' \
-        '@ECHO OFF' \
-        'BOOTLOG > AUX' \
-        'ASPISCAN > AUX' \
-        'TAPECTL > AUX' \
-        'TAPETEST > AUX' \
-        'QEXIT' > "$run_dir/AUTOEXEC.BAT"
+    autoexec_lines=(
+        '@ECHO OFF'
+        'BOOTLOG > AUX'
+        'ASPISCAN > AUX'
+        'TAPECTL > AUX'
+        'TAPETEST > AUX'
+    )
+    if test -n "$post_tapectl"; then
+        autoexec_lines+=(
+            "$post_tapectl > AUX"
+            "IF ERRORLEVEL $((expected_tapectl_exit + 1)) GOTO TOOLFAIL"
+            "IF ERRORLEVEL $expected_tapectl_exit GOTO TOOLPASS"
+            'GOTO TOOLFAIL'
+            ':TOOLPASS'
+            'ECHO TAPECTL EXIT CHECK PASSED > AUX'
+            'GOTO TOOLDONE'
+            ':TOOLFAIL'
+            'ECHO TAPECTL EXIT CHECK FAILED > AUX'
+            ':TOOLDONE'
+        )
+    fi
+    autoexec_lines+=('QEXIT')
+    printf '%s\r\n' "${autoexec_lines[@]}" > "$run_dir/AUTOEXEC.BAT"
 
     mcopy -o -i "$run_dir/boot.img" \
         "$run_dir/CONFIG.SYS" "$run_dir/AUTOEXEC.BAT" \
@@ -260,6 +306,28 @@ run_fixture() {
     fi
     grep -q "$success_text" "$run_dir/serial.log"
     ! grep -q 'FAILED' "$run_dir/serial.log"
+    if test -n "$post_tapectl"; then
+        grep -q 'TAPECTL EXIT CHECK PASSED' "$run_dir/serial.log"
+        if test "$expected_tapectl_exit" -eq 0; then
+            ! grep -q 'WARNING: saved tape write/finalization failure' "$run_dir/serial.log"
+        else
+            grep -q 'WARNING: saved tape write/finalization failure' "$run_dir/serial.log"
+            if test "$expected_tapectl_exit" -eq 2; then
+                grep -q 'OpenASPI TAPECTL saved write failure reported' "$run_dir/serial.log"
+            else
+                grep -q 'TEST UNIT READY failed' "$run_dir/serial.log"
+            fi
+        fi
+        case "$variant" in
+            tapectl-ready-error|tapectl-ready-not-ready)
+                test "$(grep -c 'WARNING: saved tape write/finalization failure' "$run_dir/serial.log")" -eq 2
+                grep -q 'flags=0202 driver-error=07 SCSI=02 sense=07' "$run_dir/serial.log"
+                if test "$variant" = tapectl-ready-error; then
+                    grep -q 'TEST UNIT READY completed' "$run_dir/serial.log"
+                fi
+                ;;
+        esac
+    fi
     case "$variant" in
       legacy|fixed-legacy|buffered-legacy|buffered-fixed-legacy|buffered-write-error-legacy|buffered-close-error-legacy|final-*-legacy|raw-write-error-legacy)
         grep -q 'extensions=0000' "$run_dir/serial.log"
@@ -386,6 +454,13 @@ run_fixture raw-short-recovery
 run_fixture raw-eot-write
 run_fixture raw-eot-ignored
 run_fixture raw-write-bad-residual
+run_fixture tapectl-write-error
+run_fixture tapectl-ready-error
+run_fixture tapectl-ready-not-ready
+run_fixture tapectl-recovered
+run_fixture tapectl-raw-short
+run_fixture tapectl-final-error
+run_fixture tapectl-status16-error
 fi
 
 echo 'OpenASPI emulated-tape smoke test passed'

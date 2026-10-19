@@ -57,6 +57,18 @@ buffered_backspace:
         cmp byte ptr es:[bx+SRB_CDB+4], 0FFh
         jne buffered_bad
 buffered_good:
+ifdef TAPECTL_NOT_READY
+        cmp byte ptr cs:[buffer_event], BUFFER_EVENT_COUNT
+        jne tapectl_poll_ready
+        cmp byte ptr es:[bx+SRB_CDB], 0
+        jne tapectl_poll_ready
+        mov byte ptr es:[bx+SRB_CDB+16], 70h
+        mov byte ptr es:[bx+SRB_CDB+18], 2 ; NOT READY, distinct from saved error
+        mov byte ptr es:[bx+SRB_TargStat], 2
+        mov byte ptr es:[bx+SRB_Status], SS_ERR
+        ret
+tapectl_poll_ready:
+endif
 ifdef FINAL_ERROR
 ifdef FINAL_MARK_ERROR
         cmp byte ptr es:[bx+SRB_CDB], 10h
@@ -343,6 +355,9 @@ endif
 ifdef BUFFER_RECOVERY
         db 0Ah, 10h, 11h, 00h
 endif
+endif
+ifdef TAPECTL_READY
+        db 00h
 endif
 BUFFER_EVENT_COUNT equ $ - buffer_events
 else

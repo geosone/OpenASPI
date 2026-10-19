@@ -23,6 +23,10 @@ TAPECTL.COM opens NRMT0 in raw mode and reports the ASPITAPE-compatible status
 block. TAPECTL /READY additionally sends the non-destructive TEST UNIT READY
 command.
 
+TAPECTL exit status: 0 = queried, 1 = query/readiness error, 2 = saved write
+failure. Successful readiness does not confirm that earlier writes succeeded.
+Warning fields describe the saved failure; the tool does not perform recovery.
+
 WINCHECK.COM distinguishes DOS, a Windows 3.x DOS box and Windows 9x/ME for
 conditional setup choices. WINCHECK.EXE is the companion 16-bit Windows probe
 for Windows-specific installation choices.
