@@ -1,10 +1,16 @@
 # ASPITAP.SYS
 
-`ASPITAP.SYS` is planned as an ASPITAPE-compatible DOS character-device
-driver.  It locates the active `SCSIMGR$`, enumerates ASPI addresses, and
+`ASPITAP.SYS` is an ASPITAPE-compatible DOS character-device driver under
+development. It locates the active `SCSIMGR$`, enumerates ASPI addresses, and
 installs linked `RMT0` and `NRMT0` headers for the first sequential-access
 device it finds.  It exits without remaining resident when no ASPI tape is
 available.
+
+Only the first tape drive is currently exposed. Medium changers and
+tape-library robotics are intentionally deferred. OpenASPI provides the
+transport driver; backup formats and the application UI belong to OpenTape.
+
+## Transfers and controls
 
 The category `07h` controls support `mtget`, enable/ignore EOT policy, `MTNOP`
 (TEST UNIT READY), forward/backward file and record spacing, rewind,
@@ -20,9 +26,19 @@ optional `MT0`/`NMT0` 1024-byte software-buffering layer is enabled by `-b`.
 The write path is not yet qualified for production backups
 on real media.
 
+Short-record lengths use ASPI residual counts when available and fixed- or
+descriptor-format ILI information otherwise. A filemark returns one zero-byte
+read; EOM remains an error unless the application selects the ignore-EOT
+policy. Write-protection errors remain failed DOS writes and are visible
+through `mtget`. CHECK CONDITION decoding accepts both fixed and descriptor
+sense; descriptor information and stream-command descriptors supply residual
+ILI lengths, FILEMARK and EOM without requiring ASPI residual support.
+
 The final close of a written session emits two filemarks. `RMT0` then rewinds;
 `NRMT0` backspaces one filemark to preserve the historical append position.
 Reads after a write in the same session are rejected.
+
+## Buffered aliases
 
 With `-b`, `MT0` rewinds and `NMT0` preserves the append position. Their
 software cache splits and combines 1024-byte physical transfers, even when
@@ -34,6 +50,8 @@ documented for historical ASPITAPE. Switching from read to write also discards
 unread cached data. A session's first open selects raw or buffered transfers;
 opens using other names remain counted, but their data transfers are refused,
 even with `-m`. DOS does not reliably enforce device-open errors.
+
+## Write and finalization failures
 
 Physical buffered writes must complete the full 1024 bytes. An error or
 partial write latches failure until the session ends: subsequent data writes
@@ -54,6 +72,8 @@ Finalization stops on the first error and does not retry on a duplicate close.
 It remains visible across reopening and successful readiness checks, because
 DOS may otherwise discard the close failure.
 
+## Rewind and interruption
+
 By default, a final `RMT0` close sends REWIND with IMMED set. Reopening and
 querying status remain possible while `mtget` reports `REWINDING`. The next
 read, write, tape operation or additional rewind waits for readiness, polling
@@ -72,6 +92,8 @@ A handled Ctrl-Break fails the current request without canceling the drive's
 physical rewind; `REWINDING` stays set and a later request can retry. Ctrl-C
 and interruption inside a blocking ASPI manager call are not implemented by
 this option. DOS/application Ctrl-Break handlers retain their normal behavior.
+
+## Configuration
 
 Data transfers require exactly one open tape handle and reject one-byte
 requests by default. The latter is the historical cooked-mode safeguard:
@@ -92,11 +114,15 @@ or an unsupported switch aborts installation with an error message.
 The driver pathname is skipped as a whole token, so hyphens in
 directory names do not enable options.
 
+### Status layout
+
 `-2` selects the original C headers' sixteen-byte status layout for IOCTL
 `0702h`; the default remains the manual's fourteen-byte layout. Applications
 must allocate the matching structure. New clients can use `0705h` to request
 sixteen bytes explicitly in either mode. `TAPECTL` supports both installation
 modes. See [the ABI comparison](../../docs/aspitape-compat.md#two-historical-status-layouts).
+
+### Startup diagnostics
 
 `-v` and the equivalent `-d` enable verbose initialization. They show adapter
 count, manager/adapter identities and extension flags, the selected tape's
@@ -105,9 +131,7 @@ names. Failed discovery distinguishes an unavailable manager, a failed host
 inquiry, an empty adapter list and the absence of a tape. Diagnostics reuse
 discovery results without issuing additional ASPI commands.
 
-CHECK CONDITION decoding accepts both fixed and descriptor sense. Descriptor
-information and stream-command descriptors provide residual ILI lengths,
-FILEMARK and EOM without requiring the ASPI residual extension.
+## Development status
 
 Implementation order:
 
@@ -131,3 +155,10 @@ Implementation order:
 The device uses attributes `8840h`, advertising the implemented open/close and
 generic IOCTL handlers but not legacy IOCTL support. Non-destructive diagnostic
 tools open `NRMT0`, so merely scanning or displaying status never rewinds tape.
+
+## Testing and application interface
+
+- [Testing](TESTING.md): emulator scenarios, focused runs and virtual-drive integration.
+- [ASPITAPE compatibility](../../docs/aspitape-compat.md): ABI, IOCTLs and detailed semantics.
+- [TAPECTL](../../tools/tapectl/README.md): status/readiness diagnostic.
+- [Installation](../../installer/README.md) and [build guide](../../docs/building.md).
