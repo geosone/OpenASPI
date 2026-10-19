@@ -81,7 +81,7 @@ start:
         fail_if_not_equal failed_close
         call    get_status
         fail_if_carry failed_close
-        cmp     byte ptr [status+4], 10h
+        cmp     byte ptr [status+4], 12h
         fail_if_not_equal failed_close
 ifdef NO_RESIDUAL
         cmp     word ptr [status+0Ah], 0908h
@@ -115,7 +115,7 @@ endif
         fail_if_not_equal failed_close
         call    get_status
         fail_if_carry failed_close
-        cmp     byte ptr [status+4], 18h
+        cmp     byte ptr [status+4], 1Ah
         fail_if_not_equal failed_close
 ifdef NO_RESIDUAL
         cmp     word ptr [status+0Ah], 110Ah
@@ -188,13 +188,7 @@ close_handle proc near
 close_handle endp
 
 get_status proc near
-        mov     bx, word ptr [handle]
-        mov     ch, 07h
-        mov     cl, 02h
-        mov     dx, offset status
-        mov     ax, 440Ch
-        int     21h
-        ret
+        jmp     checked_mtget
 get_status endp
 
 restore_int24 proc near
@@ -217,7 +211,8 @@ nrmt_name       db      'NRMT0', 0
 handle          dw      0
 old_int24       dd      0
 stage           db      '?'
-status          db      14 dup (0)
+        include tests/tape_status.inc
+status          db      18 dup (0)
 transfer_buffer db      1024 dup (0)
 success_message db      'OpenASPI fixed-block tape smoke test passed', 13, 10, '$'
 failure_message db      'OpenASPI fixed-block tape smoke test FAILED at stage $'

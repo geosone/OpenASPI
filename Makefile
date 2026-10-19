@@ -20,7 +20,7 @@ DOSTAPECTL := $(BUILD)/dos/TAPECTL.COM
 DOSWINCHECK := $(BUILD)/dos/WINCHECK.COM
 WIN16CHECK := $(BUILD)/win16/WINCHECK.EXE
 WIN16CHECKOBJ := $(BUILD)/win16/wincheck.obj
-DOSCOBJ := $(BUILD)/dos/tape_cdb.obj $(BUILD)/dos/tape_sense.obj
+DOSCOBJ := $(BUILD)/dos/tape_cdb.obj $(BUILD)/dos/tape_sense.obj $(BUILD)/dos/tape_abi.obj
 DISTDIR := $(BUILD)/dist
 
 CFLAGS  ?= -std=c90 -Wall -Wextra -Werror -pedantic -O2
@@ -97,6 +97,10 @@ $(WIN16CHECK): $(WIN16CHECKOBJ)
 		library windows,clibs option quiet,heapsize=1024,stack=4096,version=3.10
 
 $(BUILD)/dos/tape_cdb.obj: common/scsi/tape_cdb.c include/openaspi/scsi_tape.h include/openaspi/types.h
+	mkdir -p $(@D)
+	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(WATCOM)/h -fo=$@ $<
+
+$(BUILD)/dos/tape_abi.obj: tests/tape_abi.c include/openaspi/aspitape.h include/openaspi/types.h
 	mkdir -p $(@D)
 	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(WATCOM)/h -fo=$@ $<
 

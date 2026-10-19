@@ -39,6 +39,13 @@ They confirm that mandatory SCSI fixed-block operation is selected using
 1024-byte software buffer. The archive is reference material only and is not
 redistributed by OpenASPI.
 
+The same distribution's `ALGO_MAS.ZIP` contains `IOCTL.H` and `MTIO.H`.
+Their `mtget` is **16 bytes**, with a word-sized state and driver error byte;
+the manual instead describes **14 bytes**. Their `TPS_MTOP`, `TPS_ZERO`,
+`TPS_IEOT`, and `TPS_WIND` values are 0020h, 0040h, 0080h, and 0100h.
+These headers are the reference for OpenASPI's explicitly selected 16-byte
+ABI, not evidence that all historical binaries use one layout.
+
 Reference archive SHA-256:
 `62f5d4a75e8fa6baefce5aaea5e62642b72bd1e10c12784cdaf0c497e1495917`.
 

@@ -21,6 +21,26 @@ run_fixture() {
     local manager_line='DEVICE=MOCKASPI.SYS'
 
     case "$variant" in
+        status16|status16-fixed|status16-buffered|status16-rewind)
+            defines=(-DSTATUS16)
+            driver_line='DEVICE=ASPITAP.SYS -2w'
+            case "$variant" in
+                status16-fixed)
+                    defines+=(-DFIXED_BLOCK)
+                    test_source="$ROOT/tests/tape_fixed.asm"
+                    success_text='OpenASPI fixed-block tape smoke test passed' ;;
+                status16-buffered)
+                    defines+=(-DBUFFERED_TEST)
+                    driver_line='DEVICE=ASPITAP.SYS -2bwm'
+                    test_source="$ROOT/tests/tape_buffered.asm"
+                    success_text='OpenASPI buffered tape smoke test passed' ;;
+                status16-rewind)
+                    defines+=(-DREWIND_TEST)
+                    driver_line='DEVICE=ASPITAP.SYS /2'
+                    test_source="$ROOT/tests/tape_rewind.asm"
+                    success_text='OpenASPI rewind smoke test passed' ;;
+            esac
+            ;;
         legacy) defines=(-DNO_RESIDUAL) ;;
         pathname) driver_line='DEVICE=ASPI-S\ASPITAP.SYS -w' ;;
         verbose) driver_line='DEVICE=ASPITAP.SYS -vw' ;;
@@ -115,7 +135,7 @@ run_fixture() {
     "$JWASM" -q -bin -0 -W4 -WX "${defines[@]}" -I"$ROOT/" \
         -Fo="$run_dir/MOCKASPI.SYS" "$ROOT/tests/mockaspi.asm"
     "$JWASM" -q -bin -0 -W4 -WX "${defines[@]}" \
-        -Fo="$run_dir/TAPETEST.COM" "$test_source"
+        -I"$ROOT/" -Fo="$run_dir/TAPETEST.COM" "$test_source"
     "$JWASM" -q -bin -0 -W4 -WX \
         -Fo="$run_dir/QEXIT.COM" "$ROOT/tests/qexit.asm"
     "$JWASM" -q -bin -0 -W4 -WX \
@@ -268,6 +288,10 @@ run_fixture buffered-disabled
 run_fixture buffered-discard
 run_fixture buffered-single
 run_fixture buffered-exclusive
+run_fixture status16
+run_fixture status16-fixed
+run_fixture status16-buffered
+run_fixture status16-rewind
 fi
 
 echo 'OpenASPI emulated-tape smoke test passed'

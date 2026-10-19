@@ -170,11 +170,36 @@ close_handle endp
 
 get_status proc near
         mov     bx, word ptr [handle]
+        mov     cx, 0705h              ; explicit sixteen-byte ABI first
+        mov     dx, offset status
+        mov     ax, 440Ch
+        int     21h
+        jc      get_status_legacy
+        mov     ax, word ptr [status+4]
+        mov     word ptr [status_flags], ax
+        mov     al, byte ptr [status+7]
+        mov     byte ptr [status_error], al
+        ; Normalize common fields for the existing display code.
+        mov     ax, word ptr [status+10]
+        mov     word ptr [status+8], ax
+        mov     ax, word ptr [status+12]
+        mov     word ptr [status+10], ax
+        mov     ax, word ptr [status+14]
+        mov     word ptr [status+12], ax
+        clc
+        ret
+get_status_legacy:
+        mov     bx, word ptr [handle]
         mov     ch, IOCTL_TAPE
         mov     cl, IOCTL_MTGET
         mov     dx, offset status
         mov     ax, 440Ch
         int     21h
+        jc      get_status_done
+        xor     ah, ah
+        mov     al, byte ptr [status+4]
+        mov     word ptr [status_flags], ax
+get_status_done:
         ret
 get_status endp
 
@@ -204,7 +229,11 @@ print_status proc near
 
         mov     dx, offset flags_message
         call    print_string
-        mov     al, byte ptr [status+4]
+        mov     ax, word ptr [status_flags]
+        call    print_hex16
+        mov     dx, offset driver_error_message
+        call    print_string
+        mov     al, byte ptr [status_error]
         call    print_hex8
 
         mov     dx, offset scsi_message
@@ -288,10 +317,13 @@ last_error       dw      0
 control:
         dw      MTNOP
         dd      1
-status           db      14 dup (0)
+status           db      16 dup (0)
+status_flags     dw      0
+status_error     db      0
 
 address_message  db      'NRMT0 ASPI address $'
 flags_message    db      ' flags=$'
+driver_error_message db  ' driver-error=$'
 scsi_message     db      ' SCSI=$'
 sense_message    db      ' sense=$'
 opcode_message   db      ' opcode=$'

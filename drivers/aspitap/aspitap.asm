@@ -39,6 +39,7 @@ IOCTL_MTOP      equ     01h
 IOCTL_MTGET     equ     02h
 IOCTL_IGNORE_EOT equ    03h
 IOCTL_ENABLE_EOT equ    04h
+IOCTL_MTGET16   equ     05h             ; explicit OpenASPI 16-byte ABI
 
 MTWEOF          equ     00h
 MTFSF           equ     01h
@@ -76,6 +77,7 @@ OPT_VERBOSE      equ    008h
 OPT_WAIT_REWIND  equ    010h
 OPT_BREAK_WAIT   equ    020h
 OPT_BUFFERED     equ    040h
+OPT_STATUS16     equ    080h
 TAPE_BUFFER_SIZE equ    1024
 REWIND_WAIT_TICKS equ   3277            ; about three minutes at 18.2 Hz
 
@@ -260,6 +262,7 @@ init_report_failure:
         jmp     request_done
 
 unsupported:
+        mov     byte ptr [driver_error], 20
         mov     word ptr es:[bx+REQ_STATUS], 8103h
         jmp     request_done
 
@@ -272,6 +275,7 @@ open_count_available:
         je      open_first_handle
         jmp     open_increment
 open_first_handle:
+        mov     byte ptr [mtop_performed], 0
         mov     al, byte ptr [request_buffered]
         mov     byte ptr [session_buffered], al
 open_mode_ready:
@@ -280,13 +284,17 @@ open_mode_ready:
         and     byte ptr [device_state], MT_STATE_EOM_EOF
 open_increment:
         inc     byte ptr [tape_open_count]
-        jmp     short request_success
+        jmp     request_success
 
 close_request:
         cmp     byte ptr [tape_open_count], 0
-        je      request_success
+        jne     close_decrement
+        jmp     request_success
+close_decrement:
         dec     byte ptr [tape_open_count]
-        jne     request_success
+        je      close_last_handle
+        jmp     request_success
+close_last_handle:
         call    flush_tape_buffer
         jc      request_error
         call    finish_written_tape
@@ -297,7 +305,7 @@ close_request:
         jc      request_error
 close_complete:
         and     byte ptr [device_state], MT_STATE_EOM_EOF
-        jmp     short request_success
+        jmp     request_success
 
 generic_ioctl:
         cmp     byte ptr es:[bx+REQ_CATEGORY], IOCTL_TAPE
@@ -307,6 +315,8 @@ ioctl_category_valid:
         mov     al, byte ptr es:[bx+REQ_FUNCTION]
         cmp     al, IOCTL_MTGET
         je      ioctl_mtget
+        cmp     al, IOCTL_MTGET16
+        je      ioctl_mtget16
         cmp     al, IOCTL_IGNORE_EOT
         je      ioctl_ignore_eot
         cmp     al, IOCTL_ENABLE_EOT
@@ -317,10 +327,21 @@ ioctl_category_valid:
 ioctl_function_valid:
         call    ioctl_mtop
         jc      request_error
+        les     bx, [request_ptr]
+        les     di, dword ptr es:[bx+REQ_PARAMETER]
+        cmp     word ptr es:[di], MTNOP
+        je      request_success
+        mov     byte ptr [mtop_performed], 20h
         jmp     short request_success
 
 ioctl_mtget:
+        test    byte ptr [config_options], OPT_STATUS16
+        jnz     ioctl_mtget16
         call    fill_mtget
+        jmp     short request_success
+
+ioctl_mtget16:
+        call    fill_mtget16
         jmp     short request_success
 
 ioctl_ignore_eot:
@@ -332,6 +353,19 @@ ioctl_enable_eot:
         jmp     short request_success
 
 request_error:
+        cmp     byte ptr [driver_error], 0
+        jne     request_error_recorded
+        mov     al, byte ptr [last_sense_key]
+        cmp     byte ptr [last_scsi_status], 8
+        jne     request_error_not_busy
+        mov     al, 22
+request_error_not_busy:
+        or      al, al
+        jnz     request_error_known
+        mov     al, 31                  ; OpenASPI unspecified driver error
+request_error_known:
+        mov     byte ptr [driver_error], al
+request_error_recorded:
         les     bx, [request_ptr]
         mov     word ptr es:[bx+REQ_STATUS], 810Ch
         jmp     short request_done
@@ -372,8 +406,11 @@ mtget_parameters_ready:
         mov     al, byte ptr [device_state]
         or      al, byte ptr [request_rewind]
         cmp     byte ptr [request_buffered], 0
-        je      mtget_buffer_mode_ready
+        je      mtget_raw_mode
         or      al, MT_STATE_BUFFERED
+        jmp     short mtget_buffer_mode_ready
+mtget_raw_mode:
+        or      al, 2                   ; TPS_RAW in both historical ABIs
 mtget_buffer_mode_ready:
         cmp     byte ptr [rewind_pending], 0
         je      mtget_state_ready
@@ -394,6 +431,42 @@ mtget_state_ready:
         ret
 fill_mtget endp
 
+; IOCTL.H / MTIO.H shipped in the 1992 archive describe a different ABI
+; from its manual. Reuse the legacy snapshot, then expand backwards so no
+; caller-owned bytes beyond the sixteen-byte destination are touched.
+fill_mtget16 proc near
+        call    fill_mtget
+        mov     ax, word ptr es:[di+12]
+        mov     word ptr es:[di+14], ax
+        mov     ax, word ptr es:[di+10]
+        mov     word ptr es:[di+12], ax
+        mov     ax, word ptr es:[di+8]
+        mov     word ptr es:[di+10], ax
+        mov     ax, word ptr es:[di+6]
+        mov     word ptr es:[di+8], ax
+        mov     byte ptr es:[di+6], 0    ; physical unit zero
+        mov     al, byte ptr [driver_error]
+        mov     byte ptr es:[di+7], al
+        xor     ah, ah
+        mov     al, byte ptr es:[di+4]
+        and     al, 1Fh
+        or      al, byte ptr [mtop_performed]
+        test    byte ptr [device_state], MT_STATE_EOF_NEXT
+        jz      mtget16_eof_ready
+        or      al, 40h
+mtget16_eof_ready:
+        test    byte ptr [device_state], MT_STATE_EOM_EOF
+        jz      mtget16_eot_ready
+        or      al, 80h
+mtget16_eot_ready:
+        cmp     byte ptr [rewind_pending], 0
+        je      mtget16_ready
+        mov     ah, 1
+mtget16_ready:
+        mov     word ptr es:[di+4], ax
+        ret
+fill_mtget16 endp
+
 ; Process a DOS character-device input request as one variable-length SCSI
 ; tape record. The manager's residual-count extension lets DOS see a short
 ; record's actual length; older managers can still complete exact-size reads.
@@ -408,6 +481,7 @@ read_request proc near
         ret
 
 read_nonempty:
+        mov     byte ptr [driver_error], 17
         cmp     byte ptr [buffer_internal_io], 0
         jne     read_open_allowed
         cmp     byte ptr [session_buffered], 0
@@ -417,15 +491,18 @@ read_nonempty:
         cmp     byte ptr [tape_open_count], 1
         jne     read_access_error
 read_open_allowed:
+        mov     byte ptr [driver_error], 18
         cmp     word ptr [requested_bytes], 1
         jne     read_size_allowed
         test    byte ptr [config_options], OPT_ALLOW_SINGLE
         jz      read_access_error
 read_size_allowed:
+        mov     byte ptr [driver_error], 0
         call    wait_for_rewind
         jc      read_access_error
         test    byte ptr [device_state], MT_STATE_WRITTEN
         jz      read_not_written
+        mov     byte ptr [driver_error], 19
         call    zero_transfer_count
         stc
         ret
@@ -536,6 +613,7 @@ read_request endp
 ; Process one DOS output request as one variable-length SCSI tape record.
 ; A zero-byte DOS write marks the session written without issuing a data CDB.
 write_request proc near
+        mov     byte ptr [driver_error], 17
         les     bx, [request_ptr]
         mov     ax, word ptr es:[bx+REQ_COUNT]
         mov     word ptr [requested_bytes], ax
@@ -552,6 +630,7 @@ write_mode_allowed:
         je      write_open_exclusive
         jmp     write_access_error
 write_open_exclusive:
+        mov     byte ptr [driver_error], 0
         call    wait_for_rewind
         jnc     write_rewind_ready
         jmp     write_access_error
@@ -569,6 +648,7 @@ write_issue:
         jne     write_size_allowed
         test    byte ptr [config_options], OPT_ALLOW_SINGLE
         jnz     write_size_allowed
+        mov     byte ptr [driver_error], 18
         jmp     write_access_error
 write_size_allowed:
         call    clear_srb
@@ -677,6 +757,7 @@ buffered_read_nonempty:
 buffered_read_access_ok:
         test    byte ptr [device_state], MT_STATE_WRITTEN
         jz      buffered_read_not_written
+        mov     byte ptr [driver_error], 19
         jmp     buffer_error
 buffered_read_not_written:
         call    wait_for_rewind
@@ -803,6 +884,7 @@ begin_buffer_request proc near
 begin_buffer_request endp
 
 check_buffer_access proc near
+        mov     byte ptr [driver_error], 17
         mov     al, byte ptr [request_buffered]
         cmp     al, byte ptr [session_buffered]
         jne     buffer_access_error
@@ -813,11 +895,13 @@ check_buffer_access proc near
         cmp     byte ptr [tape_open_count], 1
         jne     buffer_access_error
 buffer_check_single:
+        mov     byte ptr [driver_error], 18
         cmp     word ptr [buffer_left], 1
         jne     buffer_access_ok
         test    byte ptr [config_options], OPT_ALLOW_SINGLE
         jz      buffer_access_error
 buffer_access_ok:
+        mov     byte ptr [driver_error], 0
         cmp     word ptr [tape_fixed_block], 0
         je      buffer_block_size_ok
         mov     ax, TAPE_BUFFER_SIZE
@@ -1105,7 +1189,9 @@ rewind_status_valid:
         cmp     byte ptr [srb+SRB_TargStat], 8 ; SCSI BUSY
         je      rewind_wait_tick
         cmp     byte ptr [srb+SRB_TargStat], 2
-        jne     rewind_wait_error
+        je      rewind_check_sense
+        jmp     rewind_wait_error
+rewind_check_sense:
         mov     al, byte ptr [srb+SRB_CDB+16]
         and     al, 7Fh
         mov     si, offset srb+SRB_CDB+28 ; fixed sense ASC/ASCQ
@@ -1135,7 +1221,7 @@ rewind_check_no_sense:
         jne     rewind_wait_error
 rewind_wait_tick:
         cmp     byte ptr [break_requested], 0
-        jne     rewind_wait_error
+        jne     rewind_wait_interrupted
         call    read_bios_ticks
         cmp     ax, word ptr [rewind_poll_low]
         jne     rewind_tick_changed
@@ -1151,10 +1237,15 @@ rewind_tick_changed:
         adc     dx, 0018h
 rewind_elapsed_ready:
         or      dx, dx
-        jnz     rewind_wait_error
+        jnz     rewind_wait_timeout
         cmp     ax, REWIND_WAIT_TICKS
-        jae     rewind_wait_error
+        jae     rewind_wait_timeout
         jmp     rewind_poll
+rewind_wait_timeout:
+        mov     byte ptr [driver_error], 16
+        jmp     short rewind_wait_error
+rewind_wait_interrupted:
+        mov     byte ptr [driver_error], 23
 rewind_wait_error:
         stc
 rewind_wait_done:
@@ -1284,11 +1375,13 @@ ioctl_mtop proc near
         stc
         ret
 mtop_rewind_ready:
+        mov     byte ptr [driver_error], 0
         les     bx, [request_ptr]
         les     di, dword ptr es:[bx+REQ_PARAMETER]
         mov     ax, word ptr es:[di]
         cmp     ax, MTNOP
         jbe     mtop_operation_valid
+        mov     byte ptr [driver_error], 21
         stc
         ret
 mtop_operation_valid:
@@ -1386,6 +1479,7 @@ execute_control_srb proc near
         je      control_buffer_ready
         call    discard_tape_buffer
 control_buffer_ready:
+        mov     byte ptr [driver_error], 0
         xor     ax, ax
         mov     al, byte ptr [srb+SRB_CDB]
         mov     ah, byte ptr [srb+SRB_Flags]
@@ -1793,6 +1887,11 @@ init_option_skip_slash:
         jne     init_option_skip_next
         jmp     init_options_prefix
 init_option_skip_next:
+        cmp     al, '2'
+        jne     init_option_not_status16
+        or      byte ptr [config_options], OPT_STATUS16
+        jmp     short init_option_next
+init_option_not_status16:
         cmp     al, '$'
         jne     init_option_letter
         or      byte ptr [config_options], OPT_NAME_SUFFIX
@@ -2203,6 +2302,8 @@ device_state        db  0
 tape_open_count     db  0
 last_scsi_status    db  0
 last_sense_key      db  0
+driver_error        db  0
+mtop_performed      db  0
 last_scsi_opcode    dw  0
 residual_bytes      dw  0
 requested_bytes     dw  0

@@ -61,7 +61,7 @@ start:
         cmp     byte ptr [status+3], 80h
         fail_if_not_equal failed_close
         mov     byte ptr [stage], 'H'
-        cmp     byte ptr [status+4], 04h
+        cmp     byte ptr [status+4], 06h
         fail_if_not_equal failed_close
 
         ; Open RMT0 twice. Closing the first handle must leave the tape alone;
@@ -77,6 +77,10 @@ start:
         mov     ah, 3Fh
         int     21h
         fail_if_no_carry failed_close2
+        call    get_status
+        fail_if_carry failed_close2
+        cmp     byte ptr [status_extended+7], 17
+        fail_if_not_equal failed_close2
         mov     byte ptr [stage], 'o'
         call    close_handle
         fail_if_carry failed_close2
@@ -100,7 +104,7 @@ start:
         mov     byte ptr [stage], '4'
         call    get_status
         fail_if_carry failed_close
-        cmp     byte ptr [status+4], 00h
+        cmp     byte ptr [status+4], 02h
         fail_if_not_equal failed_close
 
         mov     byte ptr [stage], '5'
@@ -110,7 +114,7 @@ start:
         fail_if_carry failed_close
         call    get_status
         fail_if_carry failed_close
-        cmp     byte ptr [status+4], 40h
+        cmp     byte ptr [status+4], 42h
         fail_if_not_equal failed_close
 
         mov     byte ptr [stage], '6'
@@ -120,7 +124,7 @@ start:
         fail_if_carry failed_close
         call    get_status
         fail_if_carry failed_close
-        cmp     byte ptr [status+4], 00h
+        cmp     byte ptr [status+4], 02h
         fail_if_not_equal failed_close
 
         ; DOS cooked mode reduces character-device traffic to single-byte
@@ -140,6 +144,10 @@ start:
         fail_if_no_carry failed_close
 
         mov     byte ptr [stage], 'R'
+        call    get_status
+        fail_if_carry failed_close
+        cmp     byte ptr [status_extended+7], 18
+        fail_if_not_equal failed_close
         mov     bx, word ptr [handle]
         mov     cx, 16
         mov     dx, offset read_buffer
@@ -161,7 +169,7 @@ endif
         fail_if_not_equal failed_close
         call    get_status
         fail_if_carry failed_close
-        cmp     byte ptr [status+4], 10h
+        cmp     byte ptr [status+4], 12h
         fail_if_not_equal failed_close
 ifdef NO_RESIDUAL
         cmp     word ptr [status+0Ah], 0808h
@@ -196,7 +204,7 @@ endif
         fail_if_not_equal failed_close
         call    get_status
         fail_if_carry failed_close
-        cmp     byte ptr [status+4], 10h
+        cmp     byte ptr [status+4], 12h
         fail_if_not_equal failed_close
         cmp     byte ptr [status+8], 2
         fail_if_not_equal failed_close
@@ -283,7 +291,7 @@ endif
         fail_if_not_equal failed_close
         call    get_status
         fail_if_carry failed_close
-        cmp     byte ptr [status+4], 50h
+        cmp     byte ptr [status+4], 52h
         fail_if_not_equal failed_close
         cmp     byte ptr [status+8], 2
         fail_if_not_equal failed_close
@@ -304,7 +312,7 @@ endif
         fail_if_no_carry failed_close
         call    get_status
         fail_if_carry failed_close
-        cmp     byte ptr [status+4], 10h
+        cmp     byte ptr [status+4], 12h
         fail_if_not_equal failed_close
         cmp     byte ptr [status+8], 2
         fail_if_not_equal failed_close
@@ -332,7 +340,7 @@ endif
         fail_if_not_equal failed_close
         call    get_status
         fail_if_carry failed_close
-        cmp     byte ptr [status+4], 18h
+        cmp     byte ptr [status+4], 1Ah
         fail_if_not_equal failed_close
 ifdef NO_RESIDUAL
         cmp     word ptr [status+0Ah], 100Ah
@@ -364,7 +372,7 @@ endif
         fail_if_no_carry failed_close
         call    get_status
         fail_if_carry failed_close
-        cmp     byte ptr [status+4], 18h
+        cmp     byte ptr [status+4], 1Ah
         fail_if_not_equal failed_close
         cmp     byte ptr [status+8], 2
         fail_if_not_equal failed_close
@@ -393,6 +401,12 @@ endif
         mov     word ptr [control+4], 0
         call    run_mtop
         fail_if_carry failed_close
+        call    get_status
+        fail_if_carry failed_close
+        mov     al, byte ptr [status_extended+4]
+        and     al, 20h
+        cmp     al, 20h
+        fail_if_not_equal failed_close
 
         mov     byte ptr [stage], '9'
         mov     word ptr [control], 1    ; MTFSF
@@ -445,8 +459,13 @@ endif
         fail_if_no_carry failed_close
 
         mov     byte ptr [stage], 'P'
+        mov     word ptr [control], 8    ; undefined tape operation
+        call    run_mtop
+        fail_if_no_carry failed_close
         call    get_status
         fail_if_carry failed_close
+        cmp     byte ptr [status_extended+7], 21
+        fail_if_not_equal failed_close
         cmp     word ptr [status+0Ah], 181Bh
         fail_if_not_equal failed_close
         cmp     byte ptr [status+8], 0
@@ -534,9 +553,7 @@ critical_error proc far
 critical_error endp
 
 get_status proc near
-        mov     cl, 02h
-        mov     dx, offset status
-        jmp     short tape_ioctl
+        jmp     checked_mtget
 get_status endp
 
 run_mtop proc near
@@ -562,7 +579,8 @@ stage           db      '?'
 control:
         dw      7                       ; MTNOP
         dd      1
-status          db      14 dup (0)
+        include tests/tape_status.inc
+status          db      18 dup (0)
 ifdef NO_RESIDUAL
 READ_EXPECTED_SIZE equ  16
 expected_payload db     '0123456789ABCDEF'

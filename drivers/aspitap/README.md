@@ -81,6 +81,12 @@ or an unsupported switch aborts installation with an error message.
 The driver pathname is skipped as a whole token, so hyphens in
 directory names do not enable options.
 
+`-2` selects the original C headers' sixteen-byte status layout for IOCTL
+`0702h`; the default remains the manual's fourteen-byte layout. Applications
+must allocate the matching structure. New clients can use `0705h` to request
+sixteen bytes explicitly in either mode. `TAPECTL` supports both installation
+modes. See [the ABI comparison](../../docs/aspitape-compat.md#two-historical-status-layouts).
+
 `-v` and the equivalent `-d` enable verbose initialization. They show adapter
 count, manager/adapter identities and extension flags, the selected tape's
 address and block mode (fixed sizes are hexadecimal), and all active device

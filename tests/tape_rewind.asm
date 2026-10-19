@@ -46,9 +46,9 @@ start:
         call get_status
         check_carry
 ifdef WAIT_CLOSE
-        cmp byte ptr [status+4], 0
+        cmp byte ptr [status+4], 2
 else
-        cmp byte ptr [status+4], 80h
+        cmp byte ptr [status+4], 82h
 endif
         check_equal
 
@@ -95,6 +95,17 @@ else
 endif
         call get_status
         check_carry
+ifdef REWIND_TIMEOUT
+        cmp byte ptr [status_extended+7], 16
+        check_equal
+else
+ifdef REWIND_BREAK
+ifdef REWIND_ERROR
+        cmp byte ptr [status_extended+7], 23
+        check_equal
+endif
+endif
+endif
         ; The polling wait must restore the exact preexisting BIOS handler.
         mov ax, 351Bh
         int 21h
@@ -104,7 +115,7 @@ endif
         cmp ax, word ptr [saved_break_vector+2]
         check_equal
 ifdef REWIND_ERROR
-        cmp byte ptr [status+4], 80h
+        cmp byte ptr [status+4], 82h
         check_equal
 ifdef REWIND_TIMEOUT
         cmp byte ptr [status+8], 8       ; the timed-out poll was BUSY
@@ -117,12 +128,12 @@ endif
 endif
 else
 ifdef REWIND_READ
-        cmp byte ptr [status+4], 10h
+        cmp byte ptr [status+4], 12h
 else
 ifdef REWIND_WRITE
-        cmp byte ptr [status+4], 8
+        cmp byte ptr [status+4], 0Ah
 else
-        cmp byte ptr [status+4], 0
+        cmp byte ptr [status+4], 2
 endif
 endif
 endif
@@ -138,7 +149,7 @@ ifdef REWIND_ERROR
         check_carry
         call get_status
         check_carry
-        cmp byte ptr [status+4], 0
+        cmp byte ptr [status+4], 2
         check_equal
 endif
 endif
@@ -178,12 +189,7 @@ open_done:
         ret
 open_raw endp
 get_status proc near
-        mov bx, word ptr [handle]
-        mov cx, 0702h
-        mov dx, offset status
-        mov ax, 440Ch
-        int 21h
-        ret
+        jmp checked_mtget
 get_status endp
 restore_int24 proc near
         push ds
@@ -205,7 +211,8 @@ nrmt_name db 'NRMT0', 0
 handle dw 0
 old_int24 dd 0
 saved_break_vector dd 0
-status db 14 dup (0)
+        include tests/tape_status.inc
+status db 18 dup (0)
 control dw 7
         dd 0
 buffer db 55h, 0AAh

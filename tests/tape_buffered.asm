@@ -389,12 +389,7 @@ close_handle proc near
         ret
 close_handle endp
 get_status proc near
-        mov bx, word ptr [handle]
-        mov cx, 0702h
-        mov dx, offset status
-        mov ax, 440Ch
-        int 21h
-        ret
+        jmp checked_mtget
 get_status endp
 run_mtop proc near
         mov bx, word ptr [handle]
@@ -433,7 +428,8 @@ handle2 dw 0
 far_segment dw 0
 far_count dw 300
 old_int24 dd 0
-status db 14 dup (0)
+        include tests/tape_status.inc
+status db 18 dup (0)
 control dw 7
         dd 0
 buffer db 2300 dup (0)

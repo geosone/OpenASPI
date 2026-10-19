@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -15,6 +16,10 @@ static void test_abi_sizes(void)
 {
     assert(sizeof(struct oa_aspitape_mtop) == 6u);
     assert(sizeof(struct oa_aspitape_mtget) == 14u);
+    assert(sizeof(struct oa_aspitape_mtget16) == 16u);
+    assert(offsetof(struct oa_aspitape_mtget16, driver_error) == 7u);
+    assert(offsetof(struct oa_aspitape_mtget16, last_scsi_status) == 10u);
+    assert(offsetof(struct oa_aspitape_mtget16, residual_bytes) == 14u);
 }
 
 static void test_read_write_cdb(void)

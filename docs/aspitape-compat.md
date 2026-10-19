@@ -27,10 +27,53 @@ The historical control call is `INT 21h`, `AX=440Ch`, with the device handle in
 | 02h | `mtget`: return tape/driver status |
 | 03h | ignore end-of-tape errors |
 | 04h | enable end-of-tape errors |
+| 05h | OpenASPI extension: explicitly request sixteen-byte status |
 
 The byte-exact structures and flags are declared in
 `include/openaspi/aspitape.h`.  Host tests assert the documented six-byte
-`mtop` and fourteen-byte `mtget` sizes.
+`mtop`, fourteen-byte `mtget` and sixteen-byte `mtget16` sizes and field offsets.
+
+### Two historical status layouts
+
+The original archive is internally inconsistent: `ASPITAPE.4` describes a
+14-byte status structure, but the distributed `ALGO_MAS.ZIP` headers
+`IOCTL.H` and `MTIO.H` define a 16-byte structure. OpenASPI defaults to the
+manual's 14-byte layout at function `02h`. Its new `-2` installation option
+selects the 16-byte header layout at that entry point. **Do not use `-2`
+with applications that allocate only 14 bytes.** DOS provides no parameter
+buffer length with this request, so detecting the application's layout is
+not possible. This switch is an OpenASPI addition, not an original option.
+
+New OpenASPI clients should use function `05h`: it always returns exactly
+16 bytes regardless of `-2`. `TAPECTL` uses that entry point and falls back
+to the 14-byte `02h` layout only when it is unsupported. Its fallback does
+not autodetect an original third-party driver's 16-byte ABI.
+
+| Field | Manual ABI offset | Header ABI offset |
+|-------|-------------------|-------------------|
+| HA / target / LUN / parameters | 0 / 1 / 2 / 3 | 0 / 1 / 2 / 3 |
+| state | 4 (byte) | 4 (word) |
+| unit | 5 | 6 |
+| driver error | absent | 7 |
+| fixed block size | 6 | 8 |
+| SCSI status / sense key | 8 / 9 | 10 / 11 |
+| opcode / residual bytes | 10 / 12 | 12 / 14 |
+
+Both state layouts share bits `01h` buffered, `02h` raw, `04h` rewind on
+close, `08h` written and `10h` read. The header ABI additionally reports
+`20h` after a successful explicit movement/filemark operation (not `MTNOP`),
+uses `40h` for pending EOF, `80h` for ignored EOT, and `0100h` for a pending
+rewind. The manual ABI retains `20h`, `40h`, `80h` for those last three states.
+
+The header ABI's error byte reports a sense key on failed SCSI requests,
+or driver errors 16 (rewind timeout), 17 (access/exclusivity), 18 (single-byte
+guard), 19 (read after write), 20 (unsupported IOCTL), 21 (unknown tape
+operation), 22 (SCSI BUSY), and 23 (interrupted rewind wait). OpenASPI reserves
+31 for failures without a more specific code. Status queries do not clear
+the error. A subsequent media request can replace it; this is not an error
+history. Unit zero is the single supported physical drive. Emulator tests
+compare both layouts throughout reads, writes, EOF/EOT and rewind waits,
+including guard bytes after each destination buffer.
 
 ## Initial `mtop` operations
 
