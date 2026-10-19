@@ -69,6 +69,24 @@ run_fixture() {
                 rewind-error-i) defines+=(-DREWIND_ERROR); driver_line='DEVICE=ASPITAP.SYS -i' ;;
             esac
             ;;
+        buffered*)
+            defines=(-DBUFFERED_TEST)
+            test_source="$ROOT/tests/tape_buffered.asm"
+            success_text='OpenASPI buffered tape smoke test passed'
+            driver_line='DEVICE=ASPITAP.SYS -bwm'
+            case "$variant" in
+                buffered-legacy) defines+=(-DNO_RESIDUAL) ;;
+                buffered-fixed) defines+=(-DFIXED_BLOCK) ;;
+                buffered-fixed-legacy) defines+=(-DFIXED_BLOCK -DNO_RESIDUAL) ;;
+                buffered-write-error) defines+=(-DBUFFER_ERROR -DBUFFER_WRITE_ERROR) ;;
+                buffered-close-error) defines+=(-DBUFFER_ERROR -DBUFFER_CLOSE_ERROR) ;;
+                buffered-renamed) defines+=(-DBUFFER_RENAMED); driver_line='DEVICE=ASPITAP.SYS -bwmvtS$' ;;
+                buffered-disabled) defines=(-DBUFFER_DISABLED); driver_line='DEVICE=ASPITAP.SYS' ;;
+                buffered-discard) defines+=(-DBUFFER_DISCARD) ;;
+                buffered-single) defines+=(-DBUFFER_SINGLE); driver_line='DEVICE=ASPITAP.SYS -bwms' ;;
+                buffered-exclusive) driver_line='DEVICE=ASPITAP.SYS -bw' ;;
+            esac
+            ;;
         invalid-*)
             test_source="$ROOT/tests/tape_absent.asm"
             success_text='OpenASPI missing tape headers verified'
@@ -76,7 +94,7 @@ run_fixture() {
                 invalid-target) driver_line='DEVICE=ASPITAP.SYS -t' ;;
                 invalid-target-space) driver_line='DEVICE=ASPITAP.SYS -t -s' ;;
                 invalid-target-digit) driver_line='DEVICE=ASPITAP.SYS -t1' ;;
-                invalid-unsupported) driver_line='DEVICE=ASPITAP.SYS -b' ;;
+                invalid-unsupported) driver_line='DEVICE=ASPITAP.SYS -z' ;;
                 invalid-empty) driver_line='DEVICE=ASPITAP.SYS -' ;;
             esac
             ;;
@@ -153,7 +171,7 @@ run_fixture() {
     tr -d '\r' < "$run_dir/serial.log" | sed '/^[[:space:]]*$/d'
     if [[ "$variant" = no-* || "$variant" = bad-inquiry ]]; then
         grep -q 'Cannot open NRMT0' "$run_dir/serial.log"
-    elif [[ "$variant" = options* || "$variant" = invalid-* ]]; then
+    elif [[ "$variant" = options* || "$variant" = invalid-* || "$variant" = buffered-renamed ]]; then
         grep -q 'ASPITAP RMT0 absent' "$run_dir/serial.log"
         grep -q 'Cannot open NRMT0' "$run_dir/serial.log"
     else
@@ -162,7 +180,7 @@ run_fixture() {
     grep -q "$success_text" "$run_dir/serial.log"
     ! grep -q 'FAILED' "$run_dir/serial.log"
     case "$variant" in
-      legacy|fixed-legacy)
+      legacy|fixed-legacy|buffered-legacy|buffered-fixed-legacy)
         grep -q 'extensions=0000' "$run_dir/serial.log"
         ;;
       no-manager|no-adapters|bad-inquiry) ;;
@@ -198,10 +216,16 @@ run_fixture() {
         bad-inquiry)
             grep -q 'ASPITAP: host adapter inquiry failed' "$run_dir/serial.log"
             ;;
+        buffered-renamed)
+            grep -q 'ASPITAP: names=.*ST0\$.*NST0\$' "$run_dir/serial.log"
+            ;;
         *) ! grep -q 'ASPITAP: adapters=' "$run_dir/serial.log" ;;
     esac
 }
 
+if test "$#" -gt 0; then
+    for variant in "$@"; do run_fixture "$variant"; done
+else
 run_fixture residual
 run_fixture legacy
 run_fixture fixed
@@ -233,5 +257,17 @@ run_fixture rewind-break-disabled
 run_fixture rewind-interruptible
 run_fixture rewind-timeout-i
 run_fixture rewind-error-i
+run_fixture buffered
+run_fixture buffered-legacy
+run_fixture buffered-fixed
+run_fixture buffered-fixed-legacy
+run_fixture buffered-write-error
+run_fixture buffered-close-error
+run_fixture buffered-renamed
+run_fixture buffered-disabled
+run_fixture buffered-discard
+run_fixture buffered-single
+run_fixture buffered-exclusive
+fi
 
 echo 'OpenASPI emulated-tape smoke test passed'

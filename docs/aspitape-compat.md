@@ -75,7 +75,7 @@ option clusters such as `-ms` are accepted. Open and close requests themselves
 remain tracked so final-close processing occurs at the correct time.
 Malformed or unsupported options abort installation before ASPI discovery;
 they are not silently ignored. `-t` requires an immediate alphabetic name
-letter. Historical buffering (`-b`) remains unimplemented. `-v` and its
+letter. `-b` enables the historical buffered aliases. `-v` and its
 historical alias `-d` enable
 initialization diagnostics with adapter identities, extension flags, tape
 address, selected block mode and actual device names. Discovery failures also
@@ -83,10 +83,33 @@ report the failing stage. The diagnostics add no ASPI commands.
 
 At installation, `READ BLOCK LIMITS` detects a drive whose minimum and maximum
 block sizes are the same. `mtget` then reports `FIXED_BLOCK` and that size.
-DOS reads and writes must contain an integral number of blocks; the driver sets
+Raw DOS reads and writes must contain an integral number of blocks; the driver sets
 the SCSI fixed bit and converts the byte count to a block count. This mandatory
 fixed-drive handling is distinct from the historical optional `MTx`/`NMTx`
-1024-byte buffering mode, which is not implemented yet.
+1024-byte software-buffering mode, enabled with `-b`. Buffered transfers reuse
+the same SCSI paths; on a mandatory fixed-block drive, 1024 must be an integral
+multiple of its required physical block size.
+
+`-b` links `MT0` and `NMT0` in addition to the raw aliases. `-tX` and `-$`
+apply to all four names. Buffered `mtget` reports state bit `BUFFERED` (01h);
+the fixed-block parameter and size still describe the drive, not the cache.
+The optional 1024-byte cache is resident only when `-b` is enabled.
+
+Buffered reads split or combine records and defer a zero-byte filemark result
+until preceding cached data has been delivered. Buffered writes accumulate
+1024-byte records; final close zero-pads any partial record before writing the
+usual terminator. Status, EOT policy and `MTNOP` retain cache contents. Tape
+movement through `mtop` discards cached reads and writes, matching the original
+manual. A read-to-write transition discards unread cached bytes.
+
+The first open determines the session's transfer mode. Mixed raw/buffered
+opens are counted because DOS may disregard a driver's open error, but data
+transfers through the other mode are rejected even with `-m`. Failed or short
+physical buffered writes latch an error through final close, preventing
+automatic record replay and terminating filemarks after a failed flush.
+The SCSI status and sense remain inspectable after reopen. Applications must
+check tape status for delayed write errors because DOS may disregard device
+close errors.
 
 After any write, later reads in the same open session are rejected. On final
 close, a written session receives two filemarks. `RMT0` then rewinds; `NRMT0`

@@ -57,6 +57,13 @@ completion during close instead. Explicit `MTREW` remains synchronous.
 `-i` makes the deferred readiness wait interruptible with Ctrl-Break. The
 current request fails while rewind stays pending; a later request can retry.
 
+`-b` additionally exposes `MT0` and `NMT0` with a 1024-byte software cache.
+Reads split or combine physical records for the caller; writes accumulate
+1024-byte records and zero-pad the final partial record on close. Moving
+`mtop` operations discard cached bytes, while status and `MTNOP` preserve
+them. A failed physical write is not replayed automatically. DOS can ignore
+device-close errors, so callers must also inspect the reported tape status.
+
 The installer runs package-defined probes rather than containing OpenASPI
 hardware rules. `ASPISCAN /Q /TAPE`, `/DISK`, `/FDD` and `/CDA` preselect the
 matching DOS components. `WINCHECK.COM` distinguishes DOS, Windows 3.x and
@@ -124,6 +131,11 @@ midnight rollover using an accelerated guest BIOS clock. Existing transfer fixtu
 use `-w` to retain deterministic synchronous-close command sequences.
 Ctrl-Break fixtures verify opt-in interruption, retry after a handled break,
 chaining of the previous BIOS handler and vector restoration on exit.
+Buffered fixtures validate record contents, padding, deferred filemarks,
+cache invalidation, mixed-mode guards, 64K far-pointer crossings and write
+failures, with variable and mandatory fixed-block drives, ASPI residual and legacy managers, and
+renamed aliases. Optional fixture names can be passed to
+`bash tests/dos_tape_ioctl.sh` for focused runs.
 
 `make dos-mhvtl-smoke` uses QEMU's emulated Tekram-compatible DC-390 controller
 and `scsi-generic` passthrough to exercise `ASPITAP.SYS` against an mhVTL tape.

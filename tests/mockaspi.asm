@@ -162,6 +162,10 @@ execute_scsi:
         call    execute_read_block_limits
         jmp     aspi_done
 execute_data:
+ifdef BUFFERED_TEST
+        call buffered_test_command
+        jmp aspi_done
+endif
         cmp     byte ptr es:[bx+SRB_CDB], 08h
         je      execute_read
         cmp     byte ptr es:[bx+SRB_CDB], 0Ah
@@ -919,6 +923,9 @@ else
 endif
 endif
 
+ifdef BUFFERED_TEST
+        include tests/mockbuffered.inc
+endif
 resident_end label byte
 
         end     driver_start

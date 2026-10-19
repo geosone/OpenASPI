@@ -15,14 +15,33 @@ exact-length reads also work with older managers without that extension.
 on close. Variable-block writes and explicit `MTWEOF` filemarks are emulator-
 tested, including a failed write-protected request. Fixed-block transfers are
 selected automatically for drives whose SCSI `READ BLOCK LIMITS` response
-requires one block size; nonintegral DOS requests are rejected. The historical
-optional `MT0`/`NMT0` 1024-byte buffering layer is a separate feature and is
-not yet exposed. The write path is not yet qualified for production backups
+requires one block size; nonintegral raw DOS requests are rejected. The historical
+optional `MT0`/`NMT0` 1024-byte software-buffering layer is enabled by `-b`.
+The write path is not yet qualified for production backups
 on real media.
 
 The final close of a written session emits two filemarks. `RMT0` then rewinds;
 `NRMT0` backspaces one filemark to preserve the historical append position.
 Reads after a write in the same session are rejected.
+
+With `-b`, `MT0` rewinds and `NMT0` preserves the append position. Their
+software cache splits and combines 1024-byte physical transfers, even when
+the caller requests another byte count. Final close pads a partial written
+record with zeros before the two-filemark terminator. Filemarks are delivered
+after all preceding cached data. Status, EOT policy and `MTNOP` preserve the
+cache; tape-moving `mtop` calls discard it, including pending write bytes, as
+documented for historical ASPITAPE. Switching from read to write also discards
+unread cached data. A session's first open selects raw or buffered transfers;
+opens using other names remain counted, but their data transfers are refused,
+even with `-m`. DOS does not reliably enforce device-open errors.
+
+Physical buffered writes must complete the full 1024 bytes. An error or
+partial write latches failure until the session ends: subsequent data writes
+and finalization fail without replaying an ambiguous record or adding a
+misleading terminator. The last SCSI status/sense remain available through
+`mtget`, including after reopen. DOS may ignore a failed device-close request,
+so delayed flush errors must also be checked through tape status. The extra
+1024-byte cache is retained in DOS memory only with `-b`.
 
 By default, a final `RMT0` close sends REWIND with IMMED set. Reopening and
 querying status remain possible while `mtget` reports `REWINDING`. The next
@@ -58,14 +77,13 @@ DEVICE=ASPITAP.SYS -ms$tS
 This example installs `RST0$` and `NRST0$`.
 The name letter must follow `-t` immediately and be in `A` through `Z` (case
 insensitive). An incomplete `-t`, an invalid letter, an empty option prefix,
-or an unsupported switch aborts installation with an error message. In
-particular, `-b` is not implemented and must not
-be supplied. The driver pathname is skipped as a whole token, so hyphens in
+or an unsupported switch aborts installation with an error message.
+The driver pathname is skipped as a whole token, so hyphens in
 directory names do not enable options.
 
 `-v` and the equivalent `-d` enable verbose initialization. They show adapter
 count, manager/adapter identities and extension flags, the selected tape's
-address and block mode (fixed sizes are hexadecimal), and both actual device
+address and block mode (fixed sizes are hexadecimal), and all active device
 names. Failed discovery distinguishes an unavailable manager, a failed host
 inquiry, an empty adapter list and the absence of a tape. Diagnostics reuse
 discovery results without issuing additional ASPI commands.
@@ -84,7 +102,8 @@ Implementation order:
    (variable-block reads and rewind/no-rewind close semantics are present;
    variable-block writes and mandatory fixed-block transfers are present;
    default cooked-mode and multiple-open safeguards and their `-s`/`-m`
-   overrides are present; historical optional buffering remains);
+   overrides and optional `-b` software buffering are present; exact historical
+   error mapping and partial-transfer qualification remain);
 5. [done] implement category `07h` generic IOCTL functions, including explicit
    `MTWEOF` filemark writing;
 6. [done] translate CHECK CONDITION fixed/descriptor sense data needed for

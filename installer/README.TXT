@@ -47,7 +47,11 @@ letter X; -$ appends a collision-avoiding dollar sign.
 Malformed or unsupported options stop the driver from loading and print an
 error. Use -v (or -d) for adapter, tape, block-mode and device-name details
 during loading, including discovery failure reasons. Fixed block sizes are
-shown in hexadecimal. The historical -b buffering switch is not implemented.
+shown in hexadecimal. Add -b for MT0/NMT0 software-buffered aliases: physical
+transfers use 1024-byte records and close zero-pads a partial written record.
+Tape-moving controls discard the cache, including pending written bytes.
+Do not mix raw and buffered data access within a session. Check tape status
+for delayed write errors, since DOS may ignore a failed device-close request.
 Only one tape drive is exposed; medium-changer/library control is not part of
 this stage. The write path is not yet qualified for production backups on real
 media. Closing a written session adds two terminating filemarks; NRMT0 then

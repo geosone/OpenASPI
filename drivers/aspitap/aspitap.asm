@@ -62,6 +62,7 @@ SPACE_FILEMARKS equ     01h
 
 MT_PARAM_ASPI   equ     080h
 MT_PARAM_FIXED  equ     001h
+MT_STATE_BUFFERED equ   001h
 MT_STATE_REWIND equ     004h
 MT_STATE_WRITTEN equ    008h
 MT_STATE_READ   equ     010h
@@ -74,6 +75,8 @@ OPT_NAME_SUFFIX  equ    004h
 OPT_VERBOSE      equ    008h
 OPT_WAIT_REWIND  equ    010h
 OPT_BREAK_WAIT   equ    020h
+OPT_BUFFERED     equ    040h
+TAPE_BUFFER_SIZE equ    1024
 REWIND_WAIT_TICKS equ   3277            ; about three minutes at 18.2 Hz
 
 SENSE_FILEMARK  equ     080h
@@ -94,10 +97,26 @@ nrmt_header:
         dw      interrupt
 nrmt_device_name db     'NRMT0   '
 
+; Linked into the DOS device chain only when -b is selected.
+mt_header:
+        dw      offset nmt_header, 0
+        dw      DEV_ATTR
+        dw      strategy_mt
+        dw      interrupt
+mt_device_name db       'MT0     '
+nmt_header:
+        dd      0FFFFFFFFh
+        dw      DEV_ATTR
+        dw      strategy_nmt
+        dw      interrupt
+nmt_device_name db      'NMT0    '
+
 request_ptr     dd      0
 request_rewind  db      0
+request_buffered db     0
 
 strategy_rmt proc far
+        mov     byte ptr cs:[request_buffered], 0
         mov     byte ptr cs:[request_rewind], MT_STATE_REWIND
         mov     word ptr cs:[request_ptr], bx
         mov     word ptr cs:[request_ptr+2], es
@@ -105,11 +124,27 @@ strategy_rmt proc far
 strategy_rmt endp
 
 strategy_nrmt proc far
+        mov     byte ptr cs:[request_buffered], 0
         mov     byte ptr cs:[request_rewind], 0
         mov     word ptr cs:[request_ptr], bx
         mov     word ptr cs:[request_ptr+2], es
         ret
 strategy_nrmt endp
+
+strategy_mt proc far
+        mov     byte ptr cs:[request_buffered], 1
+        mov     byte ptr cs:[request_rewind], MT_STATE_REWIND
+        mov     word ptr cs:[request_ptr], bx
+        mov     word ptr cs:[request_ptr+2], es
+        ret
+strategy_mt endp
+strategy_nmt proc far
+        mov     byte ptr cs:[request_buffered], 1
+        mov     byte ptr cs:[request_rewind], 0
+        mov     word ptr cs:[request_ptr], bx
+        mov     word ptr cs:[request_ptr+2], es
+        ret
+strategy_nmt endp
 
 interrupt proc far
         push    ax
@@ -148,20 +183,34 @@ dispatch_read:
         jmp     unsupported
 
 read_request_dispatch:
+        cmp     byte ptr [request_buffered], 0
+        je      dispatch_raw_read
+        call    buffered_read
+        jmp     short dispatch_read_result
+dispatch_raw_read:
         call    read_request
+dispatch_read_result:
         jnc     read_request_success
         jmp     request_error
 read_request_success:
         jmp     request_success
 
 write_request_dispatch:
+        cmp     byte ptr [request_buffered], 0
+        je      dispatch_raw_write
+        call    buffered_write
+        jmp     short dispatch_write_result
+dispatch_raw_write:
         call    write_request
+dispatch_write_result:
         jnc     write_request_success
         jmp     request_error
 write_request_success:
         jmp     request_success
 
 init_request:
+        cmp     byte ptr [initialization_done], 0
+        jne     init_tape_ready
         call    parse_init_options
         jnc     init_options_valid
         mov     dx, offset banner_bad_options
@@ -170,9 +219,14 @@ init_options_valid:
         call    apply_device_names
         call    discover_tape
         jc      init_failed
-
+        mov     byte ptr [initialization_done], 1
+init_tape_ready:
         les     bx, [request_ptr]
         mov     word ptr es:[bx+0Eh], offset resident_end
+        test    byte ptr [config_options], OPT_BUFFERED
+        jz      init_resident_size_ready
+        mov     word ptr es:[bx+0Eh], offset buffered_resident_end
+init_resident_size_ready:
         mov     word ptr es:[bx+10h], cs
         mov     word ptr es:[bx+REQ_STATUS], 0100h
 
@@ -211,9 +265,18 @@ unsupported:
 
 open_request:
         cmp     byte ptr [tape_open_count], 0FFh
-        je      request_error
+        jne     open_count_available
+        jmp     request_error
+open_count_available:
         cmp     byte ptr [tape_open_count], 0
-        jne     open_increment
+        je      open_first_handle
+        jmp     open_increment
+open_first_handle:
+        mov     al, byte ptr [request_buffered]
+        mov     byte ptr [session_buffered], al
+open_mode_ready:
+        call    discard_tape_buffer
+        mov     byte ptr [buffer_write_failed], 0
         and     byte ptr [device_state], MT_STATE_EOM_EOF
 open_increment:
         inc     byte ptr [tape_open_count]
@@ -224,6 +287,8 @@ close_request:
         je      request_success
         dec     byte ptr [tape_open_count]
         jne     request_success
+        call    flush_tape_buffer
+        jc      request_error
         call    finish_written_tape
         jc      request_error
         cmp     byte ptr [request_rewind], 0
@@ -236,7 +301,9 @@ close_complete:
 
 generic_ioctl:
         cmp     byte ptr es:[bx+REQ_CATEGORY], IOCTL_TAPE
-        jne     unsupported
+        je      ioctl_category_valid
+        jmp     unsupported
+ioctl_category_valid:
         mov     al, byte ptr es:[bx+REQ_FUNCTION]
         cmp     al, IOCTL_MTGET
         je      ioctl_mtget
@@ -245,7 +312,9 @@ generic_ioctl:
         cmp     al, IOCTL_ENABLE_EOT
         je      ioctl_enable_eot
         cmp     al, IOCTL_MTOP
-        jne     unsupported
+        je      ioctl_function_valid
+        jmp     unsupported
+ioctl_function_valid:
         call    ioctl_mtop
         jc      request_error
         jmp     short request_success
@@ -302,6 +371,10 @@ mtget_parameters_ready:
         mov     byte ptr es:[di+3], al
         mov     al, byte ptr [device_state]
         or      al, byte ptr [request_rewind]
+        cmp     byte ptr [request_buffered], 0
+        je      mtget_buffer_mode_ready
+        or      al, MT_STATE_BUFFERED
+mtget_buffer_mode_ready:
         cmp     byte ptr [rewind_pending], 0
         je      mtget_state_ready
         or      al, 80h                 ; historical TPS_WIND
@@ -335,6 +408,10 @@ read_request proc near
         ret
 
 read_nonempty:
+        cmp     byte ptr [buffer_internal_io], 0
+        jne     read_open_allowed
+        cmp     byte ptr [session_buffered], 0
+        jne     read_access_error
         test    byte ptr [config_options], OPT_ALLOW_MULTIPLE
         jnz     read_open_allowed
         cmp     byte ptr [tape_open_count], 1
@@ -463,6 +540,12 @@ write_request proc near
         mov     ax, word ptr es:[bx+REQ_COUNT]
         mov     word ptr [requested_bytes], ax
         mov     word ptr es:[bx+REQ_COUNT], 0
+        cmp     byte ptr [buffer_internal_io], 0
+        jne     write_open_exclusive
+        cmp     byte ptr [session_buffered], 0
+        je      write_mode_allowed
+        jmp     write_access_error
+write_mode_allowed:
         test    byte ptr [config_options], OPT_ALLOW_MULTIPLE
         jnz     write_open_exclusive
         cmp     byte ptr [tape_open_count], 1
@@ -579,6 +662,279 @@ write_access_error:
         stc
         ret
 write_request endp
+
+; The buffered aliases reuse the raw request handlers with a resident private
+; request packet. Cache state belongs to the single physical tape session.
+buffered_read proc near
+        call    begin_buffer_request
+        cmp     word ptr [buffer_left], 0
+        jne     buffered_read_nonempty
+        jmp     buffer_success
+buffered_read_nonempty:
+        call    check_buffer_access
+        jnc     buffered_read_access_ok
+        jmp     buffer_error
+buffered_read_access_ok:
+        test    byte ptr [device_state], MT_STATE_WRITTEN
+        jz      buffered_read_not_written
+        jmp     buffer_error
+buffered_read_not_written:
+        call    wait_for_rewind
+        jnc     buffered_read_loop
+        jmp     buffer_error
+buffered_read_loop:
+        mov     ax, word ptr [buffer_count]
+        sub     ax, word ptr [buffer_cursor]
+        jnz     buffered_read_copy
+        call    discard_tape_buffer
+        ; Deliver a filemark only after all cached bytes preceding it.
+        test    byte ptr [device_state], MT_STATE_EOF_NEXT
+        jz      buffered_read_refill
+        cmp     word ptr [buffer_done], 0
+        je      buffered_read_refill
+        jmp     buffer_success
+buffered_read_refill:
+        mov     byte ptr [buffer_direction], 0
+        call    buffer_physical_io
+        jnc     buffered_read_filled
+        jmp     buffer_error
+buffered_read_filled:
+        mov     ax, word ptr [buffer_packet+REQ_COUNT]
+        mov     word ptr [buffer_count], ax
+        mov     byte ptr [buffer_kind], 1
+        or      ax, ax
+        jnz     buffered_read_copy
+        cmp     word ptr [buffer_done], 0
+        je      buffered_read_eof
+        or      byte ptr [device_state], MT_STATE_EOF_NEXT
+buffered_read_eof:
+        jmp     buffer_success
+buffered_read_copy:
+        cmp     ax, word ptr [buffer_left]
+        jbe     buffered_read_chunk_ready
+        mov     ax, word ptr [buffer_left]
+buffered_read_chunk_ready:
+        mov     word ptr [buffer_chunk], ax
+        mov     cx, ax
+        mov     si, offset tape_buffer
+        add     si, word ptr [buffer_cursor]
+        mov     es, word ptr [buffer_user_segment]
+        mov     di, word ptr [buffer_user_offset]
+        rep     movsb
+        mov     ax, word ptr [buffer_chunk]
+        add     word ptr [buffer_cursor], ax
+        call    advance_buffer_request
+        cmp     word ptr [buffer_left], 0
+        jne     buffered_read_loop
+        jmp     buffer_success
+buffered_read endp
+
+buffered_write proc near
+        call    begin_buffer_request
+        call    check_buffer_access
+        jnc     buffered_write_access_ok
+        jmp     buffer_error
+buffered_write_access_ok:
+        call    wait_for_rewind
+        jnc     buffered_write_ready
+        jmp     buffer_error
+buffered_write_ready:
+        cmp     byte ptr [buffer_kind], 1
+        jne     buffered_write_mode_ready
+        call    discard_tape_buffer
+buffered_write_mode_ready:
+        cmp     word ptr [buffer_left], 0
+        jne     buffered_write_loop
+        or      byte ptr [device_state], MT_STATE_WRITTEN
+        and     byte ptr [device_state], not MT_STATE_EOF_NEXT
+        jmp     buffer_success
+buffered_write_loop:
+        mov     byte ptr [buffer_kind], 2
+        mov     ax, TAPE_BUFFER_SIZE
+        sub     ax, word ptr [buffer_count]
+        cmp     ax, word ptr [buffer_left]
+        jbe     buffered_write_chunk_ready
+        mov     ax, word ptr [buffer_left]
+buffered_write_chunk_ready:
+        mov     word ptr [buffer_chunk], ax
+        mov     cx, ax
+        mov     si, word ptr [buffer_user_offset]
+        mov     di, offset tape_buffer
+        add     di, word ptr [buffer_count]
+        mov     ax, word ptr [buffer_user_segment]
+        push    ds
+        push    cs
+        pop     es
+        mov     ds, ax
+        rep     movsb
+        pop     ds
+        mov     ax, word ptr [buffer_chunk]
+        add     word ptr [buffer_count], ax
+        cmp     word ptr [buffer_count], TAPE_BUFFER_SIZE
+        jne     buffered_write_accepted
+        call    write_buffer_record
+        jnc     buffered_write_accepted
+        jmp     buffer_error
+buffered_write_accepted:
+        or      byte ptr [device_state], MT_STATE_WRITTEN
+        and     byte ptr [device_state], not MT_STATE_EOF_NEXT
+        call    advance_buffer_request
+        cmp     word ptr [buffer_left], 0
+        jne     buffered_write_loop
+        jmp     buffer_success
+buffered_write endp
+
+begin_buffer_request proc near
+        les     bx, [request_ptr]
+        mov     ax, word ptr es:[bx+REQ_COUNT]
+        mov     word ptr [buffer_left], ax
+        mov     word ptr [buffer_done], 0
+        mov     word ptr es:[bx+REQ_COUNT], 0
+        mov     ax, word ptr es:[bx+REQ_TRANSFER]
+        mov     dx, word ptr es:[bx+REQ_TRANSFER+2]
+        mov     bx, ax
+        and     bx, 0Fh
+        mov     word ptr [buffer_user_offset], bx
+        mov     cl, 4
+        shr     ax, cl
+        add     dx, ax
+        mov     word ptr [buffer_user_segment], dx
+        ret
+begin_buffer_request endp
+
+check_buffer_access proc near
+        mov     al, byte ptr [request_buffered]
+        cmp     al, byte ptr [session_buffered]
+        jne     buffer_access_error
+        cmp     byte ptr [buffer_write_failed], 0
+        jne     buffer_access_error
+        test    byte ptr [config_options], OPT_ALLOW_MULTIPLE
+        jnz     buffer_check_single
+        cmp     byte ptr [tape_open_count], 1
+        jne     buffer_access_error
+buffer_check_single:
+        cmp     word ptr [buffer_left], 1
+        jne     buffer_access_ok
+        test    byte ptr [config_options], OPT_ALLOW_SINGLE
+        jz      buffer_access_error
+buffer_access_ok:
+        cmp     word ptr [tape_fixed_block], 0
+        je      buffer_block_size_ok
+        mov     ax, TAPE_BUFFER_SIZE
+        xor     dx, dx
+        div     word ptr [tape_fixed_block]
+        or      dx, dx
+        jnz     buffer_access_error
+buffer_block_size_ok:
+        clc
+        ret
+buffer_access_error:
+        stc
+        ret
+check_buffer_access endp
+
+advance_buffer_request proc near
+        mov     ax, word ptr [buffer_chunk]
+        sub     word ptr [buffer_left], ax
+        add     word ptr [buffer_done], ax
+        add     ax, word ptr [buffer_user_offset]
+        mov     bx, ax
+        and     bx, 0Fh
+        mov     word ptr [buffer_user_offset], bx
+        mov     cl, 4
+        shr     ax, cl
+        add     word ptr [buffer_user_segment], ax
+        ret
+advance_buffer_request endp
+
+buffer_success:
+        les     bx, [request_ptr]
+        mov     ax, word ptr [buffer_done]
+        mov     word ptr es:[bx+REQ_COUNT], ax
+        clc
+        ret
+buffer_error:
+        les     bx, [request_ptr]
+        mov     ax, word ptr [buffer_done]
+        mov     word ptr es:[bx+REQ_COUNT], ax
+        stc
+        ret
+
+discard_tape_buffer proc near
+        mov     byte ptr [buffer_kind], 0
+        mov     word ptr [buffer_count], 0
+        mov     word ptr [buffer_cursor], 0
+        ret
+discard_tape_buffer endp
+
+buffer_physical_io proc near
+        push    word ptr [request_ptr+2]
+        push    word ptr [request_ptr]
+        mov     word ptr [request_ptr], offset buffer_packet
+        mov     word ptr [request_ptr+2], cs
+        mov     word ptr [buffer_packet+REQ_COUNT], TAPE_BUFFER_SIZE
+        mov     word ptr [buffer_packet+REQ_TRANSFER], offset tape_buffer
+        mov     word ptr [buffer_packet+REQ_TRANSFER+2], cs
+        mov     byte ptr [buffer_internal_io], 1
+        cmp     byte ptr [buffer_direction], 0
+        jne     buffer_physical_write
+        call    read_request
+        jmp     short buffer_physical_done
+buffer_physical_write:
+        call    write_request
+buffer_physical_done:
+        pushf
+        mov     byte ptr [buffer_internal_io], 0
+        pop     ax
+        pop     word ptr [request_ptr]
+        pop     word ptr [request_ptr+2]
+        push    ax
+        popf
+        ret
+buffer_physical_io endp
+
+; A failed or partial physical write is never replayed automatically: the
+; drive may have consumed a record. Latch the error through the final close.
+write_buffer_record proc near
+        mov     byte ptr [buffer_direction], 1
+        call    buffer_physical_io
+        jc      write_buffer_failed
+        cmp     word ptr [buffer_packet+REQ_COUNT], TAPE_BUFFER_SIZE
+        jne     write_buffer_failed
+        call    discard_tape_buffer
+        clc
+        ret
+write_buffer_failed:
+        mov     byte ptr [buffer_write_failed], 1
+        stc
+        ret
+write_buffer_record endp
+
+flush_tape_buffer proc near
+        cmp     byte ptr [session_buffered], 0
+        je      flush_buffer_done
+        cmp     byte ptr [buffer_write_failed], 0
+        jne     flush_buffer_failed
+        cmp     byte ptr [buffer_kind], 2
+        jne     flush_buffer_done
+        cmp     word ptr [buffer_count], 0
+        je      flush_buffer_done
+        push    cs
+        pop     es
+        mov     di, offset tape_buffer
+        add     di, word ptr [buffer_count]
+        mov     cx, TAPE_BUFFER_SIZE
+        sub     cx, word ptr [buffer_count]
+        xor     al, al
+        rep     stosb
+        jmp     write_buffer_record
+flush_buffer_done:
+        clc
+        ret
+flush_buffer_failed:
+        stc
+        ret
+flush_tape_buffer endp
 
 zero_transfer_count proc near
         les     bx, [request_ptr]
@@ -1026,6 +1382,10 @@ mtop_unsupported:
 ioctl_mtop endp
 
 execute_control_srb proc near
+        cmp     byte ptr [srb+SRB_CDB], SCSI_TUR
+        je      control_buffer_ready
+        call    discard_tape_buffer
+control_buffer_ready:
         xor     ax, ax
         mov     al, byte ptr [srb+SRB_CDB]
         mov     ah, byte ptr [srb+SRB_Flags]
@@ -1467,6 +1827,11 @@ init_option_not_wait:
         or      byte ptr [config_options], OPT_BREAK_WAIT
         jmp     short init_option_next
 init_option_not_break:
+        cmp     al, 'B'
+        jne     init_option_not_buffered
+        or      byte ptr [config_options], OPT_BUFFERED
+        jmp     short init_option_next
+init_option_not_buffered:
         cmp     al, 'T'
         jne     init_options_invalid
         inc     si
@@ -1494,10 +1859,20 @@ apply_device_names proc near
         mov     al, byte ptr [config_name_letter]
         mov     byte ptr [rmt_device_name+1], al
         mov     byte ptr [nrmt_device_name+2], al
+        mov     byte ptr [mt_device_name], al
+        mov     byte ptr [nmt_device_name+1], al
+        test    byte ptr [config_options], OPT_BUFFERED
+        jz      device_buffer_names_ready
+        mov     word ptr [nrmt_header], offset mt_header
+        mov     word ptr [nrmt_header+2], cs
+        mov     word ptr [mt_header+2], cs
+device_buffer_names_ready:
         test    byte ptr [config_options], OPT_NAME_SUFFIX
         jz      device_names_done
         mov     byte ptr [rmt_device_name+4], '$'
         mov     byte ptr [nrmt_device_name+5], '$'
+        mov     byte ptr [mt_device_name+3], '$'
+        mov     byte ptr [nmt_device_name+4], '$'
 device_names_done:
         ret
 apply_device_names endp
@@ -1686,7 +2061,9 @@ report_tape proc near
         push    dx
         push    si
         test    byte ptr [config_options], OPT_VERBOSE
-        jz      report_tape_done
+        jnz     report_tape_verbose
+        jmp     report_tape_done
+report_tape_verbose:
         mov     dx, offset msg_tape
         mov     ah, 09h
         int     21h
@@ -1725,6 +2102,19 @@ report_block_text:
         mov     si, offset nrmt_device_name
         mov     cx, 8
         call    print_fixed
+        test    byte ptr [config_options], OPT_BUFFERED
+        jz      report_names_done
+        mov     dl, ' '
+        call    print_char
+        mov     si, offset mt_device_name
+        mov     cx, 8
+        call    print_fixed
+        mov     dl, ' '
+        call    print_char
+        mov     si, offset nmt_device_name
+        mov     cx, 8
+        call    print_fixed
+report_names_done:
         mov     dx, offset msg_crlf
         mov     ah, 09h
         int     21h
@@ -1799,6 +2189,7 @@ tape_target         db  0
 tape_lun            db  0
 tape_fixed_block    dw  0
 config_options      db  0
+initialization_done db  0
 config_name_letter  db  'M'
 rewind_pending      db  0
 rewind_start_low    dw  0
@@ -1822,6 +2213,22 @@ sense_info_low      dw  0
 block_limits        db  6 dup (0)
 srb                  db  ASPI_SRB_SIZE dup (0)
 
+session_buffered    db  0
+buffer_internal_io  db  0
+buffer_write_failed db  0
+buffer_kind         db  0               ; 0 empty, 1 read cache, 2 write cache
+buffer_count        dw  0
+buffer_cursor       dw  0
+buffer_left         dw  0
+buffer_done         dw  0
+buffer_chunk        dw  0
+buffer_user_offset  dw  0
+buffer_user_segment dw  0
+buffer_direction    db  0
+buffer_packet       db  24 dup (0)
+
 resident_end label byte
+tape_buffer         db  TAPE_BUFFER_SIZE dup (0)
+buffered_resident_end label byte
 
         end     driver_start
