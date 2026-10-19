@@ -41,6 +41,7 @@
 #define OA_MT16_STATE_EOF_NEXT_READ 0x0040u
 #define OA_MT16_STATE_EOM_AS_EOF    0x0080u
 #define OA_MT16_STATE_REWINDING     0x0100u
+#define OA_MT16_STATE_WRITE_ERROR   0x0200u /* saved buffered write failure */
 #define OA_MT_ERROR_NOT_READY      16u
 #define OA_MT_ERROR_MULTIPLE       17u
 #define OA_MT_ERROR_SINGLE_BYTE    18u

@@ -38,8 +38,13 @@ even with `-m`. DOS does not reliably enforce device-open errors.
 Physical buffered writes must complete the full 1024 bytes. An error or
 partial write latches failure until the session ends: subsequent data writes
 and finalization fail without replaying an ambiguous record or adding a
-misleading terminator. The last SCSI status/sense remain available through
-`mtget`, including after reopen. DOS may ignore a failed device-close request,
+misleading terminator. A diagnostic snapshot remains available through `mtget`,
+including after readiness/control commands and reopen. The sixteen-byte status
+format marks that snapshot with `OA_MT16_STATE_WRITE_ERROR` (`0200h`). Only a
+complete successful physical data write in a new session clears it; accepting
+bytes into the cache does not. Reopening does not recover tape position:
+applications must choose their recovery procedure before writing again.
+DOS may ignore a failed device-close request,
 so delayed flush errors must also be checked through tape status. The extra
 1024-byte cache is retained in DOS memory only with `-b`.
 

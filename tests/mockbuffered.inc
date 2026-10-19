@@ -1,5 +1,9 @@
 ; Ordered, payload-validating SCSI fixture for the software-buffered aliases.
 buffered_test_command proc near
+        cmp byte ptr cs:[buffer_protocol_error], 0
+        je buffered_protocol_ready
+        jmp buffered_bad
+buffered_protocol_ready:
         xor ax, ax
         mov al, byte ptr cs:[buffer_event]
         cmp al, BUFFER_EVENT_COUNT
@@ -52,6 +56,7 @@ buffered_good:
         mov byte ptr es:[bx+SRB_Status], SS_COMP
         ret
 buffered_bad:
+        mov byte ptr cs:[buffer_protocol_error], 1
         mov byte ptr es:[bx+SRB_Status], SS_ERR
         ret
 buffered_data:
@@ -126,11 +131,25 @@ endif
 buffered_payload_ok:
         pop es
 ifdef BUFFER_ERROR
+ifdef BUFFER_RECOVERY
+        cmp byte ptr cs:[buffer_event], 1
+        jne buffered_recovered_write
+endif
+ifdef BUFFER_SHORT_WRITE
+        mov word ptr es:[bx+SRB_BufLen], 512
+        jmp buffered_good
+else
         mov byte ptr es:[bx+SRB_CDB+16], 70h
         mov byte ptr es:[bx+SRB_CDB+18], 7 ; DATA PROTECT
         mov byte ptr es:[bx+SRB_TargStat], 2
         mov byte ptr es:[bx+SRB_Status], SS_ERR
         ret
+endif
+ifdef BUFFER_RECOVERY
+buffered_recovered_write:
+        mov word ptr es:[bx+SRB_BufLen], 0
+        jmp buffered_good
+endif
 else
 ifndef NO_RESIDUAL
         mov word ptr es:[bx+SRB_BufLen], 0
@@ -232,14 +251,25 @@ buffered_compare_bad:
 buffered_compare endp
 
 buffer_event db 0
+buffer_protocol_error db 0
 buffer_events:
 ifdef BUFFER_DISCARD
         db 11h, 10h, 11h, 00h
 BUFFER_EVENT_COUNT equ 4
 else
 ifdef BUFFER_ERROR
+ifdef BUFFER_WRITE_ERROR
+        db 0Ah, 00h, 00h
+ifdef BUFFER_RECOVERY
+        db 0Ah, 10h, 11h, 00h
+BUFFER_EVENT_COUNT equ 7
+else
+BUFFER_EVENT_COUNT equ 3
+endif
+else
         db 0Ah, 00h
 BUFFER_EVENT_COUNT equ 2
+endif
 else
         db 01h, 08h, 08h, 00h, 08h, 08h, 08h, 08h
         db 11h, 08h, 0Ah, 00h, 0Ah, 10h, 11h, 00h

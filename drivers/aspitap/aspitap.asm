@@ -353,19 +353,7 @@ ioctl_enable_eot:
         jmp     short request_success
 
 request_error:
-        cmp     byte ptr [driver_error], 0
-        jne     request_error_recorded
-        mov     al, byte ptr [last_sense_key]
-        cmp     byte ptr [last_scsi_status], 8
-        jne     request_error_not_busy
-        mov     al, 22
-request_error_not_busy:
-        or      al, al
-        jnz     request_error_known
-        mov     al, 31                  ; OpenASPI unspecified driver error
-request_error_known:
-        mov     byte ptr [driver_error], al
-request_error_recorded:
+        call    record_driver_error
         les     bx, [request_ptr]
         mov     word ptr es:[bx+REQ_STATUS], 810Ch
         jmp     short request_done
@@ -386,6 +374,27 @@ request_done:
         pop     ax
         ret
 interrupt endp
+
+; Record the cause before a buffered physical request can be retried or a
+; later control command can overwrite the live SCSI diagnostic fields.
+record_driver_error proc near
+        push    ax
+        cmp     byte ptr [driver_error], 0
+        jne     record_error_done
+        mov     al, byte ptr [last_sense_key]
+        cmp     byte ptr [last_scsi_status], 8
+        jne     record_error_not_busy
+        mov     al, 22
+record_error_not_busy:
+        or      al, al
+        jnz     record_error_known
+        mov     al, 31                  ; unspecified driver error
+record_error_known:
+        mov     byte ptr [driver_error], al
+record_error_done:
+        pop     ax
+        ret
+record_driver_error endp
 
 ; Fill the byte-exact fourteen-byte ASPITAPE mtget structure.
 fill_mtget proc near
@@ -428,6 +437,15 @@ mtget_state_ready:
         mov     word ptr es:[di+0Ah], ax
         mov     ax, word ptr [residual_bytes]
         mov     word ptr es:[di+0Ch], ax
+        cmp     byte ptr [write_error_valid], 0
+        je      mtget_diagnostics_ready
+        mov     ax, word ptr [write_error_status]
+        mov     word ptr es:[di+8], ax
+        mov     ax, word ptr [write_error_opcode]
+        mov     word ptr es:[di+0Ah], ax
+        mov     ax, word ptr [write_error_residual]
+        mov     word ptr es:[di+0Ch], ax
+mtget_diagnostics_ready:
         ret
 fill_mtget endp
 
@@ -446,6 +464,10 @@ fill_mtget16 proc near
         mov     word ptr es:[di+8], ax
         mov     byte ptr es:[di+6], 0    ; physical unit zero
         mov     al, byte ptr [driver_error]
+        cmp     byte ptr [write_error_valid], 0
+        je      mtget16_error_ready
+        mov     al, byte ptr [write_error_code]
+mtget16_error_ready:
         mov     byte ptr es:[di+7], al
         xor     ah, ah
         mov     al, byte ptr es:[di+4]
@@ -463,6 +485,10 @@ mtget16_eot_ready:
         je      mtget16_ready
         mov     ah, 1
 mtget16_ready:
+        cmp     byte ptr [write_error_valid], 0
+        je      mtget16_store_state
+        or      ah, 2                   ; OpenASPI latched write diagnostic
+mtget16_store_state:
         mov     word ptr es:[di+4], ax
         ret
 fill_mtget16 endp
@@ -707,6 +733,14 @@ write_length_ready:
         call    finish_transfer_count
         jc      write_bad_residual
 write_success:
+        ; Buffered acceptance, short transfers and ignored CHECK CONDITION
+        ; are not proof that a later physical record was fully written.
+        cmp     byte ptr [srb+SRB_Status], SS_COMP
+        jne     write_success_state
+        cmp     word ptr [residual_bytes], 0
+        jne     write_success_state
+        mov     byte ptr [write_error_valid], 0
+write_success_state:
         and     byte ptr [device_state], not MT_STATE_EOF_NEXT
         or      byte ptr [device_state], MT_STATE_WRITTEN
         clc
@@ -884,11 +918,16 @@ begin_buffer_request proc near
 begin_buffer_request endp
 
 check_buffer_access proc near
+        cmp     byte ptr [buffer_write_failed], 0
+        je      buffer_access_not_latched
+        mov     al, byte ptr [write_error_code]
+        mov     byte ptr [driver_error], al
+        stc
+        ret
+buffer_access_not_latched:
         mov     byte ptr [driver_error], 17
         mov     al, byte ptr [request_buffered]
         cmp     al, byte ptr [session_buffered]
-        jne     buffer_access_error
-        cmp     byte ptr [buffer_write_failed], 0
         jne     buffer_access_error
         test    byte ptr [config_options], OPT_ALLOW_MULTIPLE
         jnz     buffer_check_single
@@ -989,6 +1028,18 @@ write_buffer_record proc near
         clc
         ret
 write_buffer_failed:
+        call    record_driver_error
+        mov     al, byte ptr [driver_error]
+        mov     byte ptr [write_error_code], al
+        mov     al, byte ptr [last_scsi_status]
+        mov     byte ptr [write_error_status], al
+        mov     al, byte ptr [last_sense_key]
+        mov     byte ptr [write_error_status+1], al
+        mov     ax, word ptr [last_scsi_opcode]
+        mov     word ptr [write_error_opcode], ax
+        mov     ax, word ptr [residual_bytes]
+        mov     word ptr [write_error_residual], ax
+        mov     byte ptr [write_error_valid], 1
         mov     byte ptr [buffer_write_failed], 1
         stc
         ret
@@ -1016,6 +1067,8 @@ flush_buffer_done:
         clc
         ret
 flush_buffer_failed:
+        mov     al, byte ptr [write_error_code]
+        mov     byte ptr [driver_error], al
         stc
         ret
 flush_tape_buffer endp
@@ -2317,6 +2370,11 @@ srb                  db  ASPI_SRB_SIZE dup (0)
 session_buffered    db  0
 buffer_internal_io  db  0
 buffer_write_failed db  0
+write_error_valid   db  0
+write_error_code    db  0
+write_error_status  dw  0               ; SCSI status byte, sense-key byte
+write_error_opcode  dw  0
+write_error_residual dw 0
 buffer_kind         db  0               ; 0 empty, 1 read cache, 2 write cache
 buffer_count        dw  0
 buffer_cursor       dw  0

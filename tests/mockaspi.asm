@@ -163,6 +163,13 @@ execute_scsi:
         jmp     aspi_done
 execute_data:
 ifdef BUFFERED_TEST
+        ; ASPISCAN probes INQUIRY before the ordered media scenario starts.
+        ; It is deliberately unsupported, not a protocol-sequence violation.
+        cmp byte ptr es:[bx+SRB_CDB], 12h
+        jne execute_buffered_test
+        mov byte ptr es:[bx+SRB_Status], SS_ERR
+        jmp aspi_done
+execute_buffered_test:
         call buffered_test_command
         jmp aspi_done
 endif

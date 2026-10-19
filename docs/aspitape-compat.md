@@ -70,8 +70,9 @@ or driver errors 16 (rewind timeout), 17 (access/exclusivity), 18 (single-byte
 guard), 19 (read after write), 20 (unsupported IOCTL), 21 (unknown tape
 operation), 22 (SCSI BUSY), and 23 (interrupted rewind wait). OpenASPI reserves
 31 for failures without a more specific code. Status queries do not clear
-the error. A subsequent media request can replace it; this is not an error
-history. Unit zero is the single supported physical drive. Emulator tests
+the error. A subsequent media request can replace it unless the saved buffered
+write-failure rule below applies; this is not an error history. Unit zero is
+the single supported physical drive. Emulator tests
 compare both layouts throughout reads, writes, EOF/EOT and rewind waits,
 including guard bytes after each destination buffer.
 
@@ -153,6 +154,29 @@ automatic record replay and terminating filemarks after a failed flush.
 The SCSI status and sense remain inspectable after reopen. Applications must
 check tape status for delayed write errors because DOS may disregard device
 close errors.
+
+A failed or short physical buffered write also saves its diagnostic tuple:
+SCSI status, sense key, opcode, residual byte count and driver error.
+If a readiness barrier fails before the data CDB is sent, the snapshot's
+opcode identifies that failing readiness command instead. Both
+status layouts return this saved tuple even after successful `MTNOP`, other
+controls, rejected retries, close or reopen. The 16-byte ABI marks this with
+the OpenASPI-only state bit `0200h` (`OA_MT16_STATE_WRITE_ERROR`); its state
+bits still describe the current session, but the diagnostic fields refer to
+the failed write, not the latest readiness/control command. The 14-byte ABI
+has no spare state bit and returns the same saved diagnostic fields.
+
+The active session remains locked against data retries and automatic
+finalization. A new session may write again. The diagnostic snapshot is
+cleared only by a full physical data write completed with ASPI success and
+zero residual, through either raw or buffered aliases. Merely opening a new
+session, accepting bytes into the software cache, a zero-length write,
+writing filemarks, moving tape, or a partial/ignored-EOT transfer does not
+acknowledge the failure. Another failed physical buffered write replaces
+the snapshot with its own failure. This protects delayed errors without
+silently replaying potentially consumed records. It does not restore tape
+position or make appending after an error safe; the caller must choose the
+appropriate media recovery and positioning before starting a new session.
 
 After any write, later reads in the same open session are rejected. On final
 close, a written session receives two filemarks. `RMT0` then rewinds; `NRMT0`

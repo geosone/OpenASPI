@@ -83,6 +83,7 @@ status_compare_address:
 status_compare_state:
         mov dx, word ptr [status_extended+4]
         and dl, 0DFh                   ; MTOP has no manual-ABI equivalent
+        and dh, 0FDh                   ; latched write error is OpenASPI-only
         cmp ax, dx
         status_require_equal
         cmp byte ptr [status_extended+6], 0

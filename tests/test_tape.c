@@ -20,6 +20,7 @@ static void test_abi_sizes(void)
     assert(offsetof(struct oa_aspitape_mtget16, driver_error) == 7u);
     assert(offsetof(struct oa_aspitape_mtget16, last_scsi_status) == 10u);
     assert(offsetof(struct oa_aspitape_mtget16, residual_bytes) == 14u);
+    assert(OA_MT16_STATE_WRITE_ERROR == 0x0200u);
 }
 
 static void test_read_write_cdb(void)

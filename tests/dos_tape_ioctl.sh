@@ -100,6 +100,20 @@ run_fixture() {
                 buffered-fixed-legacy) defines+=(-DFIXED_BLOCK -DNO_RESIDUAL) ;;
                 buffered-write-error) defines+=(-DBUFFER_ERROR -DBUFFER_WRITE_ERROR) ;;
                 buffered-close-error) defines+=(-DBUFFER_ERROR -DBUFFER_CLOSE_ERROR) ;;
+                buffered-write-error-fixed) defines+=(-DBUFFER_ERROR -DBUFFER_WRITE_ERROR -DFIXED_BLOCK) ;;
+                buffered-write-error-legacy) defines+=(-DBUFFER_ERROR -DBUFFER_WRITE_ERROR -DNO_RESIDUAL) ;;
+                buffered-close-error-fixed) defines+=(-DBUFFER_ERROR -DBUFFER_CLOSE_ERROR -DFIXED_BLOCK) ;;
+                buffered-close-error-legacy) defines+=(-DBUFFER_ERROR -DBUFFER_CLOSE_ERROR -DNO_RESIDUAL) ;;
+                buffered-write-error-status16)
+                    defines+=(-DBUFFER_ERROR -DBUFFER_WRITE_ERROR -DSTATUS16)
+                    driver_line='DEVICE=ASPITAP.SYS -2bwm' ;;
+                buffered-close-error-status16)
+                    defines+=(-DBUFFER_ERROR -DBUFFER_CLOSE_ERROR -DSTATUS16)
+                    driver_line='DEVICE=ASPITAP.SYS -2bwm' ;;
+                buffered-recovery) defines+=(-DBUFFER_ERROR -DBUFFER_WRITE_ERROR -DBUFFER_RECOVERY) ;;
+                buffered-raw-recovery) defines+=(-DBUFFER_ERROR -DBUFFER_WRITE_ERROR -DBUFFER_RECOVERY -DBUFFER_RAW_RECOVERY) ;;
+                buffered-short-write) defines+=(-DBUFFER_ERROR -DBUFFER_WRITE_ERROR -DBUFFER_SHORT_WRITE) ;;
+                buffered-short-recovery) defines+=(-DBUFFER_ERROR -DBUFFER_WRITE_ERROR -DBUFFER_SHORT_WRITE -DBUFFER_RECOVERY) ;;
                 buffered-renamed) defines+=(-DBUFFER_RENAMED); driver_line='DEVICE=ASPITAP.SYS -bwmvtS$' ;;
                 buffered-disabled) defines=(-DBUFFER_DISABLED); driver_line='DEVICE=ASPITAP.SYS' ;;
                 buffered-discard) defines+=(-DBUFFER_DISCARD) ;;
@@ -200,7 +214,7 @@ run_fixture() {
     grep -q "$success_text" "$run_dir/serial.log"
     ! grep -q 'FAILED' "$run_dir/serial.log"
     case "$variant" in
-      legacy|fixed-legacy|buffered-legacy|buffered-fixed-legacy)
+      legacy|fixed-legacy|buffered-legacy|buffered-fixed-legacy|buffered-write-error-legacy|buffered-close-error-legacy)
         grep -q 'extensions=0000' "$run_dir/serial.log"
         ;;
       no-manager|no-adapters|bad-inquiry) ;;
@@ -283,6 +297,16 @@ run_fixture buffered-fixed
 run_fixture buffered-fixed-legacy
 run_fixture buffered-write-error
 run_fixture buffered-close-error
+run_fixture buffered-write-error-fixed
+run_fixture buffered-write-error-legacy
+run_fixture buffered-close-error-fixed
+run_fixture buffered-close-error-legacy
+run_fixture buffered-write-error-status16
+run_fixture buffered-close-error-status16
+run_fixture buffered-recovery
+run_fixture buffered-raw-recovery
+run_fixture buffered-short-write
+run_fixture buffered-short-recovery
 run_fixture buffered-renamed
 run_fixture buffered-disabled
 run_fixture buffered-discard

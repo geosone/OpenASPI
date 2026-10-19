@@ -281,12 +281,22 @@ ifdef BUFFER_WRITE_ERROR
         mov ah, 40h
         int 21h
         expect_error
+        call verify_write_error
+        mov word ptr [control], 7
+        call run_mtop                ; readiness must not erase the write error
+        expect_ok
+        call verify_write_error
+        mov word ptr [control], 8
+        call run_mtop                ; nor may a later invalid operation
+        expect_error
+        call verify_write_error
         mov bx, word ptr [handle]
         mov dx, offset buffer
         mov cx, 2
         mov ah, 40h
         int 21h
         expect_error                 ; a failed physical record is not replayed
+        call verify_write_error
 else
         mov cx, 3
         call write_expect            ; error will occur while padding on close
@@ -298,8 +308,7 @@ endif
         mov word ptr [handle], ax
         call get_status
         expect_ok
-        cmp byte ptr [status+9], 7
-        expect_equal
+        call verify_write_error
         jmp final_tur
 endif
 check_final_event:
@@ -312,8 +321,14 @@ final_tur:
         mov word ptr [control], 7
         call run_mtop                ; proves every prior expected CDB occurred
         expect_ok
+ifdef BUFFER_ERROR
+        call verify_write_error
+endif
         call close_handle
         expect_ok
+ifdef BUFFER_RECOVERY
+        call recover_write
+endif
 endif
 success:
         call restore_int24
@@ -332,6 +347,93 @@ failed:
         int 21h
         mov ax, 4C01h
         int 21h
+
+ifdef BUFFER_ERROR
+verify_write_error proc near
+        call get_status
+        expect_ok
+ifdef BUFFER_SHORT_WRITE
+        cmp byte ptr [status+8], 0
+        expect_equal
+        cmp byte ptr [status+9], 0
+        expect_equal
+        cmp byte ptr [status_extended+7], 31
+        expect_equal
+        cmp word ptr [status+12], 512
+        expect_equal
+else
+        cmp byte ptr [status+8], 2
+        expect_equal
+        cmp byte ptr [status+9], 7
+        expect_equal
+        cmp byte ptr [status_extended+7], 7
+        expect_equal
+        cmp word ptr [status+12], 1024
+        expect_equal
+endif
+        mov ax, word ptr [status_extended+4]
+        and ax, 0200h
+        cmp ax, 0200h
+        expect_equal
+        cmp byte ptr [status+10], 0Ah
+        expect_equal
+        ret
+verify_write_error endp
+endif
+
+ifdef BUFFER_RECOVERY
+recover_write proc near
+        mov byte ptr [stage], 'R'
+ifdef BUFFER_RAW_RECOVERY
+        mov dx, offset raw_name
+else
+        mov dx, offset nmt_name
+endif
+        call open_raw
+        expect_ok
+        mov word ptr [handle], ax
+        call verify_write_error       ; opening must not acknowledge failure
+ifdef BUFFER_RAW_RECOVERY
+        mov cx, 1024
+else
+        xor cx, cx
+        call write_expect             ; no physical write, error must survive
+        call verify_write_error
+        mov cx, 3
+        call write_expect             ; buffering is not physical completion
+        call verify_write_error
+        mov cx, 1021
+endif
+        call write_expect
+        call verify_write_recovered
+        call close_handle
+        expect_ok
+        mov dx, offset raw_name
+        call open_raw
+        expect_ok
+        mov word ptr [handle], ax
+        mov word ptr [control], 7
+        call run_mtop
+        expect_ok
+        call verify_write_recovered
+        call close_handle
+        expect_ok
+        ret
+recover_write endp
+verify_write_recovered proc near
+        call get_status
+        expect_ok
+        test word ptr [status_extended+4], 0200h
+        expect_equal
+        cmp byte ptr [status_extended+7], 0
+        expect_equal
+        cmp word ptr [status+8], 0
+        expect_equal
+        cmp word ptr [status+12], 0
+        expect_equal
+        ret
+verify_write_recovered endp
+endif
 
 read_expect proc near
         push ax
