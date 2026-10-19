@@ -24,6 +24,16 @@ The final close of a written session emits two filemarks. `RMT0` then rewinds;
 `NRMT0` backspaces one filemark to preserve the historical append position.
 Reads after a write in the same session are rejected.
 
+By default, a final `RMT0` close sends REWIND with IMMED set. Reopening and
+querying status remain possible while `mtget` reports `REWINDING`. The next
+read, write, tape operation or additional rewind waits for readiness, polling
+at most once per BIOS tick for about three minutes. BUSY and recognized
+rewind/becoming-ready sense are retried; other errors fail immediately and
+keep the pending flag so a later request cannot bypass the wait. The BIOS
+tick calculation handles midnight rollover without consuming DOS' midnight
+flag. `-w` selects synchronous rewind on close; explicit `MTREW` is always
+synchronous. Command execution timeouts remain the ASPI manager's responsibility.
+
 Data transfers require exactly one open tape handle and reject one-byte
 requests by default. The latter is the historical cooked-mode safeguard:
 applications are expected to put the character device into raw mode. The
@@ -40,7 +50,7 @@ This example installs `RST0$` and `NRST0$`.
 The name letter must follow `-t` immediately and be in `A` through `Z` (case
 insensitive). An incomplete `-t`, an invalid letter, an empty option prefix,
 or an unsupported switch aborts installation with an error message. In
-particular, `-b`, `-w` and `-i` are not implemented and must not
+particular, `-b` and `-i` are not implemented and must not
 be supplied. The driver pathname is skipped as a whole token, so hyphens in
 directory names do not enable options.
 

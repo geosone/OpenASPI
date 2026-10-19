@@ -17,19 +17,19 @@ run_fixture() {
     local variant=$1 run_dir="$OUT/$1" defines=()
     local test_source="$ROOT/tests/tape_ioctl.asm"
     local success_text='OpenASPI tape IOCTL smoke test passed'
-    local driver_line='DEVICE=ASPITAP.SYS'
+    local driver_line='DEVICE=ASPITAP.SYS -w'
     local manager_line='DEVICE=MOCKASPI.SYS'
 
     case "$variant" in
         legacy) defines=(-DNO_RESIDUAL) ;;
-        pathname) driver_line='DEVICE=ASPI-S\ASPITAP.SYS' ;;
-        verbose) driver_line='DEVICE=ASPITAP.SYS -v' ;;
-        debug) driver_line='DEVICE=ASPITAP.SYS /D' ;;
+        pathname) driver_line='DEVICE=ASPI-S\ASPITAP.SYS -w' ;;
+        verbose) driver_line='DEVICE=ASPITAP.SYS -vw' ;;
+        debug) driver_line='DEVICE=ASPITAP.SYS /D /W' ;;
         fixed-verbose)
             defines=(-DFIXED_BLOCK)
             test_source="$ROOT/tests/tape_fixed.asm"
             success_text='OpenASPI fixed-block tape smoke test passed'
-            driver_line='DEVICE=ASPITAP.SYS -v'
+            driver_line='DEVICE=ASPITAP.SYS -vw'
             ;;
         fixed)
             defines=(-DFIXED_BLOCK)
@@ -45,10 +45,24 @@ run_fixture() {
             defines=(-DOPTION_OVERRIDES)
             test_source="$ROOT/tests/tape_options.asm"
             success_text='OpenASPI tape option smoke test passed'
-            driver_line='DEVICE=ASPITAP.SYS -vms$tS'
+            driver_line='DEVICE=ASPITAP.SYS -wvms$tS'
             if test "$variant" = options-separated; then
-                driver_line='DEVICE=ASPITAP.SYS /M /S /ts /$'
+                driver_line='DEVICE=ASPITAP.SYS /M /S /ts /$ /W'
             fi
+            ;;
+        rewind-*)
+            defines=(-DREWIND_TEST)
+            test_source="$ROOT/tests/tape_rewind.asm"
+            success_text='OpenASPI rewind smoke test passed'
+            driver_line='DEVICE=ASPITAP.SYS'
+            case "$variant" in
+                rewind-wait) defines+=(-DWAIT_CLOSE); driver_line='DEVICE=ASPITAP.SYS -w' ;;
+                rewind-read) defines+=(-DREWIND_READ) ;;
+                rewind-write) defines+=(-DREWIND_WRITE) ;;
+                rewind-error) defines+=(-DREWIND_ERROR) ;;
+                rewind-timeout) defines+=(-DREWIND_ERROR -DREWIND_TIMEOUT) ;;
+                rewind-midnight) defines+=(-DREWIND_MIDNIGHT) ;;
+            esac
             ;;
         invalid-*)
             test_source="$ROOT/tests/tape_absent.asm"
@@ -202,5 +216,12 @@ run_fixture no-manager
 run_fixture no-tape
 run_fixture no-adapters
 run_fixture bad-inquiry
+run_fixture rewind-default
+run_fixture rewind-wait
+run_fixture rewind-read
+run_fixture rewind-write
+run_fixture rewind-error
+run_fixture rewind-timeout
+run_fixture rewind-midnight
 
 echo 'OpenASPI emulated-tape smoke test passed'

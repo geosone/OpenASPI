@@ -72,6 +72,8 @@ OPT_ALLOW_SINGLE equ    001h
 OPT_ALLOW_MULTIPLE equ  002h
 OPT_NAME_SUFFIX  equ    004h
 OPT_VERBOSE      equ    008h
+OPT_WAIT_REWIND  equ    010h
+REWIND_WAIT_TICKS equ   3277            ; about three minutes at 18.2 Hz
 
 SENSE_FILEMARK  equ     080h
 SENSE_EOM       equ     040h
@@ -299,6 +301,10 @@ mtget_parameters_ready:
         mov     byte ptr es:[di+3], al
         mov     al, byte ptr [device_state]
         or      al, byte ptr [request_rewind]
+        cmp     byte ptr [rewind_pending], 0
+        je      mtget_state_ready
+        or      al, 80h                 ; historical TPS_WIND
+mtget_state_ready:
         mov     byte ptr es:[di+4], al
         mov     byte ptr es:[di+5], 0
         mov     ax, word ptr [tape_fixed_block]
@@ -338,6 +344,8 @@ read_open_allowed:
         test    byte ptr [config_options], OPT_ALLOW_SINGLE
         jz      read_access_error
 read_size_allowed:
+        call    wait_for_rewind
+        jc      read_access_error
         test    byte ptr [device_state], MT_STATE_WRITTEN
         jz      read_not_written
         call    zero_transfer_count
@@ -460,6 +468,11 @@ write_request proc near
         je      write_open_exclusive
         jmp     write_access_error
 write_open_exclusive:
+        call    wait_for_rewind
+        jnc     write_rewind_ready
+        jmp     write_access_error
+write_rewind_ready:
+        mov     ax, word ptr [requested_bytes]
         or      ax, ax
         jnz     write_issue
         and     byte ptr [device_state], not MT_STATE_EOF_NEXT
@@ -673,11 +686,141 @@ read_sense_error:
 classify_read_sense endp
 
 rewind_on_close proc near
+        call    wait_for_rewind
+        jc      rewind_close_done
         call    prepare_control_srb
         mov     byte ptr [srb+SRB_CDB], SCSI_REWIND
+        test    byte ptr [config_options], OPT_WAIT_REWIND
+        jnz     rewind_close_issue
+        mov     byte ptr [srb+SRB_CDB+1], 1 ; IMMED: return when rewind starts
+rewind_close_issue:
         call    execute_control_srb
+        jc      rewind_close_done
+        test    byte ptr [config_options], OPT_WAIT_REWIND
+        jnz     rewind_close_done
+        mov     byte ptr [rewind_pending], 1
+rewind_close_done:
         ret
 rewind_on_close endp
+
+; Reopening and status queries do not wait for an immediate close rewind.
+; Media commands wait up to three minutes, polling once per BIOS tick. Only
+; BUSY and recognized rewind/becoming-ready sense are retried; media/transport
+; errors return immediately. Keep pending set on error so no later request
+; can skip the readiness barrier.
+wait_for_rewind proc near
+        cmp     byte ptr [rewind_pending], 0
+        jne     rewind_wait_start
+        clc
+        ret
+rewind_wait_start:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    es
+        call    read_bios_ticks
+        mov     word ptr [rewind_start_low], ax
+        mov     word ptr [rewind_start_high], dx
+        mov     word ptr [rewind_poll_low], ax
+        mov     word ptr [rewind_poll_high], dx
+rewind_poll:
+        call    prepare_control_srb
+        mov     byte ptr [srb+SRB_CDB], SCSI_TUR
+        call    execute_control_srb
+        jc      rewind_not_ready
+        mov     byte ptr [rewind_pending], 0
+        clc
+        jmp     rewind_wait_done
+rewind_not_ready:
+        cmp     byte ptr [srb+SRB_HaStat], 0
+        je      rewind_transport_ok
+        jmp     rewind_wait_error
+rewind_transport_ok:
+        cmp     byte ptr [srb+SRB_Status], SS_ERR
+        je      rewind_status_valid
+        jmp     rewind_wait_error
+rewind_status_valid:
+        cmp     byte ptr [srb+SRB_TargStat], 8 ; SCSI BUSY
+        je      rewind_wait_tick
+        cmp     byte ptr [srb+SRB_TargStat], 2
+        jne     rewind_wait_error
+        mov     al, byte ptr [srb+SRB_CDB+16]
+        and     al, 7Fh
+        mov     si, offset srb+SRB_CDB+28 ; fixed sense ASC/ASCQ
+        cmp     al, 70h
+        je      rewind_check_progress
+        cmp     al, 71h
+        je      rewind_check_progress
+        mov     si, offset srb+SRB_CDB+18 ; descriptor sense ASC/ASCQ
+        cmp     al, 72h
+        je      rewind_check_progress
+        cmp     al, 73h
+        jne     rewind_wait_error
+rewind_check_progress:
+        cmp     byte ptr [last_sense_key], 2
+        jne     rewind_check_no_sense
+        cmp     byte ptr [si], 4
+        jne     rewind_wait_error
+        cmp     byte ptr [si+1], 1        ; becoming ready
+        je      rewind_wait_tick
+        cmp     byte ptr [si+1], 7        ; operation in progress
+        je      rewind_wait_tick
+        jmp     short rewind_wait_error
+rewind_check_no_sense:
+        cmp     byte ptr [last_sense_key], 0
+        jne     rewind_wait_error
+        cmp     word ptr [si], 1A00h     ; rewind operation in progress
+        jne     rewind_wait_error
+rewind_wait_tick:
+        call    read_bios_ticks
+        cmp     ax, word ptr [rewind_poll_low]
+        jne     rewind_tick_changed
+        cmp     dx, word ptr [rewind_poll_high]
+        je      rewind_wait_tick
+rewind_tick_changed:
+        mov     word ptr [rewind_poll_low], ax
+        mov     word ptr [rewind_poll_high], dx
+        sub     ax, word ptr [rewind_start_low]
+        sbb     dx, word ptr [rewind_start_high]
+        jnc     rewind_elapsed_ready
+        add     ax, 00B0h               ; BIOS resets at 001800B0h midnight
+        adc     dx, 0018h
+rewind_elapsed_ready:
+        or      dx, dx
+        jnz     rewind_wait_error
+        cmp     ax, REWIND_WAIT_TICKS
+        jae     rewind_wait_error
+        jmp     rewind_poll
+rewind_wait_error:
+        stc
+rewind_wait_done:
+        pop     es
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+wait_for_rewind endp
+
+; Read the BIOS data area atomically without consuming its midnight flag.
+; Return DX:AX ticks; preserve the caller's interrupt-enable state.
+read_bios_ticks proc near
+        pushf
+        cli
+        push    es
+        mov     ax, 40h
+        mov     es, ax
+        mov     ax, word ptr es:[6Ch]
+        mov     dx, word ptr es:[6Eh]
+        pop     es
+        popf
+        ret
+read_bios_ticks endp
 
 ; Match the historical close contract after a write: terminate the tape file
 ; with two filemarks. A no-rewind close then spaces backward over one filemark
@@ -710,6 +853,11 @@ finish_written_tape endp
 ; access CDBs.  The four-byte count in mtop must fit the signed or unsigned
 ; 24-bit field used by the corresponding SCSI command.
 ioctl_mtop proc near
+        call    wait_for_rewind
+        jnc     mtop_rewind_ready
+        stc
+        ret
+mtop_rewind_ready:
         les     bx, [request_ptr]
         les     di, dword ptr es:[bx+REQ_PARAMETER]
         mov     ax, word ptr es:[di]
@@ -1239,6 +1387,11 @@ init_option_verbose:
         or      byte ptr [config_options], OPT_VERBOSE
         jmp     short init_option_next
 init_option_not_verbose:
+        cmp     al, 'W'
+        jne     init_option_not_wait
+        or      byte ptr [config_options], OPT_WAIT_REWIND
+        jmp     short init_option_next
+init_option_not_wait:
         cmp     al, 'T'
         jne     init_options_invalid
         inc     si
@@ -1251,7 +1404,7 @@ init_option_not_verbose:
         mov     byte ptr [config_name_letter], al
 init_option_next:
         inc     si
-        jmp     short init_options_cluster
+        jmp     init_options_cluster
 init_options_invalid:
         stc
         ret
@@ -1572,6 +1725,11 @@ tape_lun            db  0
 tape_fixed_block    dw  0
 config_options      db  0
 config_name_letter  db  'M'
+rewind_pending      db  0
+rewind_start_low    dw  0
+rewind_start_high   dw  0
+rewind_poll_low     dw  0
+rewind_poll_high    dw  0
 device_state        db  0
 tape_open_count     db  0
 last_scsi_status    db  0

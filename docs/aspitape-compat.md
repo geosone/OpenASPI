@@ -75,7 +75,7 @@ option clusters such as `-ms` are accepted. Open and close requests themselves
 remain tracked so final-close processing occurs at the correct time.
 Malformed or unsupported options abort installation before ASPI discovery;
 they are not silently ignored. `-t` requires an immediate alphabetic name
-letter. Historical buffering (`-b`), rewind timing (`-w`) and Ctrl-Break (`-i`)
+letter. Historical buffering (`-b`) and Ctrl-Break (`-i`)
 switches remain unimplemented. `-v` and its historical alias `-d` enable
 initialization diagnostics with adapter identities, extension flags, tape
 address, selected block mode and actual device names. Discovery failures also
@@ -99,6 +99,22 @@ Medium changers and tape-library robotics are outside this stage.
 
 Both device headers advertise DOS open/close notifications. OpenASPI counts
 all opens and performs finalization only when the last tracked handle closes.
-An unwritten `RMT0` session issues synchronous SCSI REWIND; an unwritten
-`NRMT0` session never changes position. OpenASPI's own scan and status tools
-therefore use `NRMT0`.
+An unwritten `NRMT0` session never changes position. OpenASPI's own scan and
+status tools therefore use `NRMT0`.
+
+Final `RMT0` close defaults to REWIND with IMMED=1; `-w` selects IMMED=0 and
+waits for command completion. Explicit `MTREW` continues to use IMMED=0.
+Following an immediate close, `mtget` reports `REWINDING` (80h) and reopening
+does not wait. Before a subsequent nonempty read, write (including zero-byte
+write), `mtop` or additional close rewind, the driver polls TEST UNIT READY
+until ready or about three minutes have elapsed. BUSY, fixed/descriptor
+NOT READY 04h/01h or 04h/07h, and NO SENSE 00h/1Ah indicate progress. Other
+errors fail immediately, leaving rewind pending until a later readiness check
+succeeds. Polling is paced by BIOS ticks and handles midnight rollover.
+The wait bounds the retry loop; an individual SCSI command still depends on
+the ASPI manager's own execution timeout.
+
+The REWIND IMMED semantics and BUSY readiness behavior are described in the
+[StorageTek T10000 interface manual](https://docs.oracle.com/cd/E19957-01/MT9259H/MT9259H.pdf),
+REWIND and TEST UNIT READY sections. Modern progress sense is described by
+[T10 proposal 01-316r1](https://www.t10.org/ftp/t10/document.01/01-316r1.pdf).

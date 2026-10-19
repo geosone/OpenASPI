@@ -47,11 +47,14 @@ letter X; -$ appends a collision-avoiding dollar sign.
 Malformed or unsupported options stop the driver from loading and print an
 error. Use -v (or -d) for adapter, tape, block-mode and device-name details
 during loading, including discovery failure reasons. Fixed block sizes are
-shown in hexadecimal. The historical -b, -w and -i switches are not implemented.
+shown in hexadecimal. The historical -b and -i switches are not implemented.
 Only one tape drive is exposed; medium-changer/library control is not part of
 this stage. The write path is not yet qualified for production backups on real
 media. Closing a written session adds two terminating filemarks; NRMT0 then
 backspaces one mark, while RMT0 rewinds.
+RMT0 normally starts rewind and returns; status reports rewind pending. Later
+tape I/O waits for readiness for up to about three minutes. Add -w to the
+CONFIG.SYS line to wait for rewind completion during close instead.
 
 The installer is the GeosOne DOS Installer: https://github.com/geosone/gdi
 License: GNU General Public License version 3.

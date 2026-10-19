@@ -50,6 +50,10 @@ driver from loading and produce an explicit initialization error.
 `TAPECTL` leave an unwritten tape position unchanged. A written final close
 adds the historical two-filemark terminator; `NRMT0` then backspaces one mark,
 whereas `RMT0` rewinds.
+By default, final `RMT0` close starts an immediate SCSI rewind. `mtget` reports
+the pending rewind, and the next data or tape-control request waits for
+readiness for up to about three minutes. Add `-w` to wait for SCSI rewind
+completion during close instead. Explicit `MTREW` remains synchronous.
 
 The installer runs package-defined probes rather than containing OpenASPI
 hardware rules. `ASPISCAN /Q /TAPE`, `/DISK`, `/FDD` and `/CDA` preselect the
@@ -104,13 +108,18 @@ is open and that rewind occurs only on final close. Single-byte cooked-mode
 requests are rejected, while `NRMT0` never rewinds. Written-session tests
 verify read-after-write rejection and the final two-filemark/append positioning
 sequence. All variants use the same SvarDOS fixture.
-An additional boot fixture loads the clustered options `ASPITAP.SYS -vms$tS`,
+An additional boot fixture loads the clustered options `ASPITAP.SYS -wvms$tS`,
 opens the resulting `RST0$`/`NRST0$` names, and verifies that both default
 transfer guards are disabled.
 Separate boot fixtures cover slash-prefixed, mixed-case options and rejection
 of incomplete `-t`, invalid name letters, unsupported switches and bare prefixes.
 The boot-screen capture verifies verbose output for both aliases, fixed-block
 sizes, renamed devices and discovery failures; normal startup stays concise.
+Rewind fixtures check the default IMMED bit, synchronous `-w`, pending status,
+read/write/control readiness barriers, fixed/descriptor progress sense, SCSI
+BUSY and immediate failure for missing media. They also verify the timeout and
+midnight rollover using an accelerated guest BIOS clock. Existing transfer fixtures
+use `-w` to retain deterministic synchronous-close command sequences.
 
 `make dos-mhvtl-smoke` uses QEMU's emulated Tekram-compatible DC-390 controller
 and `scsi-generic` passthrough to exercise `ASPITAP.SYS` against an mhVTL tape.

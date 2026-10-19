@@ -148,6 +148,10 @@ execute_data:
         call    execute_write
         jmp     aspi_done
 execute_control:
+ifdef REWIND_TEST
+        call rewind_test_control
+        jmp aspi_done
+endif
         cmp     byte ptr es:[bx+SRB_Flags], SRB_DIR_NONE
         jne     control_bad_scsi
         cmp     byte ptr es:[bx+SRB_CDBLen], 6
@@ -188,6 +192,10 @@ execute_read:
         call    execute_fixed_read
         jmp     aspi_done
 execute_variable_read:
+ifdef REWIND_TEST
+        call rewind_test_data
+        jmp aspi_done
+endif
 ifdef OPTION_OVERRIDES
         call    execute_option_read
         jmp     aspi_done
@@ -329,6 +337,10 @@ execute_write proc near
         call    execute_fixed_write
         ret
 execute_variable_write:
+ifdef REWIND_TEST
+        call rewind_test_data
+        ret
+endif
 ifdef OPTION_OVERRIDES
         call    execute_option_write
         ret
@@ -409,6 +421,140 @@ write_bad_scsi:
         mov     byte ptr es:[bx+SRB_Status], SS_ERR
         ret
 execute_write endp
+
+ifdef REWIND_TEST
+; This fixture rejects media access until all progress responses were polled.
+rewind_test_control proc near
+        cmp byte ptr es:[bx+SRB_Flags], SRB_DIR_NONE
+        jne rewind_test_bad
+        cmp byte ptr es:[bx+SRB_CDBLen], 6
+        jne rewind_test_bad
+        cmp byte ptr es:[bx+SRB_CDB], 1
+        jne rewind_test_not_rewind
+ifdef WAIT_CLOSE
+        cmp byte ptr es:[bx+SRB_CDB+1], 0
+else
+        cmp byte ptr es:[bx+SRB_CDB+1], 1
+endif
+        jne rewind_test_bad
+        inc byte ptr cs:[rewind_seen]
+        jmp short rewind_test_good
+rewind_test_not_rewind:
+        cmp byte ptr cs:[rewind_seen], 1
+        jne rewind_test_bad
+        cmp byte ptr es:[bx+SRB_CDB], 0
+        je rewind_test_tur
+        cmp byte ptr cs:[rewind_polls], 5
+        jb rewind_test_bad
+        ; Written NRMT0 close must still terminate and backspace a filemark.
+        cmp byte ptr es:[bx+SRB_CDB], 10h
+        jne rewind_test_space
+        cmp byte ptr es:[bx+SRB_CDB+4], 2
+        jne rewind_test_bad
+        jmp short rewind_test_good
+rewind_test_space:
+        cmp byte ptr es:[bx+SRB_CDB], 11h
+        jne rewind_test_bad
+        cmp byte ptr es:[bx+SRB_CDB+1], 1
+        jne rewind_test_bad
+        cmp word ptr es:[bx+SRB_CDB+2], 0FFFFh
+        jne rewind_test_bad
+        cmp byte ptr es:[bx+SRB_CDB+4], 0FFh
+        jne rewind_test_bad
+rewind_test_good:
+        mov byte ptr es:[bx+SRB_Status], SS_COMP
+        ret
+rewind_test_bad:
+        mov byte ptr es:[bx+SRB_Status], SS_ERR
+        ret
+rewind_test_tur:
+        inc byte ptr cs:[rewind_polls]
+ifdef REWIND_TIMEOUT
+        push ds
+        mov ax, 40h
+        mov ds, ax
+        pushf
+        cli
+        add word ptr ds:[6Ch], 3277     ; accelerate three minutes of BIOS time
+        adc word ptr ds:[6Eh], 0
+        popf
+        pop ds
+        mov byte ptr es:[bx+SRB_TargStat], 8
+        mov byte ptr es:[bx+SRB_Status], SS_ERR
+        ret
+endif
+ifdef WAIT_CLOSE
+        jmp short rewind_test_good
+else
+ifdef REWIND_ERROR
+        mov byte ptr es:[bx+SRB_CDB+16], 70h
+        mov byte ptr es:[bx+SRB_CDB+18], 2
+        mov byte ptr es:[bx+SRB_CDB+28], 3Ah ; no media: do not retry
+else
+        cmp byte ptr cs:[rewind_polls], 1
+        jne rewind_test_sense
+ifdef REWIND_MIDNIGHT
+        push ds
+        mov ax, 40h
+        mov ds, ax
+        pushf
+        cli
+        mov word ptr ds:[6Ch], 0
+        mov word ptr ds:[6Eh], 0
+        popf
+        pop ds
+endif
+        mov byte ptr es:[bx+SRB_TargStat], 8 ; BUSY, without sense
+        mov byte ptr es:[bx+SRB_Status], SS_ERR
+        ret
+rewind_test_sense:
+        cmp byte ptr cs:[rewind_polls], 2
+        jne rewind_test_descriptor
+        mov byte ptr es:[bx+SRB_CDB+16], 70h
+        mov byte ptr es:[bx+SRB_CDB+18], 2
+        mov byte ptr es:[bx+SRB_CDB+28], 4
+        mov byte ptr es:[bx+SRB_CDB+29], 1 ; becoming ready
+        jmp short rewind_test_condition
+rewind_test_descriptor:
+        cmp byte ptr cs:[rewind_polls], 3
+        jne rewind_test_progress
+        mov byte ptr es:[bx+SRB_CDB+16], 72h
+        mov byte ptr es:[bx+SRB_CDB+17], 2
+        mov byte ptr es:[bx+SRB_CDB+18], 4
+        mov byte ptr es:[bx+SRB_CDB+19], 7 ; operation in progress
+        jmp short rewind_test_condition
+rewind_test_progress:
+        cmp byte ptr cs:[rewind_polls], 4
+        je rewind_test_report_progress
+        jmp rewind_test_good
+rewind_test_report_progress:
+        mov byte ptr es:[bx+SRB_CDB+16], 70h
+        mov byte ptr es:[bx+SRB_CDB+29], 1Ah ; no-sense rewind progress
+endif
+rewind_test_condition:
+        mov byte ptr es:[bx+SRB_TargStat], 2
+        mov byte ptr es:[bx+SRB_Status], SS_ERR
+        ret
+endif
+rewind_test_control endp
+
+rewind_test_data proc near
+        cmp byte ptr cs:[rewind_polls], 5
+        jb rewind_test_data_bad
+        cmp word ptr es:[bx+SRB_BufLen], 2
+        jne rewind_test_data_bad
+        cmp byte ptr es:[bx+SRB_CDB+4], 2
+        jne rewind_test_data_bad
+        mov word ptr es:[bx+SRB_BufLen], 0
+        mov byte ptr es:[bx+SRB_Status], SS_COMP
+        ret
+rewind_test_data_bad:
+        mov byte ptr es:[bx+SRB_Status], SS_ERR
+        ret
+rewind_test_data endp
+rewind_seen db 0
+rewind_polls db 0
+endif
 
 ifdef OPTION_OVERRIDES
 execute_option_read proc near
