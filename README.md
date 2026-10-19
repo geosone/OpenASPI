@@ -54,6 +54,8 @@ By default, final `RMT0` close starts an immediate SCSI rewind. `mtget` reports
 the pending rewind, and the next data or tape-control request waits for
 readiness for up to about three minutes. Add `-w` to wait for SCSI rewind
 completion during close instead. Explicit `MTREW` remains synchronous.
+`-i` makes the deferred readiness wait interruptible with Ctrl-Break. The
+current request fails while rewind stays pending; a later request can retry.
 
 The installer runs package-defined probes rather than containing OpenASPI
 hardware rules. `ASPISCAN /Q /TAPE`, `/DISK`, `/FDD` and `/CDA` preselect the
@@ -120,6 +122,8 @@ read/write/control readiness barriers, fixed/descriptor progress sense, SCSI
 BUSY and immediate failure for missing media. They also verify the timeout and
 midnight rollover using an accelerated guest BIOS clock. Existing transfer fixtures
 use `-w` to retain deterministic synchronous-close command sequences.
+Ctrl-Break fixtures verify opt-in interruption, retry after a handled break,
+chaining of the previous BIOS handler and vector restoration on exit.
 
 `make dos-mhvtl-smoke` uses QEMU's emulated Tekram-compatible DC-390 controller
 and `scsi-generic` passthrough to exercise `ASPITAP.SYS` against an mhVTL tape.

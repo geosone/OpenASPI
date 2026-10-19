@@ -62,6 +62,11 @@ run_fixture() {
                 rewind-error) defines+=(-DREWIND_ERROR) ;;
                 rewind-timeout) defines+=(-DREWIND_ERROR -DREWIND_TIMEOUT) ;;
                 rewind-midnight) defines+=(-DREWIND_MIDNIGHT) ;;
+                rewind-break) defines+=(-DREWIND_BREAK -DREWIND_ERROR); driver_line='DEVICE=ASPITAP.SYS /I' ;;
+                rewind-break-disabled) defines+=(-DREWIND_BREAK) ;;
+                rewind-interruptible) driver_line='DEVICE=ASPITAP.SYS -i' ;;
+                rewind-timeout-i) defines+=(-DREWIND_ERROR -DREWIND_TIMEOUT); driver_line='DEVICE=ASPITAP.SYS -i' ;;
+                rewind-error-i) defines+=(-DREWIND_ERROR); driver_line='DEVICE=ASPITAP.SYS -i' ;;
             esac
             ;;
         invalid-*)
@@ -223,5 +228,10 @@ run_fixture rewind-write
 run_fixture rewind-error
 run_fixture rewind-timeout
 run_fixture rewind-midnight
+run_fixture rewind-break
+run_fixture rewind-break-disabled
+run_fixture rewind-interruptible
+run_fixture rewind-timeout-i
+run_fixture rewind-error-i
 
 echo 'OpenASPI emulated-tape smoke test passed'

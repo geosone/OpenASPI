@@ -73,6 +73,7 @@ OPT_ALLOW_MULTIPLE equ  002h
 OPT_NAME_SUFFIX  equ    004h
 OPT_VERBOSE      equ    008h
 OPT_WAIT_REWIND  equ    010h
+OPT_BREAK_WAIT   equ    020h
 REWIND_WAIT_TICKS equ   3277            ; about three minutes at 18.2 Hz
 
 SENSE_FILEMARK  equ     080h
@@ -721,6 +722,8 @@ rewind_wait_start:
         push    si
         push    di
         push    es
+        mov     byte ptr [break_requested], 0
+        call    install_break_hook
         call    read_bios_ticks
         mov     word ptr [rewind_start_low], ax
         mov     word ptr [rewind_start_high], dx
@@ -775,6 +778,8 @@ rewind_check_no_sense:
         cmp     word ptr [si], 1A00h     ; rewind operation in progress
         jne     rewind_wait_error
 rewind_wait_tick:
+        cmp     byte ptr [break_requested], 0
+        jne     rewind_wait_error
         call    read_bios_ticks
         cmp     ax, word ptr [rewind_poll_low]
         jne     rewind_tick_changed
@@ -797,6 +802,9 @@ rewind_elapsed_ready:
 rewind_wait_error:
         stc
 rewind_wait_done:
+        pushf
+        call    restore_break_hook
+        popf
         pop     es
         pop     di
         pop     si
@@ -806,6 +814,68 @@ rewind_wait_done:
         pop     ax
         ret
 wait_for_rewind endp
+
+; DOS device requests may run inside DOS itself. Change INT 1Bh directly
+; under CLI, avoiding a nested DOS vector service. Hook only while a pending
+; rewind is being polled; preserve and chain the previous Ctrl-Break handler.
+install_break_hook proc near
+        test    byte ptr [config_options], OPT_BREAK_WAIT
+        jz      install_break_done
+        cmp     byte ptr [break_hook_installed], 0
+        jne     install_break_done
+        pushf
+        cli
+        push    ax
+        push    es
+        xor     ax, ax
+        mov     es, ax
+        mov     ax, word ptr es:[6Ch]
+        mov     word ptr [old_break_vector], ax
+        mov     ax, word ptr es:[6Eh]
+        mov     word ptr [old_break_vector+2], ax
+        mov     word ptr es:[6Ch], offset tape_break_handler
+        mov     word ptr es:[6Eh], cs
+        mov     byte ptr [break_hook_installed], 1
+        pop     es
+        pop     ax
+        popf
+install_break_done:
+        ret
+install_break_hook endp
+
+restore_break_hook proc near
+        cmp     byte ptr [break_hook_installed], 0
+        je      restore_break_done
+        pushf
+        cli
+        push    ax
+        push    es
+        xor     ax, ax
+        mov     es, ax
+        ; A TSR may have chained above us from an interrupt. Keep our
+        ; resident link intact in that case and do not hook ourselves twice.
+        cmp     word ptr es:[6Ch], offset tape_break_handler
+        jne     restore_break_owned_elsewhere
+        mov     ax, cs
+        cmp     word ptr es:[6Eh], ax
+        jne     restore_break_owned_elsewhere
+        mov     ax, word ptr [old_break_vector]
+        mov     word ptr es:[6Ch], ax
+        mov     ax, word ptr [old_break_vector+2]
+        mov     word ptr es:[6Eh], ax
+        mov     byte ptr [break_hook_installed], 0
+restore_break_owned_elsewhere:
+        pop     es
+        pop     ax
+        popf
+restore_break_done:
+        ret
+restore_break_hook endp
+
+tape_break_handler proc far
+        mov     byte ptr cs:[break_requested], 1
+        jmp     dword ptr cs:[old_break_vector]
+tape_break_handler endp
 
 ; Read the BIOS data area atomically without consuming its midnight flag.
 ; Return DX:AX ticks; preserve the caller's interrupt-enable state.
@@ -1392,6 +1462,11 @@ init_option_not_verbose:
         or      byte ptr [config_options], OPT_WAIT_REWIND
         jmp     short init_option_next
 init_option_not_wait:
+        cmp     al, 'I'
+        jne     init_option_not_break
+        or      byte ptr [config_options], OPT_BREAK_WAIT
+        jmp     short init_option_next
+init_option_not_break:
         cmp     al, 'T'
         jne     init_options_invalid
         inc     si
@@ -1730,6 +1805,9 @@ rewind_start_low    dw  0
 rewind_start_high   dw  0
 rewind_poll_low     dw  0
 rewind_poll_high    dw  0
+break_requested     db  0
+old_break_vector    dd  0
+break_hook_installed db 0
 device_state        db  0
 tape_open_count     db  0
 last_scsi_status    db  0

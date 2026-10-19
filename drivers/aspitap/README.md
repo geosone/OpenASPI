@@ -34,6 +34,15 @@ tick calculation handles midnight rollover without consuming DOS' midnight
 flag. `-w` selects synchronous rewind on close; explicit `MTREW` is always
 synchronous. Command execution timeouts remain the ASPI manager's responsibility.
 
+`-i` enables Ctrl-Break detection during this deferred readiness wait. The
+driver temporarily hooks BIOS INT 1Bh and chains the previous handler, then
+restores it on success, error, timeout or interruption. If another resident
+component chains above this hook during the wait, its chain remains intact.
+A handled Ctrl-Break fails the current request without canceling the drive's
+physical rewind; `REWINDING` stays set and a later request can retry. Ctrl-C
+and interruption inside a blocking ASPI manager call are not implemented by
+this option. DOS/application Ctrl-Break handlers retain their normal behavior.
+
 Data transfers require exactly one open tape handle and reject one-byte
 requests by default. The latter is the historical cooked-mode safeguard:
 applications are expected to put the character device into raw mode. The
@@ -50,7 +59,7 @@ This example installs `RST0$` and `NRST0$`.
 The name letter must follow `-t` immediately and be in `A` through `Z` (case
 insensitive). An incomplete `-t`, an invalid letter, an empty option prefix,
 or an unsupported switch aborts installation with an error message. In
-particular, `-b` and `-i` are not implemented and must not
+particular, `-b` is not implemented and must not
 be supplied. The driver pathname is skipped as a whole token, so hyphens in
 directory names do not enable options.
 

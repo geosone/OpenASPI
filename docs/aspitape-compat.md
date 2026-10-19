@@ -75,8 +75,8 @@ option clusters such as `-ms` are accepted. Open and close requests themselves
 remain tracked so final-close processing occurs at the correct time.
 Malformed or unsupported options abort installation before ASPI discovery;
 they are not silently ignored. `-t` requires an immediate alphabetic name
-letter. Historical buffering (`-b`) and Ctrl-Break (`-i`)
-switches remain unimplemented. `-v` and its historical alias `-d` enable
+letter. Historical buffering (`-b`) remains unimplemented. `-v` and its
+historical alias `-d` enable
 initialization diagnostics with adapter identities, extension flags, tape
 address, selected block mode and actual device names. Discovery failures also
 report the failing stage. The diagnostics add no ASPI commands.
@@ -113,6 +113,17 @@ errors fail immediately, leaving rewind pending until a later readiness check
 succeeds. Polling is paced by BIOS ticks and handles midnight rollover.
 The wait bounds the retry loop; an individual SCSI command still depends on
 the ASPI manager's own execution timeout.
+
+`-i` adds Ctrl-Break detection to the deferred rewind wait. A temporary
+INT 1Bh handler records the break and chains the previous handler. The old
+vector is restored on every ordinary exit; if another resident handler
+chains above OpenASPI during the wait, that chain is preserved. A handled
+break returns a failed DOS request and retains `REWINDING`; a later request
+can retry and complete. This does not cancel the physical rewind or interrupt
+a blocking ASPI manager. OpenASPI does not currently wait for initial drive
+readiness at open, so there is no corresponding open-time wait to interrupt.
+BIOS INT 1Bh's role is documented in
+[Ralf Brown's interrupt list](https://delorie.com/djgpp/doc/rbinter/id/52/24.html).
 
 The REWIND IMMED semantics and BUSY readiness behavior are described in the
 [StorageTek T10000 interface manual](https://docs.oracle.com/cd/E19957-01/MT9259H/MT9259H.pdf),

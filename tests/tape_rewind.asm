@@ -28,6 +28,10 @@ start:
         mov dx, offset critical_error
         mov ax, 2524h
         int 21h
+        mov ax, 351Bh
+        int 21h
+        mov word ptr [saved_break_vector], bx
+        mov word ptr [saved_break_vector+2], es
         mov dx, offset rmt_name
         call open_raw
         check_carry
@@ -91,13 +95,25 @@ else
 endif
         call get_status
         check_carry
+        ; The polling wait must restore the exact preexisting BIOS handler.
+        mov ax, 351Bh
+        int 21h
+        cmp bx, word ptr [saved_break_vector]
+        check_equal
+        mov ax, es
+        cmp ax, word ptr [saved_break_vector+2]
+        check_equal
 ifdef REWIND_ERROR
         cmp byte ptr [status+4], 80h
         check_equal
 ifdef REWIND_TIMEOUT
         cmp byte ptr [status+8], 8       ; the timed-out poll was BUSY
 else
+ifdef REWIND_BREAK
+        cmp byte ptr [status+8], 8       ; break arrived during the BUSY poll
+else
         cmp byte ptr [status+9], 2
+endif
 endif
 else
 ifdef REWIND_READ
@@ -111,6 +127,21 @@ endif
 endif
 endif
         check_equal
+ifdef REWIND_BREAK
+ifdef REWIND_ERROR
+        ; A handled break aborts this wait, not all future tape access.
+        mov bx, word ptr [handle]
+        mov cx, 0701h
+        mov dx, offset control
+        mov ax, 440Ch
+        int 21h
+        check_carry
+        call get_status
+        check_carry
+        cmp byte ptr [status+4], 0
+        check_equal
+endif
+endif
         mov bx, word ptr [handle]
         mov ah, 3Eh
         int 21h
@@ -173,6 +204,7 @@ rmt_name db 'RMT0', 0
 nrmt_name db 'NRMT0', 0
 handle dw 0
 old_int24 dd 0
+saved_break_vector dd 0
 status db 14 dup (0)
 control dw 7
         dd 0

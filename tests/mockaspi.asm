@@ -50,6 +50,19 @@ interrupt proc far
         jmp     short request_done
 
 initialize:
+ifdef REWIND_BREAK
+        ; Isolate the synthetic Ctrl-Break from DOS' normal termination
+        ; behavior; ASPITAP must chain this sentinel and restore its vector.
+        pushf
+        cli
+        push es
+        xor ax, ax
+        mov es, ax
+        mov word ptr es:[6Ch], offset fixture_break_handler
+        mov word ptr es:[6Eh], cs
+        pop es
+        popf
+endif
         mov     word ptr es:[bx+0Eh], offset resident_end
         mov     word ptr es:[bx+10h], cs
         mov     word ptr es:[bx+3], 0100h
@@ -67,6 +80,14 @@ request_done:
         pop     ax
         ret
 interrupt endp
+
+ifdef REWIND_BREAK
+fixture_break_handler proc far
+        inc byte ptr cs:[fixture_break_count]
+        iret
+fixture_break_handler endp
+fixture_break_count db 0
+endif
 
 ; ASPI entry point: one adapter with one tape at 0:0:0.
 aspi_entry proc far
@@ -469,6 +490,24 @@ rewind_test_bad:
         ret
 rewind_test_tur:
         inc byte ptr cs:[rewind_polls]
+ifdef REWIND_BREAK
+        cmp byte ptr cs:[rewind_polls], 1
+        jne rewind_break_already_sent
+        int 1Bh
+        cmp byte ptr cs:[fixture_break_count], 1
+        je rewind_break_already_sent
+        jmp rewind_test_bad
+rewind_break_already_sent:
+        cmp byte ptr cs:[rewind_polls], 1
+        jne rewind_break_poll_done
+        mov byte ptr es:[bx+SRB_TargStat], 8
+        mov byte ptr es:[bx+SRB_Status], SS_ERR
+        ret
+rewind_break_poll_done:
+        ; The next wait may retry after the caller handles the interruption.
+        mov byte ptr es:[bx+SRB_Status], SS_COMP
+        ret
+endif
 ifdef REWIND_TIMEOUT
         push ds
         mov ax, 40h
