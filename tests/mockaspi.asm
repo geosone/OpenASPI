@@ -876,7 +876,7 @@ else
 ifdef FIXED_BLOCK
 EXPECTED_COUNT equ     2
 else
-EXPECTED_COUNT equ     12
+EXPECTED_COUNT equ     17
 endif
 endif
 READ_COUNT     equ     7
@@ -925,6 +925,11 @@ else
         db      11h, 00h, 0FFh, 0FFh, 0FCh, 00h ; MTBSR 4
         db      01h, 00h, 00h, 00h, 00h, 00h ; MTREW
         db      1Bh, 00h, 00h, 00h, 00h, 00h ; MTOFFL
+        db      10h, 00h, 0FFh, 0FFh, 0FFh, 00h ; MTWEOF unsigned maximum
+        db      11h, 01h, 7Fh, 0FFh, 0FFh, 00h ; MTFSF signed maximum
+        db      11h, 00h, 7Fh, 0FFh, 0FFh, 00h ; MTFSR signed maximum
+        db      11h, 01h, 80h, 00h, 00h, 00h ; MTBSF signed minimum
+        db      11h, 00h, 80h, 00h, 00h, 00h ; MTBSR signed minimum
         db      10h, 00h, 00h, 00h, 02h, 00h ; close: two filemarks
         db      11h, 01h, 0FFh, 0FFh, 0FFh, 00h ; close: backspace one
 endif

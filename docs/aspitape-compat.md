@@ -212,6 +212,14 @@ control and final-close behavior is unchanged: applications must inspect the
 saved write diagnostic rather than infer backup success from a later close,
 filemark operation or `MTNOP` result.
 
+`MTFSF` and `MTFSR` accept nonnegative counts up to `007FFFFFh`, since SCSI
+SPACE encodes a signed 24-bit count. `MTBSF` and `MTBSR` accept magnitudes up
+to `00800000h` and encode their negative. `MTWEOF` instead has an unsigned
+24-bit field and accepts up to `00FFFFFFh`. Larger counts fail before any
+pending-rewind readiness wait or command submission, without discarding the
+software buffer or replacing a saved write diagnostic. In particular, a
+forward count with bit 23 set must not silently become backward movement.
+
 After any write, later reads in the same open session are rejected. On final
 close, a written session receives two filemarks. `RMT0` then rewinds; `NRMT0`
 spaces backward over one filemark and leaves the tape positioned between the

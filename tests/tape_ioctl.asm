@@ -456,7 +456,45 @@ endif
         call    run_mtop
         fail_if_carry failed_close
 
+        ; Exact signed SPACE limits and the distinct unsigned filemark limit.
+        ; The mock compares all six CDB bytes, not only successful return codes.
+        mov     byte ptr [stage], 'B'
+        mov     word ptr [control], 0
+        mov     word ptr [control+2], 0FFFFh
+        mov     word ptr [control+4], 00FFh
+        call    run_mtop               ; MTWEOF 16777215 remains valid
+        fail_if_carry failed_close
+        mov     word ptr [control], 1
+        mov     word ptr [control+4], 007Fh
+        call    run_mtop               ; MTFSF 8388607
+        fail_if_carry failed_close
+        mov     word ptr [control], 3
+        call    run_mtop               ; MTFSR 8388607
+        fail_if_carry failed_close
+        mov     word ptr [control], 2
+        mov     word ptr [control+2], 0
+        mov     word ptr [control+4], 0080h
+        call    run_mtop               ; MTBSF 8388608 -> -8388608
+        fail_if_carry failed_close
+        mov     word ptr [control], 4
+        call    run_mtop               ; MTBSR 8388608 -> -8388608
+        fail_if_carry failed_close
+
         mov     byte ptr [stage], 'N'
+        mov     word ptr [control], 1
+        call    run_mtop               ; +8388608 must not become backward
+        fail_if_no_carry failed_close
+        mov     word ptr [control], 3
+        call    run_mtop
+        fail_if_no_carry failed_close
+        mov     word ptr [control+2], 0FFFFh
+        mov     word ptr [control+4], 00FFh
+        call    run_mtop               ; 16777215 must not become -1
+        fail_if_no_carry failed_close
+        mov     word ptr [control], 1
+        call    run_mtop
+        fail_if_no_carry failed_close
+
         mov     word ptr [control], 1    ; count too large for SPACE
         mov     word ptr [control+2], 0
         mov     word ptr [control+4], 0100h

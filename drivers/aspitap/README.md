@@ -38,6 +38,11 @@ The final close of a written session emits two filemarks. `RMT0` then rewinds;
 `NRMT0` backspaces one filemark to preserve the historical append position.
 Reads after a write in the same session are rejected.
 
+Forward file/record spacing accepts counts up to `7FFFFFh`; backward spacing
+accepts a magnitude up to `800000h`. Larger counts fail before any readiness
+poll or tape command, so forward requests cannot wrap into backward movement.
+`MTWEOF` uses an unsigned field and still accepts up to `FFFFFFh` filemarks.
+
 ## Buffered aliases
 
 With `-b`, `MT0` rewinds and `NMT0` preserves the append position. Their

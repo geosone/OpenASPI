@@ -234,6 +234,21 @@ endif
         mov word ptr [control+4], 0100h
         call run_mtop                ; rejected counts must preserve the tail
         expect_error
+        mov word ptr [control+2], 0
+        mov word ptr [control+4], 0080h
+        call run_mtop                ; +800000h must not move backwards
+        expect_error
+        mov word ptr [control], 1
+        call run_mtop
+        expect_error
+        mov word ptr [control+2], 0FFFFh
+        mov word ptr [control+4], 00FFh
+        call run_mtop                ; +FFFFFFh must not become SPACE -1
+        expect_error
+        mov word ptr [control], 3
+        call run_mtop
+        expect_error
+        mov word ptr [control+2], 1
         mov word ptr [control+4], 0
         mov word ptr [control], 7
         call run_mtop                ; TUR must preserve the write tail

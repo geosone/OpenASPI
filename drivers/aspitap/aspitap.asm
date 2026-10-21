@@ -1483,6 +1483,11 @@ mtop_operation_valid:
         je      mtop_check_backward
         cmp     ax, MTBSR
         je      mtop_check_backward
+        or      ax, ax                  ; WRITE FILEMARKS is unsigned
+        jz      mtop_check_filemarks
+        call    encode_forward_space_count
+        jmp     short mtop_count_checked
+mtop_check_filemarks:
         call    encode_forward_count
         jmp     short mtop_count_checked
 mtop_check_backward:
@@ -1534,7 +1539,7 @@ mtop_forward_filemarks:
         call    prepare_control_srb
         mov     byte ptr [srb+SRB_CDB], SCSI_SPACE
         mov     byte ptr [srb+SRB_CDB+1], SPACE_FILEMARKS
-        call    encode_forward_count
+        call    encode_forward_space_count
         jnc     mtop_fsf_ready
         stc
         ret
@@ -1556,7 +1561,7 @@ mtop_forward_records:
         call    prepare_control_srb
         mov     byte ptr [srb+SRB_CDB], SCSI_SPACE
         mov     byte ptr [srb+SRB_CDB+1], SPACE_BLOCKS
-        call    encode_forward_count
+        call    encode_forward_space_count
         jnc     mtop_fsr_ready
         stc
         ret
@@ -1637,7 +1642,18 @@ prepare_control_srb proc near
         ret
 prepare_control_srb endp
 
-; Encode an unsigned count from mtop.count into CDB bytes 2..4.
+; SPACE uses a signed 24-bit count even for forward movement.  Values with
+; bit 23 set would silently send a backward SPACE instead of rejecting it.
+encode_forward_space_count proc near
+        cmp     word ptr es:[di+4], 007Fh
+        jbe     forward_space_count_valid
+        stc
+        ret
+forward_space_count_valid:
+        jmp     encode_forward_count
+encode_forward_space_count endp
+
+; Encode an unsigned WRITE FILEMARKS count into CDB bytes 2..4.
 encode_forward_count proc near
         mov     ax, word ptr es:[di+2]
         mov     dx, word ptr es:[di+4]

@@ -29,8 +29,16 @@ INQUIRY probes are separate from the ordered media scenario.
 Fixtures cover raw-mode setup, full and residual variable-block reads,
 fixed- and descriptor-sense ILI short records, filemarks, both EOM policies,
 variable-block writes, write protection and explicit `MTWEOF`. They validate
-readiness, spacing, rewind and unload commands. Mandatory fixed-block fixtures
-check block-limit detection, integral-request enforcement and fixed read/write
+readiness, spacing, rewind and unload commands. Raw fixtures compare the
+exact six-byte CDBs for maximum forward spacing (`7FFFFFh`), maximum backward
+magnitude (`800000h`) and unsigned filemarks (`FFFFFFh`). Out-of-range forward
+counts must fail rather than encode a backward movement; the pending-rewind
+cases verify rejection before polling. Host CDB tests cover the same signed
+limits and leave the destination unchanged on rejected inputs. Buffered
+fixtures retain and verify their pending write tail after these rejections.
+
+Mandatory fixed-block fixtures check block-limit detection, integral-request
+enforcement and fixed read/write
 CDBs. Transfer scenarios also cover managers without ASPI residual support.
 
 Nested opens check exclusive transfers and final-handle close processing.

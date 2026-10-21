@@ -78,6 +78,16 @@ invalid_count_loop:
         call reject_control
         mov word ptr [control], 4
         call reject_control
+        mov word ptr [control+2], 0
+        mov word ptr [control], 1
+        call reject_control          ; +800000h cannot fit signed SPACE
+        mov word ptr [control], 3
+        call reject_control
+        mov word ptr [control+2], 0FFFFh
+        mov word ptr [control+4], 0FFh
+        call reject_control          ; +FFFFFFh must not become -1
+        mov word ptr [control], 1
+        call reject_control
         mov word ptr [control], 7
         mov word ptr [control+2], 0
         mov word ptr [control+4], 0

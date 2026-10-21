@@ -45,11 +45,31 @@ static void test_positioning_cdb(void)
         { 0x11u, 0x01u, 0xFFu, 0xFFu, 0xFEu, 0x00u };
     const oa_u8 expected_marks[OA_SCSI_CDB6_SIZE] =
         { 0x10u, 0x01u, 0x00u, 0x00u, 0x02u, 0x00u };
+    const oa_u8 forward_limit[OA_SCSI_CDB6_SIZE] =
+        { 0x11u, 0x01u, 0x7Fu, 0xFFu, 0xFFu, 0x00u };
+    const oa_u8 backward_limit[OA_SCSI_CDB6_SIZE] =
+        { 0x11u, 0x00u, 0x80u, 0x00u, 0x00u, 0x00u };
+    const oa_u8 marks_limit[OA_SCSI_CDB6_SIZE] =
+        { 0x10u, 0x00u, 0xFFu, 0xFFu, 0xFFu, 0x00u };
 
     assert(oa_scsi_cdb_space(cdb, OA_SCSI_SPACE_FILEMARKS, -2) == 0);
     assert_bytes(cdb, expected_space, OA_SCSI_CDB6_SIZE);
     assert(oa_scsi_cdb_write_filemarks(cdb, 2u, 1) == 0);
     assert_bytes(cdb, expected_marks, OA_SCSI_CDB6_SIZE);
+    assert(oa_scsi_cdb_space(cdb, OA_SCSI_SPACE_FILEMARKS, 8388607L) == 0);
+    assert_bytes(cdb, forward_limit, OA_SCSI_CDB6_SIZE);
+    assert(oa_scsi_cdb_space(cdb, OA_SCSI_SPACE_FILEMARKS, 8388608L) == -1);
+    assert_bytes(cdb, forward_limit, OA_SCSI_CDB6_SIZE);
+    assert(oa_scsi_cdb_space(cdb, OA_SCSI_SPACE_FILEMARKS, 16777215L) == -1);
+    assert_bytes(cdb, forward_limit, OA_SCSI_CDB6_SIZE);
+    assert(oa_scsi_cdb_space(cdb, OA_SCSI_SPACE_BLOCKS, -8388608L) == 0);
+    assert_bytes(cdb, backward_limit, OA_SCSI_CDB6_SIZE);
+    assert(oa_scsi_cdb_space(cdb, OA_SCSI_SPACE_BLOCKS, -8388609L) == -1);
+    assert_bytes(cdb, backward_limit, OA_SCSI_CDB6_SIZE);
+    assert(oa_scsi_cdb_write_filemarks(cdb, 0x00FFFFFFUL, 0) == 0);
+    assert_bytes(cdb, marks_limit, OA_SCSI_CDB6_SIZE);
+    assert(oa_scsi_cdb_write_filemarks(cdb, 0x01000000UL, 0) == -1);
+    assert_bytes(cdb, marks_limit, OA_SCSI_CDB6_SIZE);
 }
 
 static void test_fixed_sense(void)
