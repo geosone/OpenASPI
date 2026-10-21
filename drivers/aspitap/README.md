@@ -63,6 +63,8 @@ blocks. An unaligned residual fails with error `31`, zero accepted bytes and
 the full request remaining, including on a FILEMARK response. Failed physical
 writes save the existing persistent diagnostic snapshot. Whole-block EOF
 residuals remain valid; legacy sense information is converted from blocks.
+Nonintegral raw fixed-block reads are rejected before waiting for rewind or
+consuming a deferred EOF, so invalid input cannot advance either state.
 
 Forward file/record spacing accepts counts up to `7FFFFFh`; backward spacing
 accepts a magnitude up to `800000h`. Larger counts fail before any readiness

@@ -87,6 +87,13 @@ Write cases verify the saved failure and its clearing after a complete
 explicit write. Whole-block EOF cases cover both ASPI byte residuals and
 legacy block-count sense information, followed by another valid read.
 
+Multi-block cases request two fixed blocks and return one block plus FILEMARK.
+They verify the payload, untouched transfer-buffer tail, one deferred zero-byte
+EOF and the following physical read. A rejected nonintegral read must preserve
+that deferred EOF. Fixed/descriptor sense, residual/legacy managers and both
+status ABIs are covered. A pending-rewind fixture also verifies that invalid
+fixed-block read sizes fail without polling away the pending rewind state.
+
 Nested opens check exclusive transfers and final-handle close processing.
 Single-byte cooked-mode requests are rejected unless explicitly permitted.
 Written-session cases check read-after-write rejection, the two-filemark

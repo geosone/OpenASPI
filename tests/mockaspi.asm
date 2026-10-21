@@ -775,7 +775,16 @@ endif
         jne     fixed_read_bad
         cmp     byte ptr es:[bx+SRB_SenseLen], 32
         jne     fixed_read_bad
-        cmp     word ptr es:[bx+SRB_BufLen], 1024
+        mov     ax, 1024
+        mov     cx, 1
+ifdef FIXED_MULTI_READ
+        cmp     byte ptr cs:[read_index], 0
+        jne     fixed_read_expected_ready
+        mov     ax, 2048
+        mov     cx, 2
+fixed_read_expected_ready:
+endif
+        cmp     word ptr es:[bx+SRB_BufLen], ax
         jne     fixed_read_bad
         cmp     word ptr es:[bx+SRB_BufLen+2], 0
         jne     fixed_read_bad
@@ -783,7 +792,7 @@ endif
         jne     fixed_read_bad
         cmp     byte ptr es:[bx+SRB_CDB+3], 0
         jne     fixed_read_bad
-        cmp     byte ptr es:[bx+SRB_CDB+4], 1
+        cmp     byte ptr es:[bx+SRB_CDB+4], cl
         jne     fixed_read_bad
         cmp     byte ptr es:[bx+SRB_CDB+5], 0
         jne     fixed_read_bad
@@ -829,6 +838,20 @@ else
 endif
 endif
 fixed_read_injected:
+endif
+ifdef FIXED_MULTI_READ
+        cmp     byte ptr cs:[read_index], 0
+        jne     fixed_multi_read_done
+        inc     byte ptr cs:[read_index]
+        mov     al, 80h
+        mov     dx, 1                 ; one untransferred physical block
+ifdef FIXED_MULTI_DESCRIPTOR
+        call    set_descriptor_condition
+else
+        call    set_read_condition
+endif
+        mov     word ptr es:[bx+SRB_BufLen], 1024
+fixed_multi_read_done:
 endif
         ret
 execute_fixed_read endp

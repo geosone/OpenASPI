@@ -530,6 +530,17 @@ read_open_allowed:
         jz      read_access_error
 read_size_allowed:
         mov     byte ptr [driver_error], 0
+        ; Reject incomplete fixed-block requests before polling rewind or
+        ; consuming a deferred EOF. Neither operation belongs to bad input.
+        cmp     word ptr [tape_fixed_block], 0
+        je      read_request_size_valid
+        mov     ax, word ptr [requested_bytes]
+        xor     dx, dx
+        div     word ptr [tape_fixed_block]
+        or      dx, dx
+        jz      read_request_size_valid
+        jmp     read_bad_block_size
+read_request_size_valid:
         call    wait_for_rewind
         jc      read_access_error
         test    byte ptr [device_state], MT_STATE_WRITTEN

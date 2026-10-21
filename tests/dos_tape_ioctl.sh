@@ -227,6 +227,18 @@ run_fixture() {
             success_text='OpenASPI fixed-block tape smoke test passed'
             driver_line='DEVICE=ASPITAP.SYS -vw'
             ;;
+        fixed-multiblock*)
+            defines=(-DFIXED_BLOCK -DFIXED_MULTI_READ)
+            test_source="$ROOT/tests/tape_fixed.asm"
+            success_text='OpenASPI fixed-block tape smoke test passed'
+            case "$variant" in
+                *descriptor*) defines+=(-DFIXED_MULTI_DESCRIPTOR) ;;
+            esac
+            case "$variant" in
+                *-legacy) defines+=(-DNO_RESIDUAL) ;;
+                *-status16) defines+=(-DSTATUS16); driver_line='DEVICE=ASPITAP.SYS -2w' ;;
+            esac
+            ;;
         fixed-residual-*)
             defines=(-DFIXED_BLOCK)
             test_source="$ROOT/tests/tape_fixed.asm"
@@ -272,6 +284,7 @@ run_fixture() {
             case "$variant" in
                 rewind-wait) defines+=(-DWAIT_CLOSE); driver_line='DEVICE=ASPITAP.SYS -w' ;;
                 rewind-read) defines+=(-DREWIND_READ) ;;
+                rewind-fixed-read-invalid) defines+=(-DFIXED_BLOCK -DREWIND_BAD_FIXED_READ) ;;
                 rewind-invalid) defines+=(-DREWIND_INVALID) ;;
                 rewind-invalid-status16) defines+=(-DREWIND_INVALID -DSTATUS16); driver_line='DEVICE=ASPITAP.SYS -2' ;;
                 rewind-write) defines+=(-DREWIND_WRITE) ;;
@@ -467,7 +480,7 @@ run_fixture() {
         esac
     fi
     case "$variant" in
-      legacy|fixed-legacy|fixed-residual-*-legacy|buffered-legacy|buffered-fixed-legacy|buffered-write-error-legacy|buffered-close-error-legacy|final-*-legacy|raw-write-error-legacy|read-stream-*-legacy|read-combined-*-legacy)
+      legacy|fixed-legacy|fixed-multiblock*-legacy|fixed-residual-*-legacy|buffered-legacy|buffered-fixed-legacy|buffered-write-error-legacy|buffered-close-error-legacy|final-*-legacy|raw-write-error-legacy|read-stream-*-legacy|read-combined-*-legacy)
         grep -q 'extensions=0000' "$run_dir/serial.log"
         ;;
       no-manager|no-adapters|bad-inquiry) ;;
@@ -544,6 +557,11 @@ run_fixture read-ili-mismatch-filemark
 run_fixture read-ili-mismatch-fixed
 run_fixture read-ili-mismatch-status16
 run_fixture fixed
+run_fixture fixed-multiblock
+run_fixture fixed-multiblock-legacy
+run_fixture fixed-multiblock-descriptor
+run_fixture fixed-multiblock-descriptor-legacy
+run_fixture fixed-multiblock-status16
 run_fixture fixed-residual-read
 run_fixture fixed-residual-read-mark
 run_fixture fixed-residual-read-descriptor
@@ -571,6 +589,7 @@ run_fixture bad-inquiry
 run_fixture rewind-default
 run_fixture rewind-wait
 run_fixture rewind-read
+run_fixture rewind-fixed-read-invalid
 run_fixture rewind-invalid
 run_fixture rewind-invalid-status16
 run_fixture rewind-write

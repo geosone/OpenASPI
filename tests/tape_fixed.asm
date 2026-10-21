@@ -64,6 +64,9 @@ start:
         fail_if_no_carry failed_close
 
         mov     byte ptr [stage], '4'
+ifdef FIXED_MULTI_READ
+        call    check_multiblock_read
+endif
 ifdef FIXED_BAD_READ
         mov     bx, word ptr [handle]
         mov     cx, 1024
@@ -229,6 +232,67 @@ close_handle proc near
         ret
 close_handle endp
 
+ifdef FIXED_MULTI_READ
+check_multiblock_read proc near
+        push    ds
+        pop     es
+        mov     di, offset transfer_buffer
+        mov     cx, 2048
+        mov     al, 0CCh
+        rep     stosb
+        mov     bx, word ptr [handle]
+        mov     cx, 2048               ; two physical blocks requested
+        mov     dx, offset transfer_buffer
+        mov     ah, 3Fh
+        int     21h
+        fail_if_carry failed_close
+        cmp     ax, 1024               ; one block precedes the filemark
+        fail_if_not_equal failed_close
+        push    ds
+        pop     es
+        mov     di, offset transfer_buffer
+        mov     cx, 1024
+        mov     al, 5Ah
+        repe    scasb
+        fail_if_not_equal failed_close
+        mov     cx, 1024
+        mov     al, 0CCh               ; untransferred tail stays untouched
+        repe    scasb
+        fail_if_not_equal failed_close
+        call    get_status
+        fail_if_carry failed_close
+        cmp     byte ptr [status+4], 32h
+        fail_if_not_equal failed_close
+        cmp     word ptr [status+12], 1024
+        fail_if_not_equal failed_close
+        mov     bx, word ptr [handle]
+        mov     cx, 2                  ; invalid size must not consume EOF
+        mov     dx, offset transfer_buffer
+        mov     ah, 3Fh
+        int     21h
+        fail_if_no_carry failed_close
+        call    get_status
+        fail_if_carry failed_close
+        cmp     byte ptr [status+4], 32h
+        fail_if_not_equal failed_close
+        cmp     byte ptr [status_extended+7], 31
+        fail_if_not_equal failed_close
+        mov     bx, word ptr [handle]
+        mov     cx, 1024
+        mov     dx, offset transfer_buffer
+        mov     ah, 3Fh
+        int     21h
+        fail_if_carry failed_close
+        or      ax, ax                 ; exactly one deferred EOF, no CDB
+        fail_if_not_equal failed_close
+        call    get_status
+        fail_if_carry failed_close
+        cmp     byte ptr [status+4], 12h
+        fail_if_not_equal failed_close
+        ret
+check_multiblock_read endp
+endif
+
 check_bad_residual proc near
         call    get_status
         fail_if_carry failed_close
@@ -265,7 +329,11 @@ old_int24       dd      0
 stage           db      '?'
         include tests/tape_status.inc
 status          db      18 dup (0)
+ifdef FIXED_MULTI_READ
+transfer_buffer db      2048 dup (0)
+else
 transfer_buffer db      1024 dup (0)
+endif
 success_message db      'OpenASPI fixed-block tape smoke test passed', 13, 10, '$'
 failure_message db      'OpenASPI fixed-block tape smoke test FAILED at stage $'
 newline         db      13, 10, '$'

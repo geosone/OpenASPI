@@ -93,6 +93,23 @@ invalid_count_loop:
         mov word ptr [control+4], 0
 endif
 
+ifdef REWIND_BAD_FIXED_READ
+        mov bx, word ptr [handle]
+        mov cx, 2                   ; not a complete mandatory tape block
+        mov dx, offset buffer
+        mov ah, 3Fh
+        int 21h
+        jc fixed_read_rejected
+        jmp failed
+fixed_read_rejected:
+        call get_status
+        check_carry
+        cmp byte ptr [status+4], 82h ; rejection must not poll away rewind
+        check_equal
+        cmp byte ptr [status_extended+7], 31
+        check_equal
+endif
+
 ifdef REWIND_MIDNIGHT
         ; Only the disposable QEMU guest clock is changed by this fixture.
         push es

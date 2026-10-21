@@ -190,6 +190,12 @@ clear it under the existing recovery policy. Whole-block FILEMARK residuals
 remain accepted. Legacy sense residuals count blocks and are multiplied by
 the detected block size before returning the DOS byte count.
 
+Raw fixed-block read sizes are checked before the pending-rewind barrier and
+before a deferred EOF is consumed. A rejected nonintegral request does not
+poll the drive or clear either pending state. For a multi-block read stopped
+by FILEMARK, complete blocks preceding the mark are returned first; exactly
+one later valid read consumes the deferred zero-byte EOF without another CDB.
+
 `-b` links `MT0` and `NMT0` in addition to the raw aliases. `-tX` and `-$`
 apply to all four names. Buffered `mtget` reports state bit `BUFFERED` (01h);
 the fixed-block parameter and size still describe the drive, not the cache.
