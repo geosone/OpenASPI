@@ -1521,7 +1521,11 @@ mtop_write_filemarks:
         call    encode_forward_count
         jc      mtop_write_filemarks_done
         call    execute_control_srb
-        jc      mtop_write_filemarks_done
+        jnc     mtop_write_filemarks_complete
+        call    save_write_error
+        stc
+        ret
+mtop_write_filemarks_complete:
         or      byte ptr [device_state], MT_STATE_WRITTEN
 mtop_write_filemarks_done:
         ret

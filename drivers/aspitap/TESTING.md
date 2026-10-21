@@ -80,6 +80,9 @@ Finalization cases inject errors in filemarks, append backspacing and close
 rewind through raw and buffered names, including immediate rewind and the
 16-byte status ABI. The sequence must stop at the failed step and the status
 must retain the original cause after reopen and successful readiness checks.
+Explicit `MTWEOF` failure cases check the same persistence through raw and
+buffered aliases, mandatory fixed blocks and both status layouts. An otherwise
+unwritten non-rewinding session must not retry failed marks on close.
 Empty-write cases check the tested SvarDOS kernel's suppression of zero-byte
 DOS writes: an otherwise unwritten, non-rewinding session must issue neither
 data writes nor filemarks. See the

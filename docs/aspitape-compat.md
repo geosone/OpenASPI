@@ -176,6 +176,13 @@ spacing or rewind afterwards. DOS may ignore the close error, but a new open
 and successful `MTNOP` cannot hide it. Read-only close rewind failures retain
 the ordinary live status; they are not classified as failed writes.
 
+An explicitly requested `MTWEOF` that reaches the manager and fails also saves
+the write diagnostic tuple. Count validation and a failed readiness barrier
+before command submission do not replace an older saved write error. This
+does not change the existing control or close policy, and does not latch the
+buffered-data retry guard. A successful filemark command cannot acknowledge
+an earlier write failure.
+
 After a buffered data failure, the active session remains locked against data
 retries and automatic finalization. Finalization failures occur on final close,
 so the session has already ended; a duplicate close does not retry any steps.
@@ -188,8 +195,9 @@ writing filemarks, moving tape, or a partial/ignored-EOT transfer does not
 acknowledge the failure. A complete raw write may clear the snapshot in the
 same raw session; a buffered failure requires a new session because its data
 path is locked. Another failed/short data write or written-session
-finalization failure replaces the snapshot with its own failure. This protects
-delayed errors without silently replaying potentially consumed records. It
+finalization or explicit filemark failure replaces the snapshot with its own
+failure. This protects delayed errors without silently replaying potentially
+consumed records. It
 does not restore tape position or make appending after an error safe; the caller must choose the
 appropriate media recovery and positioning before starting a new session.
 

@@ -72,6 +72,12 @@ Finalization stops on the first error and does not retry on a duplicate close.
 It remains visible across reopening and successful readiness checks, because
 DOS may otherwise discard the close failure.
 
+Failed explicit `MTWEOF` commands save the same diagnostic snapshot. Invalid
+counts and failures in the preceding rewind-readiness wait do not replace it.
+A successful filemark command does not clear a saved write failure; only a
+complete physical data write can do that. This does not add retries or change
+the existing control/close positioning policy after an error.
+
 Raw physical write failures and short raw writes save the same diagnostic
 snapshot. A short raw write returns an error instead of successful partial
 completion: DOS can otherwise resubmit the remainder as another tape record.

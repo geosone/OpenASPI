@@ -290,6 +290,18 @@ endif
         mov cx, 1100
         mov al, 'Z'
         rep stosb
+ifdef EXPLICIT_MARK_ERROR
+        mov word ptr [control], 0
+        mov word ptr [control+2], 2
+        call run_mtop
+        expect_error
+        call verify_write_error
+        ; A readiness success must not acknowledge the failed filemarks.
+        mov word ptr [control], 7
+        call run_mtop
+        expect_ok
+        call verify_write_error
+else
 ifdef BUFFER_WRITE_ERROR
         mov bx, word ptr [handle]
         mov dx, offset buffer
@@ -367,6 +379,7 @@ ifdef FINAL_RAW
 else
         mov cx, 3
         call write_expect            ; error will occur while padding on close
+endif
 endif
 endif
 endif

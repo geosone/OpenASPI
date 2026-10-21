@@ -321,6 +321,9 @@ buffer_event db 0
 buffer_protocol_error db 0
 buffer_events:
 ifdef FINAL_ERROR
+ifdef EXPLICIT_MARK_ERROR
+        db 10h, 00h, 00h             ; failed explicit marks, TUR, reopen TUR
+else
 ifdef FINAL_EMPTY
         db 00h                       ; no WRITE/marks for a suppressed DOS write
 else
@@ -333,6 +336,7 @@ ifdef FINAL_SPACE_ERROR
         db 11h, 00h
 else
         db 01h, 00h
+endif
 endif
 endif
 endif

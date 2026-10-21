@@ -122,6 +122,9 @@ run_fixture() {
                 final-empty*) defines+=(-DFINAL_MARK_ERROR -DFINAL_EMPTY) ;;
             esac
             case "$variant" in
+                *-explicit*) defines+=(-DEXPLICIT_MARK_ERROR) ;;
+            esac
+            case "$variant" in
                 *-empty*) defines+=(-DFINAL_EMPTY) ;;
             esac
             case "$variant" in
@@ -487,6 +490,10 @@ run_fixture status16-fixed
 run_fixture status16-buffered
 run_fixture status16-rewind
 run_fixture final-marks
+run_fixture final-marks-explicit
+run_fixture final-marks-explicit-raw
+run_fixture final-marks-explicit-status16
+run_fixture final-marks-explicit-fixed
 run_fixture final-space
 run_fixture final-rewind
 run_fixture final-marks-raw
