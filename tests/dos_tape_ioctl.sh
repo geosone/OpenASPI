@@ -112,6 +112,10 @@ run_fixture() {
                 raw-eot-aborted-ignored) defines+=(-DRAW_EOT_IGNORE -DRAW_EOT_COMPLETION=2) ;;
                 raw-eot-target-ignored) defines+=(-DRAW_EOT_IGNORE -DRAW_EOT_COMPLETION=3) ;;
                 raw-eot-busy-ignored) defines+=(-DRAW_EOT_IGNORE -DRAW_EOT_COMPLETION=4) ;;
+                raw-eot-deferred-ignored|raw-eot-deferred-ignored-status16)
+                    defines+=(-DRAW_EOT_IGNORE -DRAW_EOT_COMPLETION=5) ;;
+                raw-eot-deferred-descriptor-ignored)
+                    defines+=(-DRAW_EOT_IGNORE -DRAW_EOT_COMPLETION=6) ;;
                 raw-write-bad-residual) defines+=(-DRAW_BAD_RESIDUAL) ;;
                 *-recovery) defines+=(-DBUFFER_RECOVERY -DBUFFER_RAW_RECOVERY) ;;
                 *-retry) defines+=(-DBUFFER_RECOVERY -DBUFFER_RAW_RECOVERY -DRAW_RETRY) ;;
@@ -183,9 +187,10 @@ run_fixture() {
                 *-status16) defines+=(-DSTATUS16); driver_line='DEVICE=ASPITAP.SYS -2w' ;;
             esac
             ;;
-        read-stream-transport*|read-stream-aborted*|read-stream-target|read-stream-busy)
+        read-stream-deferred*|read-stream-transport*|read-stream-aborted*|read-stream-target|read-stream-busy)
             defines=(-DREAD_STREAM_KEY=0 -DREAD_STREAM_REJECT -DREAD_STREAM_ERROR=31)
             case "$variant" in
+                read-stream-deferred*) defines+=(-DREAD_STREAM_DEFERRED) ;;
                 read-stream-transport*) defines+=(-DREAD_STREAM_TRANSPORT=1) ;;
                 read-stream-aborted*) defines+=(-DREAD_STREAM_TRANSPORT=2) ;;
                 read-stream-target) defines+=(-DREAD_STREAM_TRANSPORT=3) ;;
@@ -253,6 +258,8 @@ run_fixture() {
                 rewind-invalid-status16) defines+=(-DREWIND_INVALID -DSTATUS16); driver_line='DEVICE=ASPITAP.SYS -2' ;;
                 rewind-write) defines+=(-DREWIND_WRITE) ;;
                 rewind-error) defines+=(-DREWIND_ERROR) ;;
+                rewind-deferred) defines+=(-DREWIND_ERROR -DREWIND_DEFERRED=1) ;;
+                rewind-deferred-descriptor) defines+=(-DREWIND_ERROR -DREWIND_DEFERRED=2) ;;
                 rewind-timeout) defines+=(-DREWIND_ERROR -DREWIND_TIMEOUT) ;;
                 rewind-midnight) defines+=(-DREWIND_MIDNIGHT) ;;
                 rewind-break) defines+=(-DREWIND_BREAK -DREWIND_ERROR); driver_line='DEVICE=ASPITAP.SYS /I' ;;
@@ -504,6 +511,9 @@ run_fixture read-stream-target
 run_fixture read-stream-busy
 run_fixture read-stream-transport-legacy
 run_fixture read-stream-aborted-status16
+run_fixture read-stream-deferred
+run_fixture read-stream-deferred-legacy
+run_fixture read-stream-deferred-status16
 run_fixture read-combined-filemark
 run_fixture read-combined-ili
 run_fixture read-combined-all
@@ -539,6 +549,8 @@ run_fixture rewind-invalid
 run_fixture rewind-invalid-status16
 run_fixture rewind-write
 run_fixture rewind-error
+run_fixture rewind-deferred
+run_fixture rewind-deferred-descriptor
 run_fixture rewind-timeout
 run_fixture rewind-midnight
 run_fixture rewind-break
@@ -604,6 +616,9 @@ run_fixture raw-eot-aborted-ignored
 run_fixture raw-eot-target-ignored
 run_fixture raw-eot-busy-ignored
 run_fixture raw-eot-transport-ignored-status16
+run_fixture raw-eot-deferred-ignored
+run_fixture raw-eot-deferred-ignored-status16
+run_fixture raw-eot-deferred-descriptor-ignored
 run_fixture raw-write-bad-residual
 run_fixture tapectl-write-error
 run_fixture tapectl-ready-error

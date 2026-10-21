@@ -1195,6 +1195,12 @@ check_stream_completion proc near
         jne     stream_completion_error
         cmp     byte ptr [srb+SRB_TargStat], 2
         jne     stream_completion_error
+        ; Deferred sense describes an earlier command, not this transfer.
+        cmp     byte ptr [sense_response], 70h
+        je      stream_completion_current
+        cmp     byte ptr [sense_response], 72h
+        jne     stream_completion_error
+stream_completion_current:
         clc
         ret
 stream_completion_error:
@@ -1327,12 +1333,8 @@ rewind_check_sense:
         mov     si, offset srb+SRB_CDB+28 ; fixed sense ASC/ASCQ
         cmp     al, 70h
         je      rewind_check_progress
-        cmp     al, 71h
-        je      rewind_check_progress
         mov     si, offset srb+SRB_CDB+18 ; descriptor sense ASC/ASCQ
         cmp     al, 72h
-        je      rewind_check_progress
-        cmp     al, 73h
         jne     rewind_wait_error
 rewind_check_progress:
         cmp     byte ptr [last_sense_key], 2
@@ -1736,6 +1738,7 @@ remember_sense_key proc near
         mov     word ptr [sense_info_low], 0
         mov     al, byte ptr [srb+SRB_CDB+16]
         and     al, 7Fh
+        mov     byte ptr [sense_response], al
         cmp     al, 70h
         jne     sense_not_fixed_current
         jmp     fixed_sense
@@ -2476,6 +2479,7 @@ last_scsi_opcode    dw  0
 residual_bytes      dw  0
 requested_bytes     dw  0
 sense_flags         db  0
+sense_response      db  0
 sense_info_valid    db  0
 sense_info_high     dw  0
 sense_info_low      dw  0

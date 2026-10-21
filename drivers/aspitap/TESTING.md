@@ -63,6 +63,13 @@ CHECK CONDITION, or SCSI BUSY. Reads and ignore-EOT writes must remain errors.
 Legacy reads and both status ABIs are covered, including BUSY's error `22`.
 Write snapshots must survive readiness checks and reopen without driver replay.
 
+Deferred-sense cases use fixed `71h` and descriptor `73h` responses with ILI,
+FILEMARK and ignored EOM. Reads must fail, including through a legacy manager
+and both status ABIs. Full-length ignore-EOT writes also fail and retain their
+saved diagnostics across readiness and reopen. Deferred rewind-progress sense
+must stop the current wait without polling through to success; a later
+explicit request can retry and clear pending rewind.
+
 Combined-flag fixtures exercise FILEMARK+EOM, ILI+EOM and all three flags.
 Default EOT policy must reject them; ignore-EOT permits only valid lengths.
 Negative ILI remains an error with FILEMARK and/or ignored EOM, without queuing

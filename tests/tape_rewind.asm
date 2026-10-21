@@ -194,6 +194,22 @@ ifdef REWIND_ERROR
         check_equal
 endif
 endif
+ifdef REWIND_DEFERRED
+        ; Deferred progress was an error, not a reason to poll past it.
+        ; A later caller may explicitly try again and clear pending rewind.
+        cmp byte ptr [status_extended+7], 2
+        check_equal
+        mov bx, word ptr [handle]
+        mov cx, 0701h
+        mov dx, offset control
+        mov ax, 440Ch
+        int 21h
+        check_carry
+        call get_status
+        check_carry
+        cmp byte ptr [status+4], 2
+        check_equal
+endif
         mov bx, word ptr [handle]
         mov ah, 3Eh
         int 21h

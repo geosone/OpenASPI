@@ -136,6 +136,14 @@ failed physical writes retain their saved diagnostic snapshot. The existing
 driver-error mapping reports BUSY as `22` and otherwise uses the available
 sense key or unspecified error `31`; the public status ABI is unchanged.
 
+Stream completion additionally requires current fixed/descriptor sense
+(`70h`/`72h`). Deferred responses (`71h`/`73h`) describe an earlier command,
+so their ILI, FILEMARK or EOM flags never complete the current read/write
+successfully. Their diagnostic sense key is retained, failed physical writes
+save the same persistent snapshot, and no deferred EOF is queued. Deferred
+rewind-progress sense stops the readiness wait with rewind still pending;
+only a later explicit request starts another attempt.
+
 Stream flags are not mutually exclusive. An EOM flag requires ignore-EOT
 even when FILEMARK or positive ILI is also present. Every ILI must pass the
 variable-record and valid nonnegative length checks, even alongside FILEMARK

@@ -211,8 +211,17 @@ elseif RAW_EOT_COMPLETION eq 2
         mov byte ptr es:[bx+SRB_Status], 2
 elseif RAW_EOT_COMPLETION eq 3
         mov byte ptr es:[bx+SRB_TargStat], 0
-else
+elseif RAW_EOT_COMPLETION eq 4
         mov byte ptr es:[bx+SRB_TargStat], 8
+elseif RAW_EOT_COMPLETION eq 5
+        mov byte ptr es:[bx+SRB_CDB+16], 71h
+else
+        push dx
+        mov al, 40h
+        xor dx, dx
+        call set_descriptor_condition
+        mov byte ptr es:[bx+SRB_CDB+16], 73h
+        pop dx
 endif
 endif
         ret

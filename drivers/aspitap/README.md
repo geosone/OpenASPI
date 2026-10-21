@@ -46,6 +46,9 @@ particular, ignore-EOT does not hide a media error on a full-length write.
 They also require a regular ASPI error completion with host status zero and
 SCSI CHECK CONDITION. Stale stream sense cannot hide a transport failure,
 aborted request, BUSY or a different target status.
+Normal stream completion requires current sense (`70h`/`72h`); deferred sense
+(`71h`/`73h`) remains an error even with FILEMARK, ILI or ignored EOM. The
+original sense key stays visible and failed writes retain their saved status.
 When stream flags occur together, all restrictions apply: EOM still requires
 ignore-EOT, and ILI must still describe a valid short variable record. FILEMARK
 cannot bypass either check. Only a successful combined completion may queue
@@ -123,7 +126,9 @@ polling at most once per BIOS tick for about three minutes. Invalid operation
 numbers and out-of-range counts fail without polling or consuming pending
 rewind state. BUSY and recognized
 rewind/becoming-ready sense are retried; other errors fail immediately and
-keep the pending flag so a later request cannot bypass the wait. The BIOS
+keep the pending flag so a later request cannot bypass the wait.
+Deferred sense is not retried as current rewind progress; a later explicit
+request may try readiness again while pending rewind remains set. The BIOS
 tick calculation handles midnight rollover without consuming DOS' midnight
 flag. `-w` selects synchronous rewind on close; explicit `MTREW` is always
 synchronous. Command execution timeouts remain the ASPI manager's responsibility.

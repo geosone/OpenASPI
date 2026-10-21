@@ -307,6 +307,9 @@ ifdef READ_ILI_FIXED
 else
         call    set_descriptor_condition
 endif
+ifdef READ_STREAM_DEFERRED
+        or      byte ptr es:[bx+SRB_CDB+16], 1
+endif
 ifdef READ_ILI_MISMATCH
 if READ_ILI_MISMATCH eq 1
         mov     word ptr es:[bx+SRB_BufLen], 0 ; manager claims full read
@@ -331,6 +334,9 @@ read_filemark:
         mov     al, 80h                 ; FILEMARK, no-sense key
         mov     dx, 16                  ; no bytes transferred
         call    set_read_condition
+ifdef READ_STREAM_DEFERRED
+        or      byte ptr es:[bx+SRB_CDB+16], 1
+endif
 ifdef READ_STREAM_TRANSPORT
         call    corrupt_stream_completion
 endif
@@ -340,7 +346,7 @@ endif
 ifdef READ_BAD_RESIDUAL
         call    corrupt_read_residual
 endif
-        jmp     short aspi_done
+        jmp     aspi_done
 
 read_after_filemark:
         mov     si, offset after_filemark_payload
@@ -379,6 +385,9 @@ endif
 endif
         mov     dx, 16
         call    set_descriptor_condition
+ifdef READ_STREAM_DEFERRED
+        or      byte ptr es:[bx+SRB_CDB+16], 1
+endif
 ifdef READ_STREAM_TRANSPORT
         call    corrupt_stream_completion
 endif
@@ -610,9 +619,27 @@ ifdef WAIT_CLOSE
         jmp short rewind_test_good
 else
 ifdef REWIND_ERROR
+ifdef REWIND_DEFERRED
+        cmp byte ptr cs:[rewind_polls], 1
+        je rewind_deferred_first
+        jmp rewind_test_good
+rewind_deferred_first:
+if REWIND_DEFERRED eq 1
+        mov byte ptr es:[bx+SRB_CDB+16], 71h
+        mov byte ptr es:[bx+SRB_CDB+18], 2
+        mov byte ptr es:[bx+SRB_CDB+28], 4
+        mov byte ptr es:[bx+SRB_CDB+29], 1
+else
+        mov byte ptr es:[bx+SRB_CDB+16], 73h
+        mov byte ptr es:[bx+SRB_CDB+17], 2
+        mov byte ptr es:[bx+SRB_CDB+18], 4
+        mov byte ptr es:[bx+SRB_CDB+19], 1
+endif
+else
         mov byte ptr es:[bx+SRB_CDB+16], 70h
         mov byte ptr es:[bx+SRB_CDB+18], 2
         mov byte ptr es:[bx+SRB_CDB+28], 3Ah ; no media: do not retry
+endif
 else
         cmp byte ptr cs:[rewind_polls], 1
         jne rewind_test_sense
