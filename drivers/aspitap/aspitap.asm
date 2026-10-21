@@ -625,7 +625,10 @@ read_scsi_failed:
         jz      read_count_from_sense
         call    finish_transfer_count
         jnc     read_classify_sense
-        jmp     short read_zero_failed
+        ; A malformed manager residual is not an EOF/ILI/EOM completion.
+        ; Never let otherwise plausible sense turn an unknown length into
+        ; success or queue an artificial filemark for the next read.
+        jmp     read_bad_residual
 read_count_from_sense:
         call    finish_read_sense_count
         jnc     read_classify_sense

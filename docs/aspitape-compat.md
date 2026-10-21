@@ -104,6 +104,13 @@ default and becomes a zero/partial successful result only after IOCTL function
 `03h` selects the historical ignore-EOT policy. Negative ILI (record larger
 than the caller's buffer) remains an error.
 
+When ASPI residual support is active, a returned residual above the requested
+length or with a nonzero high word is rejected before classifying stream
+sense. FILEMARK, positive ILI and ignored EOM cannot convert that malformed
+result into success. The DOS transfer count is zero, status retains the SCSI
+result and reports the full request as residual, and no deferred EOF is added.
+The legacy sense-derived length path remains unchanged.
+
 One non-empty DOS write maps to one variable-block SCSI `WRITE(6)`. A complete
 write returns the input byte count. ASPI residuals are validated when the
 manager supports them; write protection and other CHECK CONDITION results stay

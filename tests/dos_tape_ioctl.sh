@@ -155,6 +155,13 @@ run_fixture() {
                     success_text='OpenASPI rewind smoke test passed' ;;
             esac
             ;;
+        read-bad-residual*)
+            defines=(-DREAD_BAD_RESIDUAL)
+            case "$variant" in
+                *-high) defines+=(-DREAD_BAD_RESIDUAL_HIGH) ;;
+                *-status16) defines+=(-DSTATUS16); driver_line='DEVICE=ASPITAP.SYS -2w' ;;
+            esac
+            ;;
         legacy) defines=(-DNO_RESIDUAL) ;;
         pathname) driver_line='DEVICE=ASPI-S\ASPITAP.SYS -w' ;;
         verbose) driver_line='DEVICE=ASPITAP.SYS -vw' ;;
@@ -433,6 +440,9 @@ if test "$#" -gt 0; then
 else
 run_fixture residual
 run_fixture legacy
+run_fixture read-bad-residual
+run_fixture read-bad-residual-high
+run_fixture read-bad-residual-status16
 run_fixture fixed
 run_fixture fixed-legacy
 run_fixture options

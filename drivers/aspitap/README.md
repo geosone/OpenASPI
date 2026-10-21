@@ -33,6 +33,9 @@ policy. Write-protection errors remain failed DOS writes and are visible
 through `mtget`. CHECK CONDITION decoding accepts both fixed and descriptor
 sense; descriptor information and stream-command descriptors supply residual
 ILI lengths, FILEMARK and EOM without requiring ASPI residual support.
+An advertised ASPI residual larger than the request or wider than 16 bits is
+always an error, even with FILEMARK, ILI or ignored EOM. Such a read reports
+zero accepted bytes and cannot manufacture a successful EOF.
 
 The final close of a written session emits two filemarks. `RMT0` then rewinds;
 `NRMT0` backspaces one filemark to preserve the historical append position.

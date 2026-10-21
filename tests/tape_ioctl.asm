@@ -200,6 +200,9 @@ endif
         mov     dx, offset read_buffer
         mov     ah, 3Fh
         int     21h
+ifdef READ_BAD_RESIDUAL
+        fail_if_no_carry failed_close
+else
         fail_if_carry failed_close
         cmp     ax, ILI_EXPECTED_SIZE
         fail_if_not_equal failed_close
@@ -210,6 +213,7 @@ endif
         mov     cx, ILI_EXPECTED_SIZE
         repe    cmpsb
         fail_if_not_equal failed_close
+endif
         call    get_status
         fail_if_carry failed_close
         cmp     byte ptr [status+4], 12h
@@ -224,7 +228,13 @@ else
         cmp     word ptr [status+0Ah], 0C08h
 endif
         fail_if_not_equal failed_close
+ifdef READ_BAD_RESIDUAL
+        cmp     byte ptr [status_extended+7], 31
+        fail_if_not_equal failed_close
+        cmp     word ptr [status+0Ch], 16
+else
         cmp     word ptr [status+0Ch], 4
+endif
         fail_if_not_equal failed_close
 
         ; A filemark is reported as exactly one zero-byte read. The following
@@ -235,11 +245,21 @@ endif
         mov     dx, offset read_buffer
         mov     ah, 3Fh
         int     21h
+ifdef READ_BAD_RESIDUAL
+        fail_if_no_carry failed_close
+else
         fail_if_carry failed_close
         or      ax, ax
         fail_if_not_equal failed_close
+endif
         call    get_status
         fail_if_carry failed_close
+ifdef READ_BAD_RESIDUAL
+        cmp     byte ptr [status_extended+7], 31
+        fail_if_not_equal failed_close
+        cmp     byte ptr [status+4], 12h ; no synthetic pending EOF
+        fail_if_not_equal failed_close
+endif
         cmp     byte ptr [status+8], 2
         fail_if_not_equal failed_close
         cmp     word ptr [status+0Ch], 16
@@ -294,11 +314,21 @@ endif
         mov     dx, offset read_buffer
         mov     ah, 3Fh
         int     21h
+ifdef READ_BAD_RESIDUAL
+        fail_if_no_carry failed_close
+else
         fail_if_carry failed_close
         or      ax, ax
         fail_if_not_equal failed_close
+endif
         call    get_status
         fail_if_carry failed_close
+ifdef READ_BAD_RESIDUAL
+        cmp     byte ptr [status_extended+7], 31
+        fail_if_not_equal failed_close
+        cmp     word ptr [status+0Ch], 16
+        fail_if_not_equal failed_close
+endif
         cmp     byte ptr [status+4], 52h
         fail_if_not_equal failed_close
         cmp     byte ptr [status+8], 2

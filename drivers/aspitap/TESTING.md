@@ -37,6 +37,12 @@ cases verify rejection before polling. Host CDB tests cover the same signed
 limits and leave the destination unchanged on rejected inputs. Buffered
 fixtures retain and verify their pending write tail after these rejections.
 
+Malformed-read cases combine oversized or nonzero-high-word manager residuals
+with descriptor ILI, fixed-format FILEMARK and descriptor EOM under ignore-EOT.
+All must fail with the full request remaining, preserve SCSI diagnostics and
+avoid queuing a synthetic EOF. The following valid read must reach the manager.
+Both status ABIs are exercised; legacy sense-based completions remain covered.
+
 Mandatory fixed-block fixtures check block-limit detection, integral-request
 enforcement and fixed read/write
 CDBs. Transfer scenarios also cover managers without ASPI residual support.

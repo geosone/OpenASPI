@@ -285,7 +285,7 @@ read_first:
 ifndef NO_RESIDUAL
         mov     word ptr es:[bx+SRB_BufLen], 16-READ_PAYLOAD_SIZE
 endif
-        jmp     short read_success
+        jmp     read_success
 
 read_short_ili:
         mov     si, offset ili_payload
@@ -297,12 +297,18 @@ endif
         mov     al, 20h                 ; ILI, no-sense key
         mov     dx, 16-ILI_PAYLOAD_SIZE ; requested minus actual
         call    set_descriptor_condition
+ifdef READ_BAD_RESIDUAL
+        call    corrupt_read_residual
+endif
         jmp     aspi_done
 
 read_filemark:
         mov     al, 80h                 ; FILEMARK, no-sense key
         mov     dx, 16                  ; no bytes transferred
         call    set_read_condition
+ifdef READ_BAD_RESIDUAL
+        call    corrupt_read_residual
+endif
         jmp     short aspi_done
 
 read_after_filemark:
@@ -324,6 +330,9 @@ read_descriptor_eom:
         mov     al, 40h                 ; EOM in stream-command descriptor
         mov     dx, 16
         call    set_descriptor_condition
+ifdef READ_BAD_RESIDUAL
+        call    corrupt_read_residual
+endif
         jmp     short aspi_done
 
 read_negative_ili:
@@ -819,6 +828,19 @@ copy_read_payload proc near
         pop     ds
         ret
 copy_read_payload endp
+
+ifdef READ_BAD_RESIDUAL
+; Sense remains plausible: it must never mask the manager's invalid length.
+corrupt_read_residual proc near
+ifdef READ_BAD_RESIDUAL_HIGH
+        mov     word ptr es:[bx+SRB_BufLen], 0
+        mov     word ptr es:[bx+SRB_BufLen+2], 1
+else
+        mov     word ptr es:[bx+SRB_BufLen], 17
+endif
+        ret
+corrupt_read_residual endp
+endif
 
 ; Return fixed-format CHECK CONDITION sense. AL contains FILEMARK/EOM/ILI and
 ; DX contains the positive requested-minus-actual information value.
