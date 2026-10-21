@@ -156,6 +156,20 @@ endif
         mov word ptr [control], 7     ; TUR must preserve the read cache
         call run_mtop
         expect_ok
+ifdef BUFFER_REFILL_ERROR
+        push ds
+        pop es
+        mov di, offset buffer
+        mov cx, 2000
+        mov al, 0CCh
+        rep stosb
+        mov bx, word ptr [handle]
+        mov cx, 2000
+        mov dx, offset buffer
+        mov ah, 3Fh
+        int 21h
+        expect_error                 ; B prefix copied before refill failure
+else
 ifdef BUFFER_BOUNDARY
         mov cx, 2000                 ; drain B, then encounter an empty mark
 else
@@ -163,10 +177,36 @@ else
 endif
         mov ax, 848
         call read_expect
+endif
         mov si, offset buffer
         mov cx, 848
         mov al, 'B'
         call verify_bytes
+ifdef BUFFER_REFILL_ERROR
+        mov cx, 1152
+        mov al, 0CCh
+        call verify_bytes            ; failed physical data never reaches tail
+        call get_status
+        expect_ok
+        cmp byte ptr [status+4], 11h  ; no synthetic EOF on failed refill
+        expect_equal
+        cmp byte ptr [status+8], 2
+        expect_equal
+if BUFFER_REFILL_ERROR eq 3
+        cmp byte ptr [status+9], 2
+        expect_equal
+        cmp byte ptr [status_extended+7], 2
+else
+        cmp byte ptr [status+9], 0
+        expect_equal
+        cmp byte ptr [status_extended+7], 31
+endif
+        expect_equal
+        cmp word ptr [status+12], 1024
+        expect_equal
+        test word ptr [status_extended+4], 0200h
+        expect_equal                 ; read failures are not write snapshots
+else
 ifdef BUFFER_BOUNDARY
         call get_status
         expect_ok
@@ -193,6 +233,7 @@ ifdef BUFFER_BOUNDARY
         expect_ok
         cmp byte ptr [status+4], 11h  ; exactly one EOF was consumed
         expect_equal
+endif
 endif
 
         mov byte ptr [stage], '3'

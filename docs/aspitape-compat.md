@@ -209,6 +209,14 @@ apply to all four names. Buffered `mtget` reports state bit `BUFFERED` (01h);
 the fixed-block parameter and size still describe the drive, not the cache.
 The optional 1024-byte cache is resident only when `-b` is enabled.
 
+Buffered reads can copy a valid cached prefix before a later physical refill
+fails. The DOS read remains failed; the caller must not infer an atomic,
+completed transfer from modified buffer bytes. Failed refill contents are not
+copied into the caller's remaining buffer, no synthetic EOF is added and no
+automatic physical read retry occurs. Read failures do not set the persistent
+write-error flag or lock all later reads. A new explicit read is permitted,
+but does not establish that media position or application recovery is safe.
+
 Buffered reads split or combine records and defer a zero-byte filemark result
 until preceding cached data has been delivered. Buffered writes accumulate
 1024-byte records; final close zero-pads any partial record before writing the

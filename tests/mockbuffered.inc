@@ -336,6 +336,25 @@ else
         call set_read_condition
 endif
 endif
+ifdef BUFFER_REFILL_ERROR
+        cmp byte ptr cs:[buffer_event], 5
+        jne buffered_refill_error_done
+if BUFFER_REFILL_ERROR eq 1
+        mov word ptr es:[bx+SRB_BufLen], 1025
+elseif BUFFER_REFILL_ERROR eq 2
+        mov byte ptr es:[bx+SRB_HaStat], 11h
+elseif BUFFER_REFILL_ERROR eq 3
+        or byte ptr es:[bx+SRB_CDB+18], 2 ; FILEMARK must not hide NOT READY
+elseif BUFFER_REFILL_ERROR eq 4
+        mov byte ptr es:[bx+SRB_CDB+16], 71h
+elseif BUFFER_REFILL_ERROR eq 5
+        or byte ptr es:[bx+SRB_CDB+18], 20h ; contradictory ILI + FILEMARK
+        mov word ptr es:[bx+SRB_BufLen], 0
+else
+        mov word ptr es:[bx+SRB_BufLen], 512 ; half a mandatory fixed block
+endif
+buffered_refill_error_done:
+endif
         ret
 buffered_test_command endp
 

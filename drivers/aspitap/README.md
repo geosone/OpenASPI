@@ -89,6 +89,12 @@ unread cached data. A session's first open selects raw or buffered transfers;
 opens using other names remain counted, but their data transfers are refused,
 even with `-m`. DOS does not reliably enforce device-open errors.
 
+Buffered read errors are not transactional: an earlier cached prefix may
+already have been copied when a later refill fails. The call still fails;
+applications must not treat the buffer as a completed read. Failed refill
+data is not exposed or replayed, and read errors do not set the saved-write
+failure flag. Choosing recovery and any later read remains the caller's job.
+
 ## Write and finalization failures
 
 Physical buffered writes must complete the full 1024 bytes. An error or

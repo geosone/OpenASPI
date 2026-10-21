@@ -149,6 +149,16 @@ Focused boundary runs use `bash tests/dos_tape_ioctl.sh buffered-boundary`
 or the `-legacy`, `-fixed`, `-fixed-legacy`, `-status16`, `-ili`, `-ili-legacy`
 and `-ili-status16` suffixes.
 
+Buffered-refill error fixtures copy a known cached prefix, then fail the next
+physical read. They inject an oversized residual, host error, NOT READY with
+FILEMARK, deferred sense, contradictory ILI, or an unaligned fixed residual.
+The DOS call must fail, the valid prefix remains intact and sentinel bytes in
+the untransferred caller tail stay untouched. Status must report the read
+failure without pending EOF or a saved-write flag. The next explicit read
+must reach the manager, without implicit replay or a spurious zero-byte EOF.
+Both status ABIs and a legacy sense-based failure are covered. A focused run
+is `bash tests/dos_tape_ioctl.sh buffered-refill-residual`.
+
 Raw-write cases exercise the same persistent diagnostics with variable/fixed
 blocks, residual/legacy managers and both status layouts. Short writes,
 EOT with and without error suppression, and invalid manager residuals must
