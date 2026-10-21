@@ -43,6 +43,10 @@ particular, ignore-EOT does not hide a media error on a full-length write.
 They also require a regular ASPI error completion with host status zero and
 SCSI CHECK CONDITION. Stale stream sense cannot hide a transport failure,
 aborted request, BUSY or a different target status.
+When stream flags occur together, all restrictions apply: EOM still requires
+ignore-EOT, and ILI must still describe a valid short variable record. FILEMARK
+cannot bypass either check. Only a successful combined completion may queue
+the one deferred zero-byte read after transferred data.
 
 The final close of a written session emits two filemarks. `RMT0` then rewinds;
 `NRMT0` backspaces one filemark to preserve the historical append position.

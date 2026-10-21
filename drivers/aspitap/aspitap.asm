@@ -1210,23 +1210,15 @@ classify_read_sense proc near
         ; Stream flags do not override a hard error reported by the drive.
         cmp     byte ptr [last_sense_key], 1 ; NO SENSE / RECOVERED ERROR only
         ja      read_sense_error
-        test    byte ptr [sense_flags], SENSE_FILEMARK
-        jnz     read_sense_filemark
-        test    byte ptr [sense_flags], SENSE_ILI
-        jnz     read_sense_ili
+        ; Flags may coexist. Validate every restriction before any flag can
+        ; turn the response into success or queue a deferred filemark.
         test    byte ptr [sense_flags], SENSE_EOM
-        jnz     read_sense_eom
-        stc
-        ret
-
-read_sense_filemark:
-        les     bx, [request_ptr]
-        cmp     word ptr es:[bx+REQ_COUNT], 0
-        je      read_sense_success
-        or      byte ptr [device_state], MT_STATE_EOF_NEXT
-        jmp     short read_sense_success
-
-read_sense_ili:
+        jz      read_check_ili
+        test    byte ptr [device_state], MT_STATE_EOM_EOF
+        jz      read_sense_error
+read_check_ili:
+        test    byte ptr [sense_flags], SENSE_ILI
+        jz      read_check_filemark
         cmp     word ptr [tape_fixed_block], 0
         jne     read_sense_error
         cmp     byte ptr [sense_info_valid], 0
@@ -1236,11 +1228,19 @@ read_sense_ili:
         mov     ax, word ptr [sense_info_low]
         cmp     ax, word ptr [requested_bytes]
         ja      read_sense_error
-        jmp     short read_sense_success
+read_check_filemark:
+        test    byte ptr [sense_flags], SENSE_FILEMARK
+        jnz     read_sense_filemark
+        test    byte ptr [sense_flags], SENSE_ILI or SENSE_EOM
+        jnz     read_sense_success
+        stc
+        ret
 
-read_sense_eom:
-        test    byte ptr [device_state], MT_STATE_EOM_EOF
-        jz      read_sense_error
+read_sense_filemark:
+        les     bx, [request_ptr]
+        cmp     word ptr es:[bx+REQ_COUNT], 0
+        je      read_sense_success
+        or      byte ptr [device_state], MT_STATE_EOF_NEXT
 read_sense_success:
         clc
         ret

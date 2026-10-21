@@ -128,6 +128,13 @@ failed physical writes retain their saved diagnostic snapshot. The existing
 driver-error mapping reports BUSY as `22` and otherwise uses the available
 sense key or unspecified error `31`; the public status ABI is unchanged.
 
+Stream flags are not mutually exclusive. An EOM flag requires ignore-EOT
+even when FILEMARK or positive ILI is also present. Every ILI must pass the
+variable-record and valid nonnegative length checks, even alongside FILEMARK
+or ignored EOM. Rejected combinations must not create a deferred EOF. Valid
+short data with FILEMARK is returned first, followed by exactly one deferred
+zero-byte read without an extra manager READ.
+
 One non-empty DOS write maps to one variable-block SCSI `WRITE(6)`. A complete
 write returns the input byte count. ASPI residuals are validated when the
 manager supports them; write protection and other CHECK CONDITION results stay

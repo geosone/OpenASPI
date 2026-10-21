@@ -248,7 +248,11 @@ endif
 endif
         call    get_status
         fail_if_carry failed_close
+ifdef READ_COMBINED
+        cmp     byte ptr [status+4], 32h ; valid ILI + FILEMARK defers one EOF
+else
         cmp     byte ptr [status+4], 12h
+endif
         fail_if_not_equal failed_close
         check_stream_target
 ifdef READ_STREAM_KEY
@@ -273,6 +277,20 @@ endif
         fail_if_not_equal failed_close
 ifdef READ_STREAM_REJECT
         cmp     byte ptr [status_extended+7], READ_STREAM_ERROR
+        fail_if_not_equal failed_close
+endif
+ifdef READ_COMBINED
+        mov     bx, word ptr [handle]
+        mov     cx, 16
+        mov     dx, offset read_buffer
+        mov     ah, 3Fh
+        int     21h                    ; deferred EOF, no new manager READ
+        fail_if_carry failed_close
+        or      ax, ax
+        fail_if_not_equal failed_close
+        call    get_status
+        fail_if_carry failed_close
+        cmp     byte ptr [status+4], 12h
         fail_if_not_equal failed_close
 endif
 
@@ -350,6 +368,12 @@ endif
         fail_if_not_equal failed_close
         cmp     word ptr [status+0Ch], 16
         fail_if_not_equal failed_close
+ifdef READ_COMBINED
+        cmp     byte ptr [status+4], 12h ; no deferred EOF on rejected EOM
+        fail_if_not_equal failed_close
+        cmp     byte ptr [status_extended+7], 31
+        fail_if_not_equal failed_close
+endif
 
         ; With ignore-EOT selected, the same EOM condition becomes EOF.
         mov     byte ptr [stage], 'i'
@@ -390,7 +414,11 @@ ifdef READ_STREAM_REJECT
 endif
 
         mov     byte ptr [stage], 't'
+ifdef READ_COMBINED
+        mov     cl, 03h                ; negative ILI must defeat ignore-EOT
+else
         mov     cl, 04h
+endif
         mov     dx, offset status
         call    tape_ioctl
         fail_if_carry failed_close
@@ -405,12 +433,22 @@ endif
         fail_if_no_carry failed_close
         call    get_status
         fail_if_carry failed_close
+ifdef READ_COMBINED
+        cmp     byte ptr [status+4], 52h ; no deferred EOF despite FILEMARK
+else
         cmp     byte ptr [status+4], 12h
+endif
         fail_if_not_equal failed_close
         cmp     byte ptr [status+8], 2
         fail_if_not_equal failed_close
         cmp     word ptr [status+0Ch], 16
         fail_if_not_equal failed_close
+ifdef READ_COMBINED
+        mov     cl, 04h
+        mov     dx, offset status
+        call    tape_ioctl
+        fail_if_carry failed_close
+endif
 
         mov     byte ptr [stage], 'Z'
         mov     bx, word ptr [handle]

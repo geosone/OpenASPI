@@ -56,6 +56,12 @@ CHECK CONDITION, or SCSI BUSY. Reads and ignore-EOT writes must remain errors.
 Legacy reads and both status ABIs are covered, including BUSY's error `22`.
 Write snapshots must survive readiness checks and reopen without driver replay.
 
+Combined-flag fixtures exercise FILEMARK+EOM, ILI+EOM and all three flags.
+Default EOT policy must reject them; ignore-EOT permits only valid lengths.
+Negative ILI remains an error with FILEMARK and/or ignored EOM, without queuing
+a synthetic EOF. A positive ILI+FILEMARK returns its short payload and exactly
+one deferred zero-byte read. Residual/legacy managers and both ABIs are covered.
+
 Mandatory fixed-block fixtures check block-limit detection, integral-request
 enforcement and fixed read/write
 CDBs. Transfer scenarios also cover managers without ASPI residual support.

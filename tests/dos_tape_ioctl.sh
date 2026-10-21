@@ -162,6 +162,17 @@ run_fixture() {
                     success_text='OpenASPI rewind smoke test passed' ;;
             esac
             ;;
+        read-combined-*)
+            case "$variant" in
+                read-combined-filemark*) defines=(-DREAD_COMBINED=1) ;;
+                read-combined-ili*) defines=(-DREAD_COMBINED=2) ;;
+                read-combined-all*) defines=(-DREAD_COMBINED=3) ;;
+            esac
+            case "$variant" in
+                *-legacy) defines+=(-DNO_RESIDUAL) ;;
+                *-status16) defines+=(-DSTATUS16); driver_line='DEVICE=ASPITAP.SYS -2w' ;;
+            esac
+            ;;
         read-stream-transport*|read-stream-aborted*|read-stream-target|read-stream-busy)
             defines=(-DREAD_STREAM_KEY=0 -DREAD_STREAM_REJECT -DREAD_STREAM_ERROR=31)
             case "$variant" in
@@ -421,7 +432,7 @@ run_fixture() {
         esac
     fi
     case "$variant" in
-      legacy|fixed-legacy|buffered-legacy|buffered-fixed-legacy|buffered-write-error-legacy|buffered-close-error-legacy|final-*-legacy|raw-write-error-legacy|read-stream-*-legacy)
+      legacy|fixed-legacy|buffered-legacy|buffered-fixed-legacy|buffered-write-error-legacy|buffered-close-error-legacy|final-*-legacy|raw-write-error-legacy|read-stream-*-legacy|read-combined-*-legacy)
         grep -q 'extensions=0000' "$run_dir/serial.log"
         ;;
       no-manager|no-adapters|bad-inquiry) ;;
@@ -483,6 +494,11 @@ run_fixture read-stream-target
 run_fixture read-stream-busy
 run_fixture read-stream-transport-legacy
 run_fixture read-stream-aborted-status16
+run_fixture read-combined-filemark
+run_fixture read-combined-ili
+run_fixture read-combined-all
+run_fixture read-combined-all-legacy
+run_fixture read-combined-all-status16
 run_fixture fixed
 run_fixture fixed-legacy
 run_fixture options

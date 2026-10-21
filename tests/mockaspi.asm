@@ -295,6 +295,9 @@ ifndef NO_RESIDUAL
         mov     word ptr es:[bx+SRB_BufLen], 16-ILI_PAYLOAD_SIZE
 endif
         mov     al, 20h                 ; ILI, no-sense key
+ifdef READ_COMBINED
+        or      al, 80h                ; valid short data followed by FILEMARK
+endif
         mov     dx, 16-ILI_PAYLOAD_SIZE ; requested minus actual
         call    set_descriptor_condition
 ifdef READ_STREAM_TRANSPORT
@@ -334,12 +337,30 @@ endif
 
 read_eom:
         mov     al, 40h                 ; EOM, no-sense key
+ifdef READ_COMBINED
+if READ_COMBINED eq 1
+        or      al, 80h                ; FILEMARK + EOM
+elseif READ_COMBINED eq 2
+        or      al, 20h                ; ILI + EOM
+else
+        or      al, 0A0h               ; FILEMARK + ILI + EOM
+endif
+endif
         mov     dx, 16                  ; no bytes transferred
         call    set_read_condition
         jmp     short aspi_done
 
 read_descriptor_eom:
         mov     al, 40h                 ; EOM in stream-command descriptor
+ifdef READ_COMBINED
+if READ_COMBINED eq 1
+        or      al, 80h
+elseif READ_COMBINED eq 2
+        or      al, 20h
+else
+        or      al, 0A0h
+endif
+endif
         mov     dx, 16
         call    set_descriptor_condition
 ifdef READ_STREAM_TRANSPORT
@@ -359,6 +380,15 @@ ifndef NO_RESIDUAL
 endif
         mov     byte ptr es:[bx+SRB_CDB+16], 0F0h
         mov     byte ptr es:[bx+SRB_CDB+18], 20h
+ifdef READ_COMBINED
+if READ_COMBINED eq 1
+        or      byte ptr es:[bx+SRB_CDB+18], 80h ; negative ILI + FILEMARK
+elseif READ_COMBINED eq 2
+        or      byte ptr es:[bx+SRB_CDB+18], 40h ; negative ILI + EOM
+else
+        or      byte ptr es:[bx+SRB_CDB+18], 0C0h
+endif
+endif
         mov     byte ptr es:[bx+SRB_CDB+19], 0FFh
         mov     byte ptr es:[bx+SRB_CDB+20], 0FFh
         mov     byte ptr es:[bx+SRB_CDB+21], 0FFh
