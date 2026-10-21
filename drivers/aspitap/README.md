@@ -90,8 +90,10 @@ data writes completed.
 
 By default, a final `RMT0` close sends REWIND with IMMED set. Reopening and
 querying status remain possible while `mtget` reports `REWINDING`. The next
-read, write, tape operation or additional rewind waits for readiness, polling
-at most once per BIOS tick for about three minutes. BUSY and recognized
+read, write, valid tape operation or additional rewind waits for readiness,
+polling at most once per BIOS tick for about three minutes. Invalid operation
+numbers and out-of-range counts fail without polling or consuming pending
+rewind state. BUSY and recognized
 rewind/becoming-ready sense are retried; other errors fail immediately and
 keep the pending flag so a later request cannot bypass the wait. The BIOS
 tick calculation handles midnight rollover without consuming DOS' midnight

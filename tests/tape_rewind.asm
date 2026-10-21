@@ -52,6 +52,37 @@ else
 endif
         check_equal
 
+ifdef REWIND_INVALID
+        ; Invalid operations and counts must not trigger even a TUR poll.
+        ; Preserve the pending state and the preceding REWIND diagnostics.
+        mov ax, word ptr [status+10]
+        mov word ptr [rewind_opcode], ax
+        mov word ptr [control], 8
+        mov byte ptr [expected_control_error], 21
+        call reject_control
+        mov word ptr [control], 0FFFFh
+        call reject_control
+        mov byte ptr [expected_control_error], 31
+        mov word ptr [control], 0
+        mov word ptr [control+2], 0
+        mov word ptr [control+4], 100h
+invalid_count_loop:
+        call reject_control
+        inc word ptr [control]
+        cmp word ptr [control], 5
+        jb invalid_count_loop
+        ; Check the signed backward boundary, not just the unsigned limit.
+        mov word ptr [control], 2
+        mov word ptr [control+2], 1
+        mov word ptr [control+4], 80h
+        call reject_control
+        mov word ptr [control], 4
+        call reject_control
+        mov word ptr [control], 7
+        mov word ptr [control+2], 0
+        mov word ptr [control+4], 0
+endif
+
 ifdef REWIND_MIDNIGHT
         ; Only the disposable QEMU guest clock is changed by this fixture.
         push es
@@ -188,6 +219,31 @@ open_raw proc near
 open_done:
         ret
 open_raw endp
+ifdef REWIND_INVALID
+reject_control proc near
+        mov bx, word ptr [handle]
+        mov cx, 0701h
+        mov dx, offset control
+        mov ax, 440Ch
+        int 21h
+        jc invalid_control_rejected
+        jmp failed
+invalid_control_rejected:
+        call get_status
+        check_carry
+        cmp byte ptr [status+4], 82h
+        check_equal
+        mov al, byte ptr [expected_control_error]
+        cmp byte ptr [status_extended+7], al
+        check_equal
+        mov ax, word ptr [rewind_opcode]
+        cmp word ptr [status+10], ax
+        check_equal
+        ret
+reject_control endp
+expected_control_error db 0
+rewind_opcode dw 0
+endif
 get_status proc near
         jmp checked_mtget
 get_status endp

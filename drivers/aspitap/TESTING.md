@@ -51,7 +51,10 @@ renamed devices and discovery failure reasons; normal startup stays concise.
 
 Rewind fixtures check default IMMED, synchronous `-w`, pending status and
 read/write/control readiness barriers. They emulate fixed/descriptor progress
-sense, SCSI BUSY and immediate media errors. An accelerated guest BIOS clock
+sense, SCSI BUSY and immediate media errors. Invalid operation numbers and
+out-of-range forward/backward counts are rejected before polling, preserving
+pending rewind state and the preceding command diagnostics in both status
+layouts. An accelerated guest BIOS clock
 tests timeout and midnight rollover. Ctrl-Break cases verify opt-in
 interruption, retry, chaining of the previous BIOS handler and restoration of
 the interrupt vector. Other transfer fixtures use `-w` for deterministic

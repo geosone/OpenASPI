@@ -189,6 +189,8 @@ run_fixture() {
             case "$variant" in
                 rewind-wait) defines+=(-DWAIT_CLOSE); driver_line='DEVICE=ASPITAP.SYS -w' ;;
                 rewind-read) defines+=(-DREWIND_READ) ;;
+                rewind-invalid) defines+=(-DREWIND_INVALID) ;;
+                rewind-invalid-status16) defines+=(-DREWIND_INVALID -DSTATUS16); driver_line='DEVICE=ASPITAP.SYS -2' ;;
                 rewind-write) defines+=(-DREWIND_WRITE) ;;
                 rewind-error) defines+=(-DREWIND_ERROR) ;;
                 rewind-timeout) defines+=(-DREWIND_ERROR -DREWIND_TIMEOUT) ;;
@@ -448,6 +450,8 @@ run_fixture bad-inquiry
 run_fixture rewind-default
 run_fixture rewind-wait
 run_fixture rewind-read
+run_fixture rewind-invalid
+run_fixture rewind-invalid-status16
 run_fixture rewind-write
 run_fixture rewind-error
 run_fixture rewind-timeout

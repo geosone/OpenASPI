@@ -1463,11 +1463,6 @@ finish_written_tape endp
 ; access CDBs.  The four-byte count in mtop must fit the signed or unsigned
 ; 24-bit field used by the corresponding SCSI command.
 ioctl_mtop proc near
-        call    wait_for_rewind
-        jnc     mtop_rewind_ready
-        stc
-        ret
-mtop_rewind_ready:
         mov     byte ptr [driver_error], 0
         les     bx, [request_ptr]
         les     di, dword ptr es:[bx+REQ_PARAMETER]
@@ -1478,6 +1473,29 @@ mtop_rewind_ready:
         stc
         ret
 mtop_operation_valid:
+        ; Reject malformed requests before the readiness barrier.  Otherwise
+        ; even an invalid count can poll the drive or consume a pending rewind.
+        ; The encoders touch only the scratch SRB, rebuilt by the handlers.
+        cmp     ax, MTREW
+        jae     mtop_count_valid
+        push    ax
+        cmp     ax, MTBSF
+        je      mtop_check_backward
+        cmp     ax, MTBSR
+        je      mtop_check_backward
+        call    encode_forward_count
+        jmp     short mtop_count_checked
+mtop_check_backward:
+        call    encode_backward_count
+mtop_count_checked:
+        pop     ax
+        jnc     mtop_count_valid
+        ret
+mtop_count_valid:
+        call    wait_for_rewind
+        jnc     mtop_rewind_ready
+        ret
+mtop_rewind_ready:
         shl     ax, 1
         mov     si, ax
         jmp     word ptr cs:[si+mtop_operations]
