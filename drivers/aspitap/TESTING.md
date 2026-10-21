@@ -43,6 +43,13 @@ All must fail with the full request remaining, preserve SCSI diagnostics and
 avoid queuing a synthetic EOF. The following valid read must reach the manager.
 Both status ABIs are exercised; legacy sense-based completions remain covered.
 
+Stream-sense cases combine ILI, FILEMARK and ignored EOM with MEDIUM ERROR or
+HARDWARE ERROR and require failed reads with the original sense key retained.
+They cover legacy sense-derived lengths and both status ABIs. RECOVERED ERROR
+is a positive control: valid short data, filemarks and ignored EOM still work.
+Raw-write cases combine ignored EOM with MEDIUM ERROR and zero residual; they
+must fail and retain the saved write error across readiness checks and reopen.
+
 Mandatory fixed-block fixtures check block-limit detection, integral-request
 enforcement and fixed read/write
 CDBs. Transfer scenarios also cover managers without ASPI residual support.

@@ -197,6 +197,10 @@ ifdef BUFFER_SHORT_WRITE
 ifdef RAW_EOT
         mov byte ptr es:[bx+SRB_CDB+16], 70h
         mov byte ptr es:[bx+SRB_CDB+18], 40h ; EOM, no other sense key
+ifdef RAW_EOT_HARD
+        mov word ptr es:[bx+SRB_BufLen], 0
+        mov byte ptr es:[bx+SRB_CDB+18], 43h ; EOM must not hide MEDIUM ERROR
+endif
         mov byte ptr es:[bx+SRB_TargStat], 2
         mov byte ptr es:[bx+SRB_Status], SS_ERR
         ret

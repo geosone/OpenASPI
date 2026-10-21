@@ -105,6 +105,8 @@ run_fixture() {
             esac
             case "$variant" in
                 raw-eot-ignored) defines+=(-DRAW_EOT_IGNORE) ;;
+                raw-eot-hard-ignored|raw-eot-hard-ignored-status16)
+                    defines+=(-DRAW_EOT_IGNORE -DRAW_EOT_HARD) ;;
                 raw-write-bad-residual) defines+=(-DRAW_BAD_RESIDUAL) ;;
                 *-recovery) defines+=(-DBUFFER_RECOVERY -DBUFFER_RAW_RECOVERY) ;;
                 *-retry) defines+=(-DBUFFER_RECOVERY -DBUFFER_RAW_RECOVERY -DRAW_RETRY) ;;
@@ -153,6 +155,15 @@ run_fixture() {
                     driver_line='DEVICE=ASPITAP.SYS /2'
                     test_source="$ROOT/tests/tape_rewind.asm"
                     success_text='OpenASPI rewind smoke test passed' ;;
+            esac
+            ;;
+        read-stream-*)
+            defines=(-DREAD_STREAM_KEY=3 -DREAD_STREAM_REJECT)
+            case "$variant" in
+                read-stream-hardware) defines=(-DREAD_STREAM_KEY=4 -DREAD_STREAM_REJECT) ;;
+                read-stream-recovered) defines=(-DREAD_STREAM_KEY=1) ;;
+                *-legacy) defines+=(-DNO_RESIDUAL) ;;
+                *-status16) defines+=(-DSTATUS16); driver_line='DEVICE=ASPITAP.SYS -2w' ;;
             esac
             ;;
         read-bad-residual*)
@@ -392,7 +403,7 @@ run_fixture() {
         esac
     fi
     case "$variant" in
-      legacy|fixed-legacy|buffered-legacy|buffered-fixed-legacy|buffered-write-error-legacy|buffered-close-error-legacy|final-*-legacy|raw-write-error-legacy)
+      legacy|fixed-legacy|buffered-legacy|buffered-fixed-legacy|buffered-write-error-legacy|buffered-close-error-legacy|final-*-legacy|raw-write-error-legacy|read-stream-*-legacy)
         grep -q 'extensions=0000' "$run_dir/serial.log"
         ;;
       no-manager|no-adapters|bad-inquiry) ;;
@@ -443,6 +454,11 @@ run_fixture legacy
 run_fixture read-bad-residual
 run_fixture read-bad-residual-high
 run_fixture read-bad-residual-status16
+run_fixture read-stream-medium
+run_fixture read-stream-hardware
+run_fixture read-stream-medium-legacy
+run_fixture read-stream-medium-status16
+run_fixture read-stream-recovered
 run_fixture fixed
 run_fixture fixed-legacy
 run_fixture options
@@ -525,6 +541,8 @@ run_fixture raw-write-retry
 run_fixture raw-short-recovery
 run_fixture raw-eot-write
 run_fixture raw-eot-ignored
+run_fixture raw-eot-hard-ignored
+run_fixture raw-eot-hard-ignored-status16
 run_fixture raw-write-bad-residual
 run_fixture tapectl-write-error
 run_fixture tapectl-ready-error

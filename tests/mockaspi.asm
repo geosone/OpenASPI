@@ -297,6 +297,9 @@ endif
         mov     al, 20h                 ; ILI, no-sense key
         mov     dx, 16-ILI_PAYLOAD_SIZE ; requested minus actual
         call    set_descriptor_condition
+ifdef READ_STREAM_KEY
+        mov     byte ptr es:[bx+SRB_CDB+17], READ_STREAM_KEY
+endif
 ifdef READ_BAD_RESIDUAL
         call    corrupt_read_residual
 endif
@@ -306,6 +309,9 @@ read_filemark:
         mov     al, 80h                 ; FILEMARK, no-sense key
         mov     dx, 16                  ; no bytes transferred
         call    set_read_condition
+ifdef READ_STREAM_KEY
+        or      byte ptr es:[bx+SRB_CDB+18], READ_STREAM_KEY
+endif
 ifdef READ_BAD_RESIDUAL
         call    corrupt_read_residual
 endif
@@ -330,10 +336,13 @@ read_descriptor_eom:
         mov     al, 40h                 ; EOM in stream-command descriptor
         mov     dx, 16
         call    set_descriptor_condition
+ifdef READ_STREAM_KEY
+        mov     byte ptr es:[bx+SRB_CDB+17], READ_STREAM_KEY
+endif
 ifdef READ_BAD_RESIDUAL
         call    corrupt_read_residual
 endif
-        jmp     short aspi_done
+        jmp     aspi_done
 
 read_negative_ili:
 ifndef NO_RESIDUAL

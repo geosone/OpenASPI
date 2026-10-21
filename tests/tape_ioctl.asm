@@ -28,6 +28,18 @@ fail_if_no_carry macro target
 expected_error:
 endm
 
+check_stream_read macro
+ifdef READ_BAD_RESIDUAL
+        fail_if_no_carry failed_close
+else
+ifdef READ_STREAM_REJECT
+        fail_if_no_carry failed_close
+else
+        fail_if_carry failed_close
+endif
+endif
+endm
+
 start:
         push    cs
         pop     ds
@@ -200,10 +212,9 @@ endif
         mov     dx, offset read_buffer
         mov     ah, 3Fh
         int     21h
-ifdef READ_BAD_RESIDUAL
-        fail_if_no_carry failed_close
-else
-        fail_if_carry failed_close
+        check_stream_read
+ifndef READ_BAD_RESIDUAL
+ifndef READ_STREAM_REJECT
         cmp     ax, ILI_EXPECTED_SIZE
         fail_if_not_equal failed_close
         push    ds
@@ -214,13 +225,18 @@ else
         repe    cmpsb
         fail_if_not_equal failed_close
 endif
+endif
         call    get_status
         fail_if_carry failed_close
         cmp     byte ptr [status+4], 12h
         fail_if_not_equal failed_close
         cmp     byte ptr [status+8], 2
         fail_if_not_equal failed_close
+ifdef READ_STREAM_KEY
+        cmp     byte ptr [status+9], READ_STREAM_KEY
+else
         cmp     byte ptr [status+9], 0
+endif
         fail_if_not_equal failed_close
 ifdef NO_RESIDUAL
         cmp     word ptr [status+0Ah], 0808h
@@ -236,6 +252,10 @@ else
         cmp     word ptr [status+0Ch], 4
 endif
         fail_if_not_equal failed_close
+ifdef READ_STREAM_REJECT
+        cmp     byte ptr [status_extended+7], READ_STREAM_KEY
+        fail_if_not_equal failed_close
+endif
 
         ; A filemark is reported as exactly one zero-byte read. The following
         ; read must return the first record in the next tape file.
@@ -245,12 +265,12 @@ endif
         mov     dx, offset read_buffer
         mov     ah, 3Fh
         int     21h
-ifdef READ_BAD_RESIDUAL
-        fail_if_no_carry failed_close
-else
-        fail_if_carry failed_close
+        check_stream_read
+ifndef READ_STREAM_REJECT
+ifndef READ_BAD_RESIDUAL
         or      ax, ax
         fail_if_not_equal failed_close
+endif
 endif
         call    get_status
         fail_if_carry failed_close
@@ -264,6 +284,16 @@ endif
         fail_if_not_equal failed_close
         cmp     word ptr [status+0Ch], 16
         fail_if_not_equal failed_close
+ifdef READ_STREAM_KEY
+        cmp     byte ptr [status+9], READ_STREAM_KEY
+        fail_if_not_equal failed_close
+endif
+ifdef READ_STREAM_REJECT
+        cmp     byte ptr [status_extended+7], READ_STREAM_KEY
+        fail_if_not_equal failed_close
+        cmp     byte ptr [status+4], 12h
+        fail_if_not_equal failed_close
+endif
 
         mov     byte ptr [stage], 'a'
         mov     bx, word ptr [handle]
@@ -314,12 +344,12 @@ endif
         mov     dx, offset read_buffer
         mov     ah, 3Fh
         int     21h
-ifdef READ_BAD_RESIDUAL
-        fail_if_no_carry failed_close
-else
-        fail_if_carry failed_close
+        check_stream_read
+ifndef READ_STREAM_REJECT
+ifndef READ_BAD_RESIDUAL
         or      ax, ax
         fail_if_not_equal failed_close
+endif
 endif
         call    get_status
         fail_if_carry failed_close
@@ -333,6 +363,14 @@ endif
         fail_if_not_equal failed_close
         cmp     byte ptr [status+8], 2
         fail_if_not_equal failed_close
+ifdef READ_STREAM_KEY
+        cmp     byte ptr [status+9], READ_STREAM_KEY
+        fail_if_not_equal failed_close
+endif
+ifdef READ_STREAM_REJECT
+        cmp     byte ptr [status_extended+7], READ_STREAM_KEY
+        fail_if_not_equal failed_close
+endif
 
         mov     byte ptr [stage], 't'
         mov     cl, 04h

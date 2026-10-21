@@ -780,6 +780,9 @@ write_scsi_failed:
         jz      write_zero_failed
         call    finish_transfer_count
         jc      write_zero_failed
+        ; Ignore-EOT never suppresses a real media/hardware sense key.
+        cmp     byte ptr [last_sense_key], 1 ; NO SENSE / RECOVERED ERROR only
+        ja      write_condition_error
         test    byte ptr [sense_flags], SENSE_EOM
         jz      write_condition_error
         test    byte ptr [device_state], MT_STATE_EOM_EOF
@@ -1183,6 +1186,9 @@ finish_read_sense_count endp
 ; FILEMARK and a positive ILI are normal variable-block read completions. EOM
 ; is an EOF only when the caller selected the documented ignore-EOT policy.
 classify_read_sense proc near
+        ; Stream flags do not override a hard error reported by the drive.
+        cmp     byte ptr [last_sense_key], 1 ; NO SENSE / RECOVERED ERROR only
+        ja      read_sense_error
         test    byte ptr [sense_flags], SENSE_FILEMARK
         jnz     read_sense_filemark
         test    byte ptr [sense_flags], SENSE_ILI

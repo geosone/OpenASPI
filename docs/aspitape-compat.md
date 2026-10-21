@@ -111,6 +111,14 @@ result into success. The DOS transfer count is zero, status retains the SCSI
 result and reports the full request as residual, and no deferred EOF is added.
 The legacy sense-derived length path remains unchanged.
 
+Normal stream completions (FILEMARK, positive ILI, or ignored EOM) require
+NO SENSE (`00h`) or RECOVERED ERROR (`01h`). Other sense keys remain failed
+read requests; stream flags cannot mask a media or hardware error and cannot
+queue a deferred EOF after such an error. The same restriction applies to
+ignore-EOT on writes, even if the manager reports zero residual. A failed
+physical write retains its diagnostic snapshot rather than becoming an
+apparently successful write solely because EOM is set.
+
 One non-empty DOS write maps to one variable-block SCSI `WRITE(6)`. A complete
 write returns the input byte count. ASPI residuals are validated when the
 manager supports them; write protection and other CHECK CONDITION results stay

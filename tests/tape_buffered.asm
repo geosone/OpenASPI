@@ -505,11 +505,19 @@ else
         cmp byte ptr [status+8], 0
 endif
         expect_equal
+ifdef RAW_EOT_HARD
+        cmp byte ptr [status+9], 3
+        expect_equal
+        cmp byte ptr [status_extended+7], 3
+        expect_equal
+        cmp word ptr [status+12], 0
+else
         cmp byte ptr [status+9], 0
         expect_equal
         cmp byte ptr [status_extended+7], 31
         expect_equal
         cmp word ptr [status+12], 512
+endif
         expect_equal
 else
         cmp byte ptr [status+8], 2
