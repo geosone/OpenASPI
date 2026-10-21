@@ -111,6 +111,14 @@ result into success. The DOS transfer count is zero, status retains the SCSI
 result and reports the full request as residual, and no deferred EOF is added.
 The legacy sense-derived length path remains unchanged.
 
+For variable-record ILI, the valid nonnegative sense information and the
+accepted transfer residual must agree. Contradictory lengths are rejected
+with driver error `31`, zero DOS transfer count and the full request reported
+as residual; the original SCSI status/sense remain available. This check
+runs before FILEMARK can create a deferred EOF. Without the ASPI residual
+extension, the transfer residual is derived from sense itself, so valid
+legacy short-record completions continue to work.
+
 Normal stream completions (FILEMARK, positive ILI, or ignored EOM) require
 NO SENSE (`00h`) or RECOVERED ERROR (`01h`). Other sense keys remain failed
 read requests; stream flags cannot mask a media or hardware error and cannot

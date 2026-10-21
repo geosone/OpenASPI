@@ -298,8 +298,24 @@ endif
 ifdef READ_COMBINED
         or      al, 80h                ; valid short data followed by FILEMARK
 endif
+ifdef READ_ILI_FILEMARK
+        or      al, 80h
+endif
         mov     dx, 16-ILI_PAYLOAD_SIZE ; requested minus actual
+ifdef READ_ILI_FIXED
+        call    set_read_condition
+else
         call    set_descriptor_condition
+endif
+ifdef READ_ILI_MISMATCH
+if READ_ILI_MISMATCH eq 1
+        mov     word ptr es:[bx+SRB_BufLen], 0 ; manager claims full read
+elseif READ_ILI_MISMATCH eq 2
+        mov     word ptr es:[bx+SRB_BufLen], 8 ; manager claims fewer bytes
+else
+        mov     word ptr es:[bx+SRB_CDB+34], 0 ; sense claims zero residual
+endif
+endif
 ifdef READ_STREAM_TRANSPORT
         call    corrupt_stream_completion
 endif

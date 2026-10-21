@@ -162,6 +162,16 @@ run_fixture() {
                     success_text='OpenASPI rewind smoke test passed' ;;
             esac
             ;;
+        read-ili-mismatch*)
+            defines=(-DREAD_ILI_MISMATCH=1)
+            case "$variant" in
+                *-short) defines=(-DREAD_ILI_MISMATCH=2) ;;
+                *-sense-zero) defines=(-DREAD_ILI_MISMATCH=3) ;;
+                *-filemark) defines+=(-DREAD_ILI_FILEMARK) ;;
+                *-fixed) defines+=(-DREAD_ILI_FIXED) ;;
+                *-status16) defines+=(-DSTATUS16); driver_line='DEVICE=ASPITAP.SYS -2w' ;;
+            esac
+            ;;
         read-combined-*)
             case "$variant" in
                 read-combined-filemark*) defines=(-DREAD_COMBINED=1) ;;
@@ -499,6 +509,12 @@ run_fixture read-combined-ili
 run_fixture read-combined-all
 run_fixture read-combined-all-legacy
 run_fixture read-combined-all-status16
+run_fixture read-ili-mismatch
+run_fixture read-ili-mismatch-short
+run_fixture read-ili-mismatch-sense-zero
+run_fixture read-ili-mismatch-filemark
+run_fixture read-ili-mismatch-fixed
+run_fixture read-ili-mismatch-status16
 run_fixture fixed
 run_fixture fixed-legacy
 run_fixture options

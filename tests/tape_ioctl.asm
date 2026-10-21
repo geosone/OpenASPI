@@ -232,7 +232,12 @@ endif
         mov     dx, offset read_buffer
         mov     ah, 3Fh
         int     21h
+ifdef READ_ILI_MISMATCH
+        fail_if_no_carry failed_close
+else
         check_stream_read
+endif
+ifndef READ_ILI_MISMATCH
 ifndef READ_BAD_RESIDUAL
 ifndef READ_STREAM_REJECT
         cmp     ax, ILI_EXPECTED_SIZE
@@ -244,6 +249,7 @@ ifndef READ_STREAM_REJECT
         mov     cx, ILI_EXPECTED_SIZE
         repe    cmpsb
         fail_if_not_equal failed_close
+endif
 endif
 endif
         call    get_status
@@ -267,12 +273,18 @@ else
         cmp     word ptr [status+0Ah], 0C08h
 endif
         fail_if_not_equal failed_close
+ifdef READ_ILI_MISMATCH
+        cmp     byte ptr [status_extended+7], 31
+        fail_if_not_equal failed_close
+        cmp     word ptr [status+0Ch], 16
+else
 ifdef READ_BAD_RESIDUAL
         cmp     byte ptr [status_extended+7], 31
         fail_if_not_equal failed_close
         cmp     word ptr [status+0Ch], 16
 else
         cmp     word ptr [status+0Ch], 4
+endif
 endif
         fail_if_not_equal failed_close
 ifdef READ_STREAM_REJECT

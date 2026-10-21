@@ -1228,6 +1228,10 @@ read_check_ili:
         mov     ax, word ptr [sense_info_low]
         cmp     ax, word ptr [requested_bytes]
         ja      read_sense_error
+        ; Both counts describe requested-minus-actual bytes for variable
+        ; records. A valid-looking but contradictory residual is not data.
+        cmp     ax, word ptr [residual_bytes]
+        jne     read_sense_length_error
 read_check_filemark:
         test    byte ptr [sense_flags], SENSE_FILEMARK
         jnz     read_sense_filemark
@@ -1244,6 +1248,9 @@ read_sense_filemark:
 read_sense_success:
         clc
         ret
+read_sense_length_error:
+        call    zero_transfer_count
+        mov     byte ptr [driver_error], 31 ; contradictory completion lengths
 read_sense_error:
         stc
         ret

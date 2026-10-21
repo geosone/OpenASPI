@@ -36,6 +36,9 @@ ILI lengths, FILEMARK and EOM without requiring ASPI residual support.
 An advertised ASPI residual larger than the request or wider than 16 bits is
 always an error, even with FILEMARK, ILI or ignored EOM. Such a read reports
 zero accepted bytes and cannot manufacture a successful EOF.
+For variable-record ILI completions, the valid sense residual must also agree
+with the manager residual. A contradiction fails with driver error `31`, zero
+accepted bytes and the full request remaining; it cannot queue a filemark.
 FILEMARK, ILI and ignored EOM are accepted as normal stream conditions only
 with sense key NO SENSE or RECOVERED ERROR. Other sense keys remain failed
 reads or writes even if the same response carries a stream flag. In

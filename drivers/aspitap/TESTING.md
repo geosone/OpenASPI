@@ -43,6 +43,13 @@ All must fail with the full request remaining, preserve SCSI diagnostics and
 avoid queuing a synthetic EOF. The following valid read must reach the manager.
 Both status ABIs are exercised; legacy sense-based completions remain covered.
 
+ILI consistency cases use in-range manager residuals that disagree with
+sense: a claimed full transfer, fewer bytes than sense indicates, or a zero
+sense residual. Fixed/descriptor sense, a simultaneous FILEMARK and both ABIs
+are covered. All contradictions must fail with error `31`, full residual and
+no deferred EOF; subsequent reads must still reach the manager. Valid legacy
+and combined short-record completions provide positive controls.
+
 Stream-sense cases combine ILI, FILEMARK and ignored EOM with MEDIUM ERROR or
 HARDWARE ERROR and require failed reads with the original sense key retained.
 They cover legacy sense-derived lengths and both status ABIs. RECOVERED ERROR
