@@ -137,6 +137,18 @@ Failed and short writes retain their diagnostic snapshot across readiness
 checks, rejected operations, close and reopen. Recovery requires a complete
 successful physical write, not merely accepting bytes into the cache.
 
+Buffered-boundary fixtures drain cached data and then encounter a filemark
+with no additional bytes in the same DOS read. The data must be returned
+first, with exactly one zero-byte EOF on a later valid read and no extra
+physical READ. An intervening rejected single-byte read must preserve pending
+EOF. Variable/fixed drives, residual/legacy managers and both ABIs are covered.
+Additional descriptor ILI+FILEMARK cases verify short payload delivery without
+losing or duplicating the file boundary.
+
+Focused boundary runs use `bash tests/dos_tape_ioctl.sh buffered-boundary`
+or the `-legacy`, `-fixed`, `-fixed-legacy`, `-status16`, `-ili`, `-ili-legacy`
+and `-ili-status16` suffixes.
+
 Raw-write cases exercise the same persistent diagnostics with variable/fixed
 blocks, residual/legacy managers and both status layouts. Short writes,
 EOT with and without error suppression, and invalid manager residuals must

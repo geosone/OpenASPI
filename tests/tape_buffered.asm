@@ -156,16 +156,44 @@ endif
         mov word ptr [control], 7     ; TUR must preserve the read cache
         call run_mtop
         expect_ok
+ifdef BUFFER_BOUNDARY
+        mov cx, 2000                 ; drain B, then encounter an empty mark
+else
         mov cx, 848
+endif
         mov ax, 848
         call read_expect
         mov si, offset buffer
         mov cx, 848
         mov al, 'B'
         call verify_bytes
+ifdef BUFFER_BOUNDARY
+        call get_status
+        expect_ok
+        cmp byte ptr [status+4], 31h  ; data returned; one EOF still pending
+        expect_equal
+        mov bx, word ptr [handle]
+        mov cx, 1
+        mov dx, offset buffer
+        mov ah, 3Fh
+        int 21h
+        expect_error                 ; rejected input must preserve pending EOF
+        call get_status
+        expect_ok
+        cmp byte ptr [status+4], 31h
+        expect_equal
+        cmp byte ptr [status_extended+7], 18
+        expect_equal
+endif
         mov cx, 2000
         xor ax, ax
         call read_expect             ; filemark without data
+ifdef BUFFER_BOUNDARY
+        call get_status
+        expect_ok
+        cmp byte ptr [status+4], 11h  ; exactly one EOF was consumed
+        expect_equal
+endif
 
         mov byte ptr [stage], '3'
 ifdef FIXED_BLOCK

@@ -311,6 +311,12 @@ else
 endif
 buffered_mark_sense:
         mov al, 80h
+ifdef BUFFER_BOUNDARY_ILI
+        cmp byte ptr cs:[buffer_event], 7
+        jne buffered_boundary_sense_ready
+        or al, 20h                  ; short variable record plus FILEMARK
+buffered_boundary_sense_ready:
+endif
 ifdef FIXED_BLOCK
         ; Fixed sense information is in blocks, while ASPI residual is bytes.
         push dx
@@ -324,7 +330,11 @@ ifndef NO_RESIDUAL
         mov word ptr es:[bx+SRB_BufLen], dx
 endif
 else
+ifdef BUFFER_BOUNDARY_ILI
+        call set_descriptor_condition
+else
         call set_read_condition
+endif
 endif
         ret
 buffered_test_command endp

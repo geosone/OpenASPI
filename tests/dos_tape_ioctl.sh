@@ -342,6 +342,17 @@ run_fixture() {
                 buffered-discard) defines+=(-DBUFFER_DISCARD) ;;
                 buffered-single) defines+=(-DBUFFER_SINGLE); driver_line='DEVICE=ASPITAP.SYS -bwms' ;;
                 buffered-exclusive) driver_line='DEVICE=ASPITAP.SYS -bw' ;;
+                buffered-boundary*)
+                    defines+=(-DBUFFER_BOUNDARY)
+                    case "$variant" in
+                        *-fixed|*-fixed-legacy) defines+=(-DFIXED_BLOCK) ;;
+                        *-ili|*-ili-legacy|*-ili-status16) defines+=(-DBUFFER_BOUNDARY_ILI) ;;
+                    esac
+                    case "$variant" in
+                        *-legacy) defines+=(-DNO_RESIDUAL) ;;
+                        *-status16) defines+=(-DSTATUS16); driver_line='DEVICE=ASPITAP.SYS -2bwm' ;;
+                    esac
+                    ;;
             esac
             ;;
         invalid-*)
@@ -492,7 +503,7 @@ run_fixture() {
         esac
     fi
     case "$variant" in
-      legacy|fixed-legacy|fixed-multiblock*-legacy|fixed-residual-*-legacy|buffered-legacy|buffered-fixed-legacy|buffered-write-error-legacy|buffered-close-error-legacy|final-*-legacy|raw-write-error-legacy|read-stream-*-legacy|read-combined-*-legacy)
+      legacy|fixed-legacy|fixed-multiblock*-legacy|fixed-residual-*-legacy|buffered-legacy|buffered-fixed-legacy|buffered-boundary*-legacy|buffered-write-error-legacy|buffered-close-error-legacy|final-*-legacy|raw-write-error-legacy|read-stream-*-legacy|read-combined-*-legacy)
         grep -q 'extensions=0000' "$run_dir/serial.log"
         ;;
       no-manager|no-adapters|bad-inquiry) ;;
@@ -643,6 +654,14 @@ run_fixture buffered-disabled
 run_fixture buffered-discard
 run_fixture buffered-single
 run_fixture buffered-exclusive
+run_fixture buffered-boundary
+run_fixture buffered-boundary-legacy
+run_fixture buffered-boundary-fixed
+run_fixture buffered-boundary-fixed-legacy
+run_fixture buffered-boundary-status16
+run_fixture buffered-boundary-ili
+run_fixture buffered-boundary-ili-legacy
+run_fixture buffered-boundary-ili-status16
 run_fixture status16
 run_fixture status16-fixed
 run_fixture status16-buffered
