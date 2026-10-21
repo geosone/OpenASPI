@@ -181,6 +181,15 @@ fixed-drive handling is distinct from the historical optional `MTx`/`NMTx`
 the same SCSI paths; on a mandatory fixed-block drive, 1024 must be an integral
 multiple of its required physical block size.
 
+Residual-capable managers must also report an integral number of physical
+blocks in the returned byte residual. An unaligned fixed-block residual fails
+with driver error `31`, zero DOS transfer count and the full request remaining.
+FILEMARK cannot turn it into EOF or queue a deferred EOF. A submitted physical
+write saves the failure snapshot; a later complete explicit raw write can
+clear it under the existing recovery policy. Whole-block FILEMARK residuals
+remain accepted. Legacy sense residuals count blocks and are multiplied by
+the detected block size before returning the DOS byte count.
+
 `-b` links `MT0` and `NMT0` in addition to the raw aliases. `-tX` and `-$`
 apply to all four names. Buffered `mtget` reports state bit `BUFFERED` (01h);
 the fixed-block parameter and size still describe the drive, not the cache.

@@ -787,6 +787,11 @@ endif
         jne     fixed_read_bad
         cmp     byte ptr es:[bx+SRB_CDB+5], 0
         jne     fixed_read_bad
+        jmp     short fixed_read_valid
+fixed_read_bad:
+        mov     byte ptr es:[bx+SRB_Status], SS_ERR
+        ret
+fixed_read_valid:
 
         push    es
         mov     ax, word ptr es:[bx+SRB_BufPointer+2]
@@ -803,9 +808,28 @@ endif
         mov     byte ptr es:[bx+SRB_HaStat], 0
         mov     byte ptr es:[bx+SRB_TargStat], 0
         mov     byte ptr es:[bx+SRB_Status], SS_COMP
-        ret
-fixed_read_bad:
-        mov     byte ptr es:[bx+SRB_Status], SS_ERR
+ifdef FIXED_BAD_READ
+        cmp     byte ptr cs:[read_index], 0
+        jne     fixed_read_injected
+        inc     byte ptr cs:[read_index]
+        mov     word ptr es:[bx+SRB_BufLen], 512
+ifdef FIXED_ALIGNED_EOF
+        mov     al, 80h
+        mov     dx, 1                  ; fixed sense information counts blocks
+        call    set_read_condition
+        mov     word ptr es:[bx+SRB_BufLen], 1024 ; ASPI residual counts bytes
+endif
+ifdef FIXED_BAD_MARK
+        mov     al, 80h
+        mov     dx, 512
+ifdef FIXED_BAD_DESCRIPTOR
+        call    set_descriptor_condition
+else
+        call    set_read_condition
+endif
+endif
+fixed_read_injected:
+endif
         ret
 execute_fixed_read endp
 
@@ -832,6 +856,11 @@ endif
         jne     fixed_write_bad
         cmp     byte ptr es:[bx+SRB_CDB+5], 0
         jne     fixed_write_bad
+        jmp     short fixed_write_valid
+fixed_write_bad:
+        mov     byte ptr es:[bx+SRB_Status], SS_ERR
+        ret
+fixed_write_valid:
 
         push    es
         mov     ax, word ptr es:[bx+SRB_BufPointer+2]
@@ -851,12 +880,17 @@ endif
         mov     byte ptr es:[bx+SRB_HaStat], 0
         mov     byte ptr es:[bx+SRB_TargStat], 0
         mov     byte ptr es:[bx+SRB_Status], SS_COMP
+ifdef FIXED_BAD_WRITE
+        cmp     byte ptr cs:[write_index], 0
+        jne     fixed_write_injected
+        inc     byte ptr cs:[write_index]
+        mov     word ptr es:[bx+SRB_BufLen], 512
+fixed_write_injected:
+endif
         ret
 fixed_write_payload_bad:
         pop     es
-fixed_write_bad:
-        mov     byte ptr es:[bx+SRB_Status], SS_ERR
-        ret
+        jmp     fixed_write_bad
 execute_fixed_write endp
 
 execute_read_block_limits proc near

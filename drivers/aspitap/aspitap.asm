@@ -1143,6 +1143,17 @@ finish_read_residual:
         mov     ax, word ptr [srb+SRB_BufLen]
         cmp     ax, word ptr [requested_bytes]
         ja      finish_read_invalid
+        ; FIXED transfers cannot complete a fraction of a physical block.
+        cmp     word ptr [tape_fixed_block], 0
+        je      finish_read_apply
+        push    ax
+        xor     dx, dx
+        div     word ptr [tape_fixed_block]
+        pop     ax
+        or      dx, dx
+        jz      finish_read_apply
+        mov     byte ptr [driver_error], 31 ; malformed fixed-block residual
+        jmp     short finish_read_invalid
 finish_read_apply:
         mov     word ptr [residual_bytes], ax
         mov     dx, word ptr [requested_bytes]

@@ -64,6 +64,29 @@ start:
         fail_if_no_carry failed_close
 
         mov     byte ptr [stage], '4'
+ifdef FIXED_BAD_READ
+        mov     bx, word ptr [handle]
+        mov     cx, 1024
+        mov     dx, offset transfer_buffer
+        mov     ah, 3Fh
+        int     21h
+ifdef FIXED_ALIGNED_EOF
+        fail_if_carry failed_close
+        or      ax, ax
+        fail_if_not_equal failed_close
+        call    get_status
+        fail_if_carry failed_close
+        cmp     byte ptr [status+4], 12h
+        fail_if_not_equal failed_close
+        cmp     word ptr [status+12], 1024
+        fail_if_not_equal failed_close
+else
+        fail_if_no_carry failed_close
+        call    check_bad_residual
+        cmp     byte ptr [status+4], 2 ; no READ or deferred EOF on bad result
+        fail_if_not_equal failed_close
+endif
+endif
         mov     bx, word ptr [handle]
         mov     cx, 1024
         mov     dx, offset transfer_buffer
@@ -105,6 +128,21 @@ endif
         mov     al, 0A5h
         rep     stosb
         mov     byte ptr [stage], '6'
+ifdef FIXED_BAD_WRITE
+        mov     bx, word ptr [handle]
+        mov     cx, 1024
+        mov     dx, offset transfer_buffer
+        mov     ah, 40h
+        int     21h
+        fail_if_no_carry failed_close
+        call    check_bad_residual
+        test    word ptr [status_extended+4], 0200h
+        jnz     fixed_write_failure_saved
+        jmp     failed_close
+fixed_write_failure_saved:
+        cmp     byte ptr [status+4], 12h
+        fail_if_not_equal failed_close
+endif
         mov     bx, word ptr [handle]
         mov     cx, 1024
         mov     dx, offset transfer_buffer
@@ -117,6 +155,10 @@ endif
         fail_if_carry failed_close
         cmp     byte ptr [status+4], 1Ah
         fail_if_not_equal failed_close
+ifdef FIXED_BAD_WRITE
+        test    word ptr [status_extended+4], 0200h
+        fail_if_not_equal failed_close ; full explicit write clears snapshot
+endif
 ifdef NO_RESIDUAL
         cmp     word ptr [status+0Ah], 110Ah
 else
@@ -186,6 +228,16 @@ close_handle proc near
         int     21h
         ret
 close_handle endp
+
+check_bad_residual proc near
+        call    get_status
+        fail_if_carry failed_close
+        cmp     byte ptr [status_extended+7], 31
+        fail_if_not_equal failed_close
+        cmp     word ptr [status+12], 1024
+        fail_if_not_equal failed_close
+        ret
+check_bad_residual endp
 
 get_status proc near
         jmp     checked_mtget

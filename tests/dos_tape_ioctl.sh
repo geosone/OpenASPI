@@ -227,6 +227,24 @@ run_fixture() {
             success_text='OpenASPI fixed-block tape smoke test passed'
             driver_line='DEVICE=ASPITAP.SYS -vw'
             ;;
+        fixed-residual-*)
+            defines=(-DFIXED_BLOCK)
+            test_source="$ROOT/tests/tape_fixed.asm"
+            success_text='OpenASPI fixed-block tape smoke test passed'
+            case "$variant" in
+                fixed-residual-read*) defines+=(-DFIXED_BAD_READ) ;;
+                fixed-residual-write*) defines+=(-DFIXED_BAD_WRITE) ;;
+            esac
+            case "$variant" in
+                *-aligned|*-aligned-legacy) defines+=(-DFIXED_ALIGNED_EOF) ;;
+                *-mark) defines+=(-DFIXED_BAD_MARK) ;;
+                *-descriptor) defines+=(-DFIXED_BAD_MARK -DFIXED_BAD_DESCRIPTOR) ;;
+                *-status16) defines+=(-DSTATUS16); driver_line='DEVICE=ASPITAP.SYS -2w' ;;
+            esac
+            case "$variant" in
+                *-legacy) defines+=(-DNO_RESIDUAL) ;;
+            esac
+            ;;
         fixed)
             defines=(-DFIXED_BLOCK)
             test_source="$ROOT/tests/tape_fixed.asm"
@@ -449,7 +467,7 @@ run_fixture() {
         esac
     fi
     case "$variant" in
-      legacy|fixed-legacy|buffered-legacy|buffered-fixed-legacy|buffered-write-error-legacy|buffered-close-error-legacy|final-*-legacy|raw-write-error-legacy|read-stream-*-legacy|read-combined-*-legacy)
+      legacy|fixed-legacy|fixed-residual-*-legacy|buffered-legacy|buffered-fixed-legacy|buffered-write-error-legacy|buffered-close-error-legacy|final-*-legacy|raw-write-error-legacy|read-stream-*-legacy|read-combined-*-legacy)
         grep -q 'extensions=0000' "$run_dir/serial.log"
         ;;
       no-manager|no-adapters|bad-inquiry) ;;
@@ -526,6 +544,14 @@ run_fixture read-ili-mismatch-filemark
 run_fixture read-ili-mismatch-fixed
 run_fixture read-ili-mismatch-status16
 run_fixture fixed
+run_fixture fixed-residual-read
+run_fixture fixed-residual-read-mark
+run_fixture fixed-residual-read-descriptor
+run_fixture fixed-residual-read-status16
+run_fixture fixed-residual-write
+run_fixture fixed-residual-write-status16
+run_fixture fixed-residual-read-aligned
+run_fixture fixed-residual-read-aligned-legacy
 run_fixture fixed-legacy
 run_fixture options
 run_fixture options-separated

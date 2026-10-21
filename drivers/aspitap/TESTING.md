@@ -80,6 +80,13 @@ Mandatory fixed-block fixtures check block-limit detection, integral-request
 enforcement and fixed read/write
 CDBs. Transfer scenarios also cover managers without ASPI residual support.
 
+Fixed-block residual cases inject a half-block byte residual on read success,
+fixed/descriptor FILEMARK and write success. All must fail with error `31`
+and the full request remaining, without deferred EOF or implicit replay.
+Write cases verify the saved failure and its clearing after a complete
+explicit write. Whole-block EOF cases cover both ASPI byte residuals and
+legacy block-count sense information, followed by another valid read.
+
 Nested opens check exclusive transfers and final-handle close processing.
 Single-byte cooked-mode requests are rejected unless explicitly permitted.
 Written-session cases check read-after-write rejection, the two-filemark

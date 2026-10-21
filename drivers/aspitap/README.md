@@ -58,6 +58,12 @@ The final close of a written session emits two filemarks. `RMT0` then rewinds;
 `NRMT0` backspaces one filemark to preserve the historical append position.
 Reads after a write in the same session are rejected.
 
+On fixed-block drives, an ASPI byte residual must also contain whole physical
+blocks. An unaligned residual fails with error `31`, zero accepted bytes and
+the full request remaining, including on a FILEMARK response. Failed physical
+writes save the existing persistent diagnostic snapshot. Whole-block EOF
+residuals remain valid; legacy sense information is converted from blocks.
+
 Forward file/record spacing accepts counts up to `7FFFFFh`; backward spacing
 accepts a magnitude up to `800000h`. Larger counts fail before any readiness
 poll or tape command, so forward requests cannot wrap into backward movement.
