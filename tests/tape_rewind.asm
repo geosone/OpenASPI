@@ -110,6 +110,38 @@ fixed_read_rejected:
         check_equal
 endif
 
+ifdef REWIND_BAD_WRITE
+        mov ax, word ptr [status+10]
+        mov word ptr [rejected_opcode], ax
+        mov bx, word ptr [handle]
+if REWIND_BAD_WRITE eq 2
+        mov cx, 2
+else
+        mov cx, 1
+endif
+        mov dx, offset buffer
+        mov ah, 40h
+        int 21h
+        jc invalid_write_rejected
+        jmp failed
+invalid_write_rejected:
+        call get_status
+        check_carry
+        cmp byte ptr [status+4], 82h ; no polling, no written-session state
+        check_equal
+        mov ax, word ptr [rejected_opcode]
+        cmp word ptr [status+10], ax
+        check_equal
+        test word ptr [status_extended+4], 0200h
+        check_equal                 ; no physical WRITE failure was submitted
+if REWIND_BAD_WRITE eq 1
+        cmp byte ptr [status_extended+7], 18
+else
+        cmp byte ptr [status_extended+7], 31
+endif
+        check_equal
+endif
+
 ifdef REWIND_MIDNIGHT
         ; Only the disposable QEMU guest clock is changed by this fixture.
         push es
@@ -132,7 +164,11 @@ ifdef REWIND_READ
 else
 ifdef REWIND_WRITE
         mov bx, word ptr [handle]
+ifdef REWIND_ONE_BYTE
+        mov cx, 1
+else
         mov cx, 2
+endif
         mov dx, offset buffer
         mov ah, 40h
         int 21h
@@ -211,6 +247,12 @@ ifdef REWIND_ERROR
         check_equal
 endif
 endif
+ifdef REWIND_BAD_WRITE_AFTER_ERROR
+        mov ah, 40h
+        call reject_stale_fixed_size
+        mov ah, 3Fh
+        call reject_stale_fixed_size
+endif
 ifdef REWIND_DEFERRED
         ; Deferred progress was an error, not a reason to poll past it.
         ; A later caller may explicitly try again and clear pending rewind.
@@ -287,6 +329,26 @@ reject_control endp
 expected_control_error db 0
 rewind_opcode dw 0
 endif
+ifdef REWIND_BAD_WRITE_AFTER_ERROR
+reject_stale_fixed_size proc near
+        mov bx, word ptr [handle]
+        mov cx, 2
+        mov dx, offset buffer
+        int 21h
+        jc stale_fixed_size_rejected
+        jmp failed
+stale_fixed_size_rejected:
+        call get_status
+        check_carry
+        cmp byte ptr [status+4], 82h
+        check_equal
+        cmp byte ptr [status_extended+7], 31
+        check_equal
+        cmp byte ptr [status+9], 2    ; diagnostic sense retained, not error cause
+        check_equal
+        ret
+reject_stale_fixed_size endp
+endif
 get_status proc near
         jmp checked_mtget
 get_status endp
@@ -315,6 +377,9 @@ status db 18 dup (0)
 control dw 7
         dd 0
 buffer db 55h, 0AAh
+ifdef REWIND_BAD_WRITE
+rejected_opcode dw 0
+endif
 success_message db 'OpenASPI rewind smoke test passed', 13, 10, '$'
 failure_message db 'OpenASPI rewind smoke test FAILED', 13, 10, '$'
         end start

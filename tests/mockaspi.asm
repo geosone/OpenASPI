@@ -691,9 +691,17 @@ rewind_test_control endp
 rewind_test_data proc near
         cmp byte ptr cs:[rewind_polls], 5
         jb rewind_test_data_bad
+ifdef REWIND_ONE_BYTE
+        cmp word ptr es:[bx+SRB_BufLen], 1
+else
         cmp word ptr es:[bx+SRB_BufLen], 2
+endif
         jne rewind_test_data_bad
+ifdef REWIND_ONE_BYTE
+        cmp byte ptr es:[bx+SRB_CDB+4], 1
+else
         cmp byte ptr es:[bx+SRB_CDB+4], 2
+endif
         jne rewind_test_data_bad
         mov word ptr es:[bx+SRB_BufLen], 0
         mov byte ptr es:[bx+SRB_Status], SS_COMP

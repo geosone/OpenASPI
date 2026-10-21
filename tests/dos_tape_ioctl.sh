@@ -288,6 +288,18 @@ run_fixture() {
                 rewind-invalid) defines+=(-DREWIND_INVALID) ;;
                 rewind-invalid-status16) defines+=(-DREWIND_INVALID -DSTATUS16); driver_line='DEVICE=ASPITAP.SYS -2' ;;
                 rewind-write) defines+=(-DREWIND_WRITE) ;;
+                rewind-write-single-invalid) defines+=(-DREWIND_BAD_WRITE=1) ;;
+                rewind-write-single-invalid-status16)
+                    defines+=(-DREWIND_BAD_WRITE=1 -DSTATUS16); driver_line='DEVICE=ASPITAP.SYS -2' ;;
+                rewind-write-fixed-invalid) defines+=(-DREWIND_BAD_WRITE=2 -DFIXED_BLOCK) ;;
+                rewind-write-fixed-invalid-after-error)
+                    defines+=(-DREWIND_BAD_WRITE=2 -DFIXED_BLOCK -DREWIND_ERROR -DREWIND_BAD_WRITE_AFTER_ERROR) ;;
+                rewind-write-fixed-invalid-status16)
+                    defines+=(-DREWIND_BAD_WRITE=2 -DFIXED_BLOCK -DSTATUS16); driver_line='DEVICE=ASPITAP.SYS -2' ;;
+                rewind-write-fixed-single-invalid)
+                    defines+=(-DREWIND_BAD_WRITE=3 -DFIXED_BLOCK); driver_line='DEVICE=ASPITAP.SYS -s' ;;
+                rewind-write-single-allowed)
+                    defines+=(-DREWIND_WRITE -DREWIND_ONE_BYTE); driver_line='DEVICE=ASPITAP.SYS -s' ;;
                 rewind-error) defines+=(-DREWIND_ERROR) ;;
                 rewind-deferred) defines+=(-DREWIND_ERROR -DREWIND_DEFERRED=1) ;;
                 rewind-deferred-descriptor) defines+=(-DREWIND_ERROR -DREWIND_DEFERRED=2) ;;
@@ -593,6 +605,13 @@ run_fixture rewind-fixed-read-invalid
 run_fixture rewind-invalid
 run_fixture rewind-invalid-status16
 run_fixture rewind-write
+run_fixture rewind-write-single-invalid
+run_fixture rewind-write-single-invalid-status16
+run_fixture rewind-write-fixed-invalid
+run_fixture rewind-write-fixed-invalid-after-error
+run_fixture rewind-write-fixed-invalid-status16
+run_fixture rewind-write-fixed-single-invalid
+run_fixture rewind-write-single-allowed
 run_fixture rewind-error
 run_fixture rewind-deferred
 run_fixture rewind-deferred-descriptor

@@ -65,6 +65,11 @@ writes save the existing persistent diagnostic snapshot. Whole-block EOF
 residuals remain valid; legacy sense information is converted from blocks.
 Nonintegral raw fixed-block reads are rejected before waiting for rewind or
 consuming a deferred EOF, so invalid input cannot advance either state.
+Raw write-size guards also run before the rewind wait. Rejected single-byte
+writes and incomplete fixed blocks do not poll, mark the session written or
+create a physical-write failure snapshot. `-s` permits variable single-byte
+writes but never bypasses a fixed drive's block size. Invalid block sizes
+report input error `31`, not a stale sense key from an earlier failed command.
 
 Forward file/record spacing accepts counts up to `7FFFFFh`; backward spacing
 accepts a magnitude up to `800000h`. Larger counts fail before any readiness

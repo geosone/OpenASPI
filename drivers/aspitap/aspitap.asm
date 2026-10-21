@@ -622,6 +622,7 @@ read_length_ready:
         ret
 
 read_bad_block_size:
+        mov     byte ptr [driver_error], 31 ; input error, not stale SCSI sense
         call    zero_transfer_count
         stc
         ret
@@ -678,6 +679,25 @@ write_mode_allowed:
         jmp     write_access_error
 write_open_exclusive:
         mov     byte ptr [driver_error], 0
+        ; Bad input must not poll or consume a pending close rewind.
+        mov     ax, word ptr [requested_bytes]
+        or      ax, ax
+        jz      write_request_size_valid
+        cmp     ax, 1
+        jne     write_check_fixed_size
+        test    byte ptr [config_options], OPT_ALLOW_SINGLE
+        jnz     write_check_fixed_size
+        mov     byte ptr [driver_error], 18
+        jmp     write_access_error
+write_check_fixed_size:
+        cmp     word ptr [tape_fixed_block], 0
+        je      write_request_size_valid
+        xor     dx, dx
+        div     word ptr [tape_fixed_block]
+        or      dx, dx
+        jz      write_request_size_valid
+        jmp     write_bad_block_size
+write_request_size_valid:
         call    wait_for_rewind
         jnc     write_rewind_ready
         jmp     write_access_error
@@ -691,13 +711,6 @@ write_rewind_ready:
         ret
 
 write_issue:
-        cmp     word ptr [requested_bytes], 1
-        jne     write_size_allowed
-        test    byte ptr [config_options], OPT_ALLOW_SINGLE
-        jnz     write_size_allowed
-        mov     byte ptr [driver_error], 18
-        jmp     write_access_error
-write_size_allowed:
         call    clear_srb
         mov     byte ptr [srb+SRB_Cmd], SC_EXEC_SCSI_CMD
         mov     al, byte ptr [tape_ha]
@@ -781,6 +794,7 @@ write_complete:
         ret
 
 write_bad_block_size:
+        mov     byte ptr [driver_error], 31 ; input error, not stale SCSI sense
         call    zero_transfer_count
         stc
         ret

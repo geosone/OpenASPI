@@ -94,6 +94,13 @@ that deferred EOF. Fixed/descriptor sense, residual/legacy managers and both
 status ABIs are covered. A pending-rewind fixture also verifies that invalid
 fixed-block read sizes fail without polling away the pending rewind state.
 
+Raw write-size fixtures reject disallowed single-byte and nonintegral fixed
+writes while rewind is pending, preserving state and opcode without setting
+the saved physical-write-error flag. Both status ABIs are covered. `-s` is a
+positive control on variable records and must not bypass fixed alignment.
+After a failed readiness wait, invalid fixed reads/writes must still report
+input error `31`, not inherit the old NOT READY sense key.
+
 Nested opens check exclusive transfers and final-handle close processing.
 Single-byte cooked-mode requests are rejected unless explicitly permitted.
 Written-session cases check read-after-write rejection, the two-filemark

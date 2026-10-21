@@ -196,6 +196,14 @@ poll the drive or clear either pending state. For a multi-block read stopped
 by FILEMARK, complete blocks preceding the mark are returned first; exactly
 one later valid read consumes the deferred zero-byte EOF without another CDB.
 
+Raw write sizes are likewise checked before waiting for rewind. Disallowed
+single-byte writes report `18`; nonintegral fixed-block writes report `31`.
+Neither guard polls, submits a WRITE, marks the session written or replaces a
+saved physical-write error. The single-byte override does not waive mandatory
+fixed-block alignment. Read/write block-size rejections explicitly record
+input error `31` rather than inheriting an earlier live SCSI sense key; saved
+physical-write snapshots retain their existing precedence in tape status.
+
 `-b` links `MT0` and `NMT0` in addition to the raw aliases. `-tX` and `-$`
 apply to all four names. Buffered `mtget` reports state bit `BUFFERED` (01h);
 the fixed-block parameter and size still describe the drive, not the cache.
