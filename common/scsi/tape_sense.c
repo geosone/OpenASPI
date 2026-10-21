@@ -19,19 +19,23 @@ int oa_scsi_decode_sense(const oa_u8 *data, oa_u16 length,
     result->response_code = response;
 
     if (response == 0x70u || response == 0x71u) {
-        result->information_valid = (data[0] & 0x80u) != 0u;
         result->filemark = (data[2] & 0x80u) != 0u;
         result->end_of_medium = (data[2] & 0x40u) != 0u;
         result->incorrect_length = (data[2] & 0x20u) != 0u;
         result->sense_key = data[2] & 0x0Fu;
 
         if (length >= 7u) {
+            result->information_valid = (data[0] & 0x80u) != 0u;
             result->information = ((oa_u32)data[3] << 24) |
                                   ((oa_u32)data[4] << 16) |
                                   ((oa_u32)data[5] << 8) |
                                   (oa_u32)data[6];
         }
-        if (length >= 14u) {
+        end = length;
+        if (length >= 8u && (oa_u16)(8u + (oa_u16)data[7]) < end) {
+            end = (oa_u16)(8u + (oa_u16)data[7]);
+        }
+        if (end >= 14u) {
             result->asc = data[12];
             result->ascq = data[13];
         }

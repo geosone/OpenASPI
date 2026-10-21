@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "openaspi/aspitape.h"
@@ -92,6 +93,50 @@ static void test_fixed_sense(void)
     assert(sense.ascq == 0x02u);
 }
 
+static void test_truncated_fixed_sense(void)
+{
+    oa_u8 data[18] = {
+        0xF0u, 0x00u, 0xE0u, 0x00u, 0x00u, 0x00u, 0x20u, 0x0Au,
+        0x00u, 0x00u, 0x00u, 0x00u, 0x11u, 0x22u, 0x00u, 0x00u,
+        0x00u, 0x00u
+    };
+    struct oa_tape_sense sense;
+    oa_u16 length;
+    oa_u8 *prefix;
+
+    for (length = 4u; length <= sizeof(data); ++length) {
+        prefix = (oa_u8 *)malloc(length);
+        assert(prefix != 0);
+        memcpy(prefix, data, length);
+        memset(&sense, 0xA5, sizeof(sense));
+        assert(oa_scsi_decode_sense(prefix, length, &sense) == 0);
+        free(prefix);
+        assert(sense.filemark == 1u);
+        assert(sense.end_of_medium == 1u);
+        assert(sense.incorrect_length == 1u);
+        assert(sense.information_valid == (length >= 7u));
+        assert(sense.information == (length >= 7u ? 0x20u : 0u));
+        assert(sense.asc == (length >= 14u ? 0x11u : 0u));
+        assert(sense.ascq == (length >= 14u ? 0x22u : 0u));
+    }
+    data[7] = 0u;                    /* trailing buffer bytes are not sense */
+    assert(oa_scsi_decode_sense(data, sizeof(data), &sense) == 0);
+    assert(sense.information_valid == 1u);
+    assert(sense.information == 0x20u);
+    assert(sense.asc == 0u);
+    assert(sense.ascq == 0u);
+    data[7] = 5u;                    /* ASC present, ASCQ missing */
+    assert(oa_scsi_decode_sense(data, sizeof(data), &sense) == 0);
+    assert(sense.asc == 0u);
+    assert(sense.ascq == 0u);
+    data[7] = 6u;
+    data[0] = 0x71u;                 /* deferred, without VALID */
+    assert(oa_scsi_decode_sense(data, sizeof(data), &sense) == 0);
+    assert(sense.information_valid == 0u);
+    assert(sense.asc == 0x11u);
+    assert(sense.ascq == 0x22u);
+}
+
 static void test_descriptor_sense(void)
 {
     const oa_u8 data[24] = {
@@ -113,13 +158,68 @@ static void test_descriptor_sense(void)
     assert(sense.incorrect_length == 1u);
 }
 
+static void test_truncated_descriptor_sense(void)
+{
+    oa_u8 data[24] = {
+        0x72u, 0x06u, 0x28u, 0x00u, 0x00u, 0x00u, 0x00u, 0x10u,
+        0x00u, 0x0Au, 0x80u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+        0x00u, 0x00u, 0x00u, 0x20u,
+        0x04u, 0x02u, 0x00u, 0xE0u
+    };
+    struct oa_tape_sense sense;
+    oa_u16 length;
+    oa_u8 *prefix;
+
+    for (length = 1u; length <= sizeof(data); ++length) {
+        prefix = (oa_u8 *)malloc(length);
+        assert(prefix != 0);
+        memcpy(prefix, data, length);
+        memset(&sense, 0xA5, sizeof(sense));
+        if (length < 4u) {
+            assert(oa_scsi_decode_sense(prefix, length, &sense) == -1);
+            assert(sense.response_code == 0xA5u);
+        } else {
+            assert(oa_scsi_decode_sense(prefix, length, &sense) == 0);
+            assert(sense.sense_key == OA_SENSE_UNIT_ATTENTION);
+            assert(sense.asc == 0x28u);
+            assert(sense.information_valid == (length >= 20u));
+            assert(sense.information == (length >= 20u ? 0x20u : 0u));
+            assert(sense.filemark == (length >= 24u));
+            assert(sense.end_of_medium == (length >= 24u));
+            assert(sense.incorrect_length == (length >= 24u));
+        }
+        free(prefix);
+    }
+    data[7] = 0u;                    /* no descriptors declared */
+    assert(oa_scsi_decode_sense(data, sizeof(data), &sense) == 0);
+    assert(sense.information_valid == 0u);
+    assert(sense.filemark == 0u);
+    data[7] = 16u;
+    data[9] = 0xFFu;                 /* descriptor exceeds available data */
+    assert(oa_scsi_decode_sense(data, sizeof(data), &sense) == 0);
+    assert(sense.information_valid == 0u);
+    assert(sense.filemark == 0u);
+    data[9] = 10u;
+    data[12] = 1u;                   /* unsupported nonzero upper 32 bits */
+    assert(oa_scsi_decode_sense(data, sizeof(data), &sense) == 0);
+    assert(sense.information_valid == 0u);
+    assert(sense.filemark == 1u);
+    assert(oa_scsi_decode_sense(0, sizeof(data), &sense) == -1);
+    assert(oa_scsi_decode_sense(data, sizeof(data), 0) == -1);
+    assert(oa_scsi_decode_sense(data, 0u, &sense) == -1);
+    data[0] = 0x7Fu;
+    assert(oa_scsi_decode_sense(data, sizeof(data), &sense) == -1);
+}
+
 int main(void)
 {
     test_abi_sizes();
     test_read_write_cdb();
     test_positioning_cdb();
     test_fixed_sense();
+    test_truncated_fixed_sense();
     test_descriptor_sense();
+    test_truncated_descriptor_sense();
     puts("OpenASPI tape protocol tests passed");
     return 0;
 }

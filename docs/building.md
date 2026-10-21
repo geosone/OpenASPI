@@ -34,6 +34,8 @@ host test programs. `make test` runs the host protocol/SRB tests and checks
 the DOS device-header layout. `make check` also builds the tools and compiles
 the portable C modules and tape ABI checks as 16-bit DOS objects with
 OpenWatcom. These local checks do not access tape media.
+The [portable tape helper notes](../common/scsi/README.md) describe sense-buffer
+boundary tests and an optional sanitizer run.
 
 ## Emulator and integration tests
 

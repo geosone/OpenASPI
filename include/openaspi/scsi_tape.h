@@ -57,6 +57,11 @@ void oa_scsi_cdb_load_unload(oa_u8 cdb[OA_SCSI_CDB6_SIZE], int load,
                              int retension, int immediate);
 void oa_scsi_cdb_request_sense(oa_u8 cdb[OA_SCSI_CDB6_SIZE],
                                oa_u8 allocation_length);
+/* Decode available metadata from recognized fixed/descriptor sense (0),
+ * or return -1 for invalid arguments, fewer than four bytes or unknown format.
+ * information_valid requires the complete information field, not just VALID.
+ * Optional fields are bounded by both supplied and declared lengths.
+ */
 int oa_scsi_decode_sense(const oa_u8 *data, oa_u16 length,
                          struct oa_tape_sense *result);
 
