@@ -40,6 +40,9 @@ FILEMARK, ILI and ignored EOM are accepted as normal stream conditions only
 with sense key NO SENSE or RECOVERED ERROR. Other sense keys remain failed
 reads or writes even if the same response carries a stream flag. In
 particular, ignore-EOT does not hide a media error on a full-length write.
+They also require a regular ASPI error completion with host status zero and
+SCSI CHECK CONDITION. Stale stream sense cannot hide a transport failure,
+aborted request, BUSY or a different target status.
 
 The final close of a written session emits two filemarks. `RMT0` then rewinds;
 `NRMT0` backspaces one filemark to preserve the historical append position.

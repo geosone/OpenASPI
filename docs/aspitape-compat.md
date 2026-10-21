@@ -119,6 +119,15 @@ ignore-EOT on writes, even if the manager reports zero residual. A failed
 physical write retains its diagnostic snapshot rather than becoming an
 apparently successful write solely because EOM is set.
 
+Stream classification also requires ASPI `SS_ERR`, zero host-adapter status
+and SCSI CHECK CONDITION (`02h`). An aborted request, transport error, BUSY
+or any other target status remains an error even if plausible stream sense
+is present. This applies to residual-capable and legacy read completions and
+to ignore-EOT writes. Rejected completions do not create a deferred filemark;
+failed physical writes retain their saved diagnostic snapshot. The existing
+driver-error mapping reports BUSY as `22` and otherwise uses the available
+sense key or unspecified error `31`; the public status ABI is unchanged.
+
 One non-empty DOS write maps to one variable-block SCSI `WRITE(6)`. A complete
 write returns the input byte count. ASPI residuals are validated when the
 manager supports them; write protection and other CHECK CONDITION results stay

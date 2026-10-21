@@ -499,10 +499,20 @@ ifdef RAW_BAD_RESIDUAL
         expect_equal
 else
 ifdef BUFFER_SHORT_WRITE
+ifdef RAW_EOT_COMPLETION
+if RAW_EOT_COMPLETION eq 3
+        cmp byte ptr [status+8], 0
+elseif RAW_EOT_COMPLETION eq 4
+        cmp byte ptr [status+8], 8
+else
+        cmp byte ptr [status+8], 2
+endif
+else
 ifdef RAW_EOT
         cmp byte ptr [status+8], 2
 else
         cmp byte ptr [status+8], 0
+endif
 endif
         expect_equal
 ifdef RAW_EOT_HARD
@@ -514,9 +524,19 @@ ifdef RAW_EOT_HARD
 else
         cmp byte ptr [status+9], 0
         expect_equal
+ifdef RAW_EOT_COMPLETION
+if RAW_EOT_COMPLETION eq 4
+        cmp byte ptr [status_extended+7], 22
+else
+        cmp byte ptr [status_extended+7], 31
+endif
+        expect_equal
+        cmp word ptr [status+12], 0
+else
         cmp byte ptr [status_extended+7], 31
         expect_equal
         cmp word ptr [status+12], 512
+endif
 endif
         expect_equal
 else

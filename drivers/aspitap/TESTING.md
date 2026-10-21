@@ -50,6 +50,12 @@ is a positive control: valid short data, filemarks and ignored EOM still work.
 Raw-write cases combine ignored EOM with MEDIUM ERROR and zero residual; they
 must fail and retain the saved write error across readiness checks and reopen.
 
+Completion-envelope cases retain plausible ILI/FILEMARK/EOM sense while
+injecting host selection timeout, aborted ASPI status, SCSI GOOD instead of
+CHECK CONDITION, or SCSI BUSY. Reads and ignore-EOT writes must remain errors.
+Legacy reads and both status ABIs are covered, including BUSY's error `22`.
+Write snapshots must survive readiness checks and reopen without driver replay.
+
 Mandatory fixed-block fixtures check block-limit detection, integral-request
 enforcement and fixed read/write
 CDBs. Transfer scenarios also cover managers without ASPI residual support.

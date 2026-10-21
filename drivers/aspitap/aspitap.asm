@@ -780,6 +780,8 @@ write_scsi_failed:
         jz      write_zero_failed
         call    finish_transfer_count
         jc      write_zero_failed
+        call    check_stream_completion
+        jc      write_condition_error
         ; Ignore-EOT never suppresses a real media/hardware sense key.
         cmp     byte ptr [last_sense_key], 1 ; NO SENSE / RECOVERED ERROR only
         ja      write_condition_error
@@ -1183,9 +1185,28 @@ finish_sense_invalid:
         ret
 finish_read_sense_count endp
 
+; Sense flags describe a stream condition only for an ordinary target CHECK
+; CONDITION. Stale sense must never hide host errors or aborted/BUSY results.
+; No registers are changed; CF is clear only for that completion envelope.
+check_stream_completion proc near
+        cmp     byte ptr [srb+SRB_Status], SS_ERR
+        jne     stream_completion_error
+        cmp     byte ptr [srb+SRB_HaStat], 0
+        jne     stream_completion_error
+        cmp     byte ptr [srb+SRB_TargStat], 2
+        jne     stream_completion_error
+        clc
+        ret
+stream_completion_error:
+        stc
+        ret
+check_stream_completion endp
+
 ; FILEMARK and a positive ILI are normal variable-block read completions. EOM
 ; is an EOF only when the caller selected the documented ignore-EOT policy.
 classify_read_sense proc near
+        call    check_stream_completion
+        jc      read_sense_error
         ; Stream flags do not override a hard error reported by the drive.
         cmp     byte ptr [last_sense_key], 1 ; NO SENSE / RECOVERED ERROR only
         ja      read_sense_error

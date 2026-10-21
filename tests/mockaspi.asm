@@ -297,6 +297,9 @@ endif
         mov     al, 20h                 ; ILI, no-sense key
         mov     dx, 16-ILI_PAYLOAD_SIZE ; requested minus actual
         call    set_descriptor_condition
+ifdef READ_STREAM_TRANSPORT
+        call    corrupt_stream_completion
+endif
 ifdef READ_STREAM_KEY
         mov     byte ptr es:[bx+SRB_CDB+17], READ_STREAM_KEY
 endif
@@ -309,6 +312,9 @@ read_filemark:
         mov     al, 80h                 ; FILEMARK, no-sense key
         mov     dx, 16                  ; no bytes transferred
         call    set_read_condition
+ifdef READ_STREAM_TRANSPORT
+        call    corrupt_stream_completion
+endif
 ifdef READ_STREAM_KEY
         or      byte ptr es:[bx+SRB_CDB+18], READ_STREAM_KEY
 endif
@@ -336,6 +342,9 @@ read_descriptor_eom:
         mov     al, 40h                 ; EOM in stream-command descriptor
         mov     dx, 16
         call    set_descriptor_condition
+ifdef READ_STREAM_TRANSPORT
+        call    corrupt_stream_completion
+endif
 ifdef READ_STREAM_KEY
         mov     byte ptr es:[bx+SRB_CDB+17], READ_STREAM_KEY
 endif
@@ -837,6 +846,22 @@ copy_read_payload proc near
         pop     ds
         ret
 copy_read_payload endp
+
+ifdef READ_STREAM_TRANSPORT
+; Keep plausible stream sense while invalidating its completion envelope.
+corrupt_stream_completion proc near
+if READ_STREAM_TRANSPORT eq 1
+        mov     byte ptr es:[bx+SRB_HaStat], 11h ; selection timeout
+elseif READ_STREAM_TRANSPORT eq 2
+        mov     byte ptr es:[bx+SRB_Status], 2 ; aborted
+elseif READ_STREAM_TRANSPORT eq 3
+        mov     byte ptr es:[bx+SRB_TargStat], 0 ; not CHECK CONDITION
+else
+        mov     byte ptr es:[bx+SRB_TargStat], 8 ; BUSY
+endif
+        ret
+corrupt_stream_completion endp
+endif
 
 ifdef READ_BAD_RESIDUAL
 ; Sense remains plausible: it must never mask the manager's invalid length.

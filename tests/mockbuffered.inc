@@ -203,6 +203,18 @@ ifdef RAW_EOT_HARD
 endif
         mov byte ptr es:[bx+SRB_TargStat], 2
         mov byte ptr es:[bx+SRB_Status], SS_ERR
+ifdef RAW_EOT_COMPLETION
+        mov word ptr es:[bx+SRB_BufLen], 0
+if RAW_EOT_COMPLETION eq 1
+        mov byte ptr es:[bx+SRB_HaStat], 11h
+elseif RAW_EOT_COMPLETION eq 2
+        mov byte ptr es:[bx+SRB_Status], 2
+elseif RAW_EOT_COMPLETION eq 3
+        mov byte ptr es:[bx+SRB_TargStat], 0
+else
+        mov byte ptr es:[bx+SRB_TargStat], 8
+endif
+endif
         ret
 else
         jmp buffered_good

@@ -107,6 +107,11 @@ run_fixture() {
                 raw-eot-ignored) defines+=(-DRAW_EOT_IGNORE) ;;
                 raw-eot-hard-ignored|raw-eot-hard-ignored-status16)
                     defines+=(-DRAW_EOT_IGNORE -DRAW_EOT_HARD) ;;
+                raw-eot-transport-ignored|raw-eot-transport-ignored-status16)
+                    defines+=(-DRAW_EOT_IGNORE -DRAW_EOT_COMPLETION=1) ;;
+                raw-eot-aborted-ignored) defines+=(-DRAW_EOT_IGNORE -DRAW_EOT_COMPLETION=2) ;;
+                raw-eot-target-ignored) defines+=(-DRAW_EOT_IGNORE -DRAW_EOT_COMPLETION=3) ;;
+                raw-eot-busy-ignored) defines+=(-DRAW_EOT_IGNORE -DRAW_EOT_COMPLETION=4) ;;
                 raw-write-bad-residual) defines+=(-DRAW_BAD_RESIDUAL) ;;
                 *-recovery) defines+=(-DBUFFER_RECOVERY -DBUFFER_RAW_RECOVERY) ;;
                 *-retry) defines+=(-DBUFFER_RECOVERY -DBUFFER_RAW_RECOVERY -DRAW_RETRY) ;;
@@ -155,6 +160,19 @@ run_fixture() {
                     driver_line='DEVICE=ASPITAP.SYS /2'
                     test_source="$ROOT/tests/tape_rewind.asm"
                     success_text='OpenASPI rewind smoke test passed' ;;
+            esac
+            ;;
+        read-stream-transport*|read-stream-aborted*|read-stream-target|read-stream-busy)
+            defines=(-DREAD_STREAM_KEY=0 -DREAD_STREAM_REJECT -DREAD_STREAM_ERROR=31)
+            case "$variant" in
+                read-stream-transport*) defines+=(-DREAD_STREAM_TRANSPORT=1) ;;
+                read-stream-aborted*) defines+=(-DREAD_STREAM_TRANSPORT=2) ;;
+                read-stream-target) defines+=(-DREAD_STREAM_TRANSPORT=3) ;;
+                read-stream-busy) defines=(-DREAD_STREAM_KEY=0 -DREAD_STREAM_REJECT -DREAD_STREAM_ERROR=22 -DREAD_STREAM_TRANSPORT=4) ;;
+            esac
+            case "$variant" in
+                *-legacy) defines+=(-DNO_RESIDUAL) ;;
+                *-status16) defines+=(-DSTATUS16); driver_line='DEVICE=ASPITAP.SYS -2w' ;;
             esac
             ;;
         read-stream-*)
@@ -459,6 +477,12 @@ run_fixture read-stream-hardware
 run_fixture read-stream-medium-legacy
 run_fixture read-stream-medium-status16
 run_fixture read-stream-recovered
+run_fixture read-stream-transport
+run_fixture read-stream-aborted
+run_fixture read-stream-target
+run_fixture read-stream-busy
+run_fixture read-stream-transport-legacy
+run_fixture read-stream-aborted-status16
 run_fixture fixed
 run_fixture fixed-legacy
 run_fixture options
@@ -543,6 +567,11 @@ run_fixture raw-eot-write
 run_fixture raw-eot-ignored
 run_fixture raw-eot-hard-ignored
 run_fixture raw-eot-hard-ignored-status16
+run_fixture raw-eot-transport-ignored
+run_fixture raw-eot-aborted-ignored
+run_fixture raw-eot-target-ignored
+run_fixture raw-eot-busy-ignored
+run_fixture raw-eot-transport-ignored-status16
 run_fixture raw-write-bad-residual
 run_fixture tapectl-write-error
 run_fixture tapectl-ready-error

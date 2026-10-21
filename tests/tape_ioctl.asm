@@ -40,6 +40,26 @@ endif
 endif
 endm
 
+ifdef READ_STREAM_KEY
+ifndef READ_STREAM_ERROR
+READ_STREAM_ERROR equ READ_STREAM_KEY
+endif
+endif
+check_stream_target macro
+ifdef READ_STREAM_TRANSPORT
+if READ_STREAM_TRANSPORT eq 3
+        cmp     byte ptr [status+8], 0
+elseif READ_STREAM_TRANSPORT eq 4
+        cmp     byte ptr [status+8], 8
+else
+        cmp     byte ptr [status+8], 2
+endif
+else
+        cmp     byte ptr [status+8], 2
+endif
+        fail_if_not_equal failed_close
+endm
+
 start:
         push    cs
         pop     ds
@@ -230,8 +250,7 @@ endif
         fail_if_carry failed_close
         cmp     byte ptr [status+4], 12h
         fail_if_not_equal failed_close
-        cmp     byte ptr [status+8], 2
-        fail_if_not_equal failed_close
+        check_stream_target
 ifdef READ_STREAM_KEY
         cmp     byte ptr [status+9], READ_STREAM_KEY
 else
@@ -253,7 +272,7 @@ else
 endif
         fail_if_not_equal failed_close
 ifdef READ_STREAM_REJECT
-        cmp     byte ptr [status_extended+7], READ_STREAM_KEY
+        cmp     byte ptr [status_extended+7], READ_STREAM_ERROR
         fail_if_not_equal failed_close
 endif
 
@@ -280,8 +299,7 @@ ifdef READ_BAD_RESIDUAL
         cmp     byte ptr [status+4], 12h ; no synthetic pending EOF
         fail_if_not_equal failed_close
 endif
-        cmp     byte ptr [status+8], 2
-        fail_if_not_equal failed_close
+        check_stream_target
         cmp     word ptr [status+0Ch], 16
         fail_if_not_equal failed_close
 ifdef READ_STREAM_KEY
@@ -289,7 +307,7 @@ ifdef READ_STREAM_KEY
         fail_if_not_equal failed_close
 endif
 ifdef READ_STREAM_REJECT
-        cmp     byte ptr [status_extended+7], READ_STREAM_KEY
+        cmp     byte ptr [status_extended+7], READ_STREAM_ERROR
         fail_if_not_equal failed_close
         cmp     byte ptr [status+4], 12h
         fail_if_not_equal failed_close
@@ -361,14 +379,13 @@ ifdef READ_BAD_RESIDUAL
 endif
         cmp     byte ptr [status+4], 52h
         fail_if_not_equal failed_close
-        cmp     byte ptr [status+8], 2
-        fail_if_not_equal failed_close
+        check_stream_target
 ifdef READ_STREAM_KEY
         cmp     byte ptr [status+9], READ_STREAM_KEY
         fail_if_not_equal failed_close
 endif
 ifdef READ_STREAM_REJECT
-        cmp     byte ptr [status_extended+7], READ_STREAM_KEY
+        cmp     byte ptr [status_extended+7], READ_STREAM_ERROR
         fail_if_not_equal failed_close
 endif
 
