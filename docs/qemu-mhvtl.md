@@ -107,7 +107,7 @@ exact barcode in the selected zero-based changer drive. The checks run before
 preparation and again immediately before QEMU starts. An alternate config
 path can be selected with `MHVTL_DEVICE_CONF`.
 
-The test uses synchronous-close `ASPITAP.SYS -w` and raw `NRMT0`. It writes
+The default test uses `ASPITAP.SYS -w` and starts with raw `NRMT0`. It writes
 four differently sized records, finalizes that file, reopens without rewind,
 appends two records, then rewinds and checks all 8,254 bytes and the three
 filemarks. A second pass uses 4096-byte requests and verifies short-record
@@ -122,18 +122,30 @@ must fail at its filemark, not silently continue across files; the next read
 must start file two. On success, the test rewinds to BOT. The exact sequence
 is described in [ASPITAP testing](../drivers/aspitap/TESTING.md).
 
-Success requires the roundtrip, short-record, oversized-record rejection and
-positioning markers plus the checked exit status; any `FAILED` marker rejects
-the run. Logs and the temporary
+The close/reopen phase verifies that `NRMT0` retains position, opening `RMT0`
+does not move the tape, and its last close rewinds, including an untouched
+handle. Reopening `NRMT0` must then read the first record.
+The test also keeps an `NRMT0` handle open while opening and closing `RMT0`;
+that nonfinal close must preserve the original session's read position.
+
+Run the same command with `MHVTL_CLOSE_REWIND=immediate` to omit `-w` and
+exercise default IMMED close. Pending rewind must survive reopen/status queries and clear before
+the successful read at BOT. `MHVTL_CLOSE_REWIND=sync` is the default; other
+values are rejected. These mode choices affect only the write-test roundtrip.
+
+Success requires the roundtrip, short-record, oversized-record rejection,
+positioning and mode-specific close-rewind markers plus the checked exit
+status; any `FAILED` marker rejects the run. Logs and the temporary
 boot floppy are under `build/dos-mhvtl/`, which is recreated each run.
 Do not run multiple integration scripts against this output directory at once.
 
 The original exact-read roundtrip passed three times with the local QEMU
 10.2.3 patch, the Tekram 1.60
 manager identified above, and mhVTL's IBM ULT3580-TD8 scratch `OA2101L8`.
-The expanded short-record, oversized-record rejection and positioning checks
-passed with that legacy manager, which advertises no ASPI residual extension. This
-exercises the driver's sense-information fallback through a real DOS manager.
+The expanded short-record, oversized-record rejection, positioning and
+synchronous/immediate close-rewind checks passed with that legacy manager,
+which advertises no ASPI residual extension. This exercises the driver's
+sense-information fallback through a real DOS manager.
 The non-writing `/READY` smoke also passed with the installed, unmodified
 QEMU. The LTO profile has variable block limits, so this qualifies the
 variable-record scenarios, not physical hardware,

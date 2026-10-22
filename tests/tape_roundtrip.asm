@@ -146,6 +146,7 @@ ready:
         call print_message
         call check_oversized_record
         call check_positioning
+        call check_close_rewind
         call close_device
         call restore_int24
         mov dx, offset success_message
@@ -299,6 +300,91 @@ read_one_record proc near
         ret
 read_one_record endp
 
+check_close_rewind proc near
+        mov byte ptr [stage], 'C'
+        mov dx, offset close_message
+        call print_message
+        mov ax, 0                     ; positioning phase left NRMT0 at BOT
+        call read_one_record
+        call close_device
+        call open_device              ; NRMT0 close/open must retain position
+        mov byte ptr [stage], 'C'
+        call check_status
+        test word ptr [status_extended+4], 0100h
+        require_equal
+        mov ax, 1
+        call read_one_record
+        call close_device
+
+        mov dx, offset rewind_name
+        call open_named_device        ; opening RMT0 itself must not rewind
+        mov byte ptr [stage], 'C'
+        call check_status
+        mov ax, 2
+        call read_one_record
+        call close_device             ; final RMT0 close initiates rewind
+        call open_device
+        mov byte ptr [stage], 'C'
+        call check_close_status
+        mov ax, 0                     ; pending rewind must finish before READ
+        call read_one_record
+        call check_status
+        test word ptr [status_extended+4], 0100h
+        require_equal
+        call close_device
+
+        mov byte ptr [stage], 'c'
+        mov dx, offset rewind_name
+        call open_named_device
+        mov byte ptr [stage], 'c'
+        call check_status
+        call close_device             ; even an untouched RMT0 handle rewinds
+        call open_device
+        mov byte ptr [stage], 'c'
+        call check_close_status
+        mov ax, 0
+        call read_one_record
+        call check_status
+        test word ptr [status_extended+4], 0100h
+        require_equal
+        ; A nonfinal RMT0 close must not rewind an existing NRMT0 session.
+        mov ax, word ptr [handle]
+        mov word ptr [retained_handle], ax
+        mov dx, offset rewind_name
+        call open_named_device
+        call close_device
+        mov ax, word ptr [retained_handle]
+        mov word ptr [handle], ax
+        mov byte ptr [stage], 'L'
+        call check_status
+        test word ptr [status_extended+4], 0100h
+        require_equal
+        mov ax, 1                     ; original NRMT0 position was after record 0
+        call read_one_record
+        mov ax, 5                     ; leave successful acceptance runs at BOT
+        xor dx, dx
+        call move_tape
+        mov dx, offset newline
+        call print_message
+        mov dx, offset close_success
+        call print_message
+        ret
+check_close_rewind endp
+
+check_close_status proc near
+        call check_status
+ifdef IMMEDIATE_CLOSE
+        test word ptr [status_extended+4], 0100h
+        jnz close_pending_expected
+        jmp failed
+close_pending_expected:
+else
+        test word ptr [status_extended+4], 0100h
+        require_equal
+endif
+        ret
+check_close_status endp
+
 write_records proc near
 write_next:
         call record_parameters
@@ -440,6 +526,11 @@ read_filemark endp
 
 open_device proc near
         mov dx, offset tape_name
+        jmp open_named_device
+open_device endp
+
+; DX names a tape alias; the character-device/raw-mode checks are shared.
+open_named_device proc near
         mov ax, 3D02h
         int 21h
         require_ok
@@ -460,7 +551,7 @@ device_is_character:
         int 21h
         require_ok
         ret
-open_device endp
+open_named_device endp
 
 close_device proc near
         mov bx, word ptr [handle]
@@ -592,7 +683,9 @@ print_hex_byte endp
 
 scratch_argument db '/SCRATCH'
 tape_name db 'NRMT0', 0
+rewind_name db 'RMT0', 0
 handle dw 0FFFFh
+retained_handle dw 0FFFFh
 old_int24 dd 0
 stage db '?'
 ready_attempts db 0
@@ -618,6 +711,12 @@ negative_message db 'Rejecting a 4096-byte record in a guarded 256-byte buffer',
 negative_success db 'OpenASPI tape oversized-record rejection passed', 13, 10, '$'
 position_message db 'Checking forward/backward record and filemark positioning', 13, 10, '$'
 position_success db 'OpenASPI tape positioning verification passed', 13, 10, '$'
+close_message db 'Checking RMT0/NRMT0 close and reopen positions', 13, 10, '$'
+ifdef IMMEDIATE_CLOSE
+close_success db 'OpenASPI tape close-rewind verification passed: immediate', 13, 10, '$'
+else
+close_success db 'OpenASPI tape close-rewind verification passed: synchronous', 13, 10, '$'
+endif
 success_message db 'OpenASPI tape roundtrip passed: 8254 bytes, 6 records, 2 files', 13, 10, '$'
 failure_message db 'OpenASPI tape roundtrip FAILED at stage $'
 diagnostic_message db 'Hex: driver/parameter/check SCSI/sense/opcode/residual-low/DOS-AX: $'

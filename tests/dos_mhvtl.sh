@@ -14,6 +14,12 @@ JWASM=${JWASM:-$ROOT/build/tools/jwasm/jwasm}
 : "${MHVTL_TAPE:?Set MHVTL_TAPE to an mhVTL tape generic device such as /dev/sg6}"
 write_test=${MHVTL_WRITE_TEST:-0}
 case "$write_test" in 0|1) ;; *) echo 'MHVTL_WRITE_TEST must be 0 or 1' >&2; exit 1 ;; esac
+close_rewind=${MHVTL_CLOSE_REWIND:-sync}
+case "$close_rewind" in
+    sync) close_label=synchronous ;;
+    immediate) close_label=immediate ;;
+    *) echo 'MHVTL_CLOSE_REWIND must be sync or immediate' >&2; exit 1 ;;
+esac
 verify_scratch() {
     : "${MHVTL_VERIFY_CHANGER:?Set the mhVTL changer used only to verify scratch identity}"
     : "${MHVTL_VERIFY_DRIVE:?Set the zero-based library drive index}"
@@ -133,8 +139,14 @@ mkdir -p "$OUT"
 "$JWASM" -q -bin -0 -W4 -WX -Fo="$OUT/QEXIT.COM" "$ROOT/tests/qexit.asm"
 driver_line='DEVICE=ASPITAP.SYS'
 if test "$write_test" = 1; then
-    "$JWASM" -q -bin -0 -W4 -WX -Fo="$OUT/TAPERW.COM" "$ROOT/tests/tape_roundtrip.asm"
-    driver_line='DEVICE=ASPITAP.SYS -w'
+    roundtrip_defines=()
+    if test "$close_rewind" = sync; then
+        driver_line='DEVICE=ASPITAP.SYS -w'
+    else
+        roundtrip_defines+=(-DIMMEDIATE_CLOSE)
+    fi
+    "$JWASM" -q -bin -0 -W4 -WX "${roundtrip_defines[@]}" \
+        -Fo="$OUT/TAPERW.COM" "$ROOT/tests/tape_roundtrip.asm"
 fi
 if test "$hotplug" = 1; then
     "$JWASM" -q -bin -0 -W4 -WX -Fo="$OUT/DELAY.SYS" "$ROOT/tests/delay.asm"
@@ -238,6 +250,7 @@ if test "$write_test" = 1; then
     grep -q 'OpenASPI tape short-record verification passed:' "$OUT/serial.log"
     grep -q 'OpenASPI tape oversized-record rejection passed' "$OUT/serial.log"
     grep -q 'OpenASPI tape positioning verification passed' "$OUT/serial.log"
+    grep -q "OpenASPI tape close-rewind verification passed: $close_label" "$OUT/serial.log"
     grep -q 'OpenASPI roundtrip DOS exit passed' "$OUT/serial.log"
     ! grep -q 'FAILED' "$OUT/serial.log"
 fi

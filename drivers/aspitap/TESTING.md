@@ -249,6 +249,22 @@ files. It must not queue a synthetic EOF; the next explicit read must return
 the first record of file two. A final checked rewind leaves successful runs
 at BOT. These positioning checks passed through the Tekram/mhVTL path.
 
+Close/reopen checks read consecutive known records across `NRMT0` close/open,
+then switch to `RMT0` without an intervening rewind. Opening `RMT0` must retain
+position, but its last close must rewind. Reopening `NRMT0` must then return
+the first record. The test repeats with an untouched `RMT0` handle to verify
+that close rewinds even without a transfer through that handle.
+It also keeps `NRMT0` open while briefly opening and closing another `RMT0`
+handle. That nonfinal close must neither set pending rewind nor move the
+original session: its next read must return the next record, not record zero.
+
+By default the roundtrip uses synchronous `-w` and requires no pending-rewind
+flag after close. `MHVTL_CLOSE_REWIND=immediate` instead tests the default
+IMMED close: both status ABIs must retain pending rewind after reopen and
+clear it after the following successful read at BOT. Both modes have passed
+with Tekram/mhVTL. The fast virtual drive does not qualify prolonged physical
+rewind timing; the mock fixtures separately cover BUSY/progress and failures.
+
 Only initial UNIT ATTENTION readiness checks
 are retried; data and finalization operations are never replayed by the test.
 The host gate checks mhVTL sysfs identity, library-to-drive mapping and the
