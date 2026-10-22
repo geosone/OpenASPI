@@ -184,6 +184,7 @@ ifdef WRITE_PROTECT_TEST
 check_write_protection proc near
         mov byte ptr [stage], 'W'
         call prepare_read_buffer        ; known payload; host requires WP first
+        mov byte ptr [critical_count], 0
         mov bx, word ptr [handle]
         mov cx, 512
         mov dx, offset buffer
@@ -192,6 +193,9 @@ check_write_protection proc near
         jc protected_write_failed
         jmp failed                      ; a successful write is never acceptable
 protected_write_failed:
+        call check_dos_failure
+        xor cx, cx
+        call check_read_tail           ; WRITE must not modify payload or guard
         call check_protected_status
         mov word ptr [control], 7        ; successful TUR cannot erase saved error
         call run_mtop
@@ -243,6 +247,7 @@ check_oversized_record proc near
         call run_mtop
         require_ok
         call prepare_read_buffer
+        mov byte ptr [critical_count], 0
         mov bx, word ptr [handle]
         mov cx, 256                   ; next physical record has 4096 bytes
         mov dx, offset buffer
@@ -251,6 +256,7 @@ check_oversized_record proc near
         jc oversized_record_failed
         jmp failed
 oversized_record_failed:
+        call check_dos_failure
         call get_status
         require_ok
         cmp byte ptr [status_extended+7], 31
@@ -713,7 +719,21 @@ restore_int24 proc near
         pop ds
         ret
 restore_int24 endp
+; The tested Enhanced DR-DOS kernel returns 83 (Fail on INT 24h), rather
+; than API error 31, after our handler rejects a general device failure.
+; This is a kernel/handler acceptance check, not historical ASPITAPE parity.
+check_dos_failure proc near
+        cmp ax, 83
+        require_equal
+        cmp byte ptr [critical_count], 1
+        require_equal
+        cmp word ptr [critical_code], 0Ch
+        require_equal
+        ret
+check_dos_failure endp
 critical_error proc far
+        mov word ptr cs:[critical_code], di
+        inc byte ptr cs:[critical_count]
         mov al, 3
         iret
 critical_error endp
@@ -799,6 +819,8 @@ stage db '?'
 ready_attempts db 0
 status_phase db 0
 failure_ax dw 0
+critical_code dw 0
+critical_count db 0
 record_index dw 0
 record_end dw 0
 read_size dw 0

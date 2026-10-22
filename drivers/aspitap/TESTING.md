@@ -235,6 +235,11 @@ An additional negative-ILI probe rewinds, skips two records, and requests
 the requested buffer area may change. The next explicit read must return
 the following 63-byte record, proving the oversized record was consumed and
 neither replayed nor exposed as successful partial data.
+The failed read also requires exactly one INT 24h callback with device error
+`0Ch` (general failure) and API error `83` after the handler returns Fail.
+These assertions passed through the Tekram/mhVTL path with the tested
+Enhanced DR-DOS 20250427 kernel. They describe that kernel/handler combination,
+not error-code parity with the historical ASPITAPE binary or other DOS kernels.
 
 The positioning phase checks the virtual drive's position through payloads, not just
 successful command returns. `MTFSF 1` from BOT must reach the second file;
@@ -294,6 +299,10 @@ WRITTEN state. The original WRITE diagnostics must survive successful TUR,
 close/reopen and another TUR. No failed WRITE is replayed. A dedicated
 `write-protect-acceptance` mock fixture validates the CDB/payload and rejects
 unexpected media commands. It uses a legacy manager without residual support.
+The protected-write mock additionally checks the same single INT 24h/error
+`83` path and that the entire WRITE payload and its guard remain unchanged.
+These additional assertions have passed in the mock; the earlier protected
+mhVTL runs predate them. No new protected-media device run is claimed here.
 
 The mock passed and the host gate refused `OA2101L8` while it was unprotected.
 After manual unload, `edit_tape -w on` and reload, the protected-media probe

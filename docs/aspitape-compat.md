@@ -89,6 +89,16 @@ Compatibility behavior still requiring verification against the historical
 binary includes exact DOS error mapping, buffering, partial-transfer corner
 cases, and exact close/rewind timing.
 
+The current driver reports DOS device error `0Ch` (general failure) for
+failed transfers; detailed SCSI status and sense remain available through
+`mtget`. In the tested Enhanced DR-DOS 20250427 environment, the acceptance
+program's INT 24h handler returns Fail, so the DOS read/write API returns
+error `83`, not the underlying general-failure API code `31` or the
+write-protection API code `19`. The oversized-record device test and
+protected-write mock assert that path and exactly one critical-error callback.
+This does not establish identical API behavior on other DOS kernels or with
+different critical-error handlers.
+
 ## Current transfer subset
 
 One DOS character-device read maps to one variable-block SCSI `READ(6)`.
