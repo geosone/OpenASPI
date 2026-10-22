@@ -36,6 +36,15 @@ block transport reused from `blkdrv.inc`. Its EXE versus SYS packaging does
 not remove ZIP functionality from ASPIFDD's scope. Runtime-loading mechanics
 are a separate concern, not a substitute for implementing device functions.
 
+ASPIFDD is the combined removable-device service for ZIP and LS-120: expose
+common capability/media/control operations through the driver, with validated
+device-specific sequences behind that interface. Dedicated formatting or other
+drive utilities consume this interface rather than embedding a second ASPI/
+controller/ZIP/LS-120 driver. Unsupported operations must report failure, not
+pretend success. Destructive utility actions require explicit confirmation,
+media identification and write-protection checks. These utilities and the
+remaining special operations are requirements, not implemented 0.1 features.
+
 Version 0.1 is not full compatibility. Follow the linked command matrices:
 media sensing/change, formatting, eject/lock and verified device-specific
 behavior still need implementation and tests. Unsupported functions and no-op
