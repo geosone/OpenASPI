@@ -110,15 +110,27 @@ path can be selected with `MHVTL_DEVICE_CONF`.
 The test uses synchronous-close `ASPITAP.SYS -w` and raw `NRMT0`. It writes
 four differently sized records, finalizes that file, reopens without rewind,
 appends two records, then rewinds and checks all 8,254 bytes and the three
-filemarks. Success requires both the DOS program's marker and its checked
+filemarks. A second pass uses 4096-byte requests and verifies short-record
+lengths, residuals, unchanged buffer tails and trailing guards. Filemark reads
+must not modify the buffer. Finally, a 256-byte request for a 4096-byte record
+must fail without corrupting its buffer tail or queuing EOF; the following
+63-byte record must still be readable by the next explicit request.
+
+Success requires the roundtrip, short-record and oversized-record rejection
+markers plus the checked
 exit status; any `FAILED` marker rejects the run. Logs and the temporary
 boot floppy are under `build/dos-mhvtl/`, which is recreated each run.
 Do not run multiple integration scripts against this output directory at once.
 
-The roundtrip passed three times with the local QEMU 10.2.3 patch, the Tekram 1.60
+The original exact-read roundtrip passed three times with the local QEMU
+10.2.3 patch, the Tekram 1.60
 manager identified above, and mhVTL's IBM ULT3580-TD8 scratch `OA2101L8`.
+The expanded short-record and oversized-record rejection checks also passed
+with that legacy manager, which advertises no ASPI residual extension. This
+exercises the driver's sense-information fallback through a real DOS manager.
 The non-writing `/READY` smoke also passed with the installed, unmodified
-QEMU. This qualifies this variable-record scenario, not physical hardware,
+QEMU. The LTO profile has variable block limits, so this qualifies the
+variable-record scenarios, not physical hardware,
 fixed-block media, write protection, media replacement or production backups.
 
 ### QEMU 10.2.3 filemark workaround

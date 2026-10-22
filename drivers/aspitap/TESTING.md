@@ -223,7 +223,20 @@ requirements are in [qemu-mhvtl.md](../../docs/qemu-mhvtl.md).
 It writes four variable records, closes and reopens `NRMT0`, appends two more
 records, rewinds and compares every byte and all three filemarks. The total
 is 8,254 bytes in six records and two files. Both status ABIs and destination
-guards are checked throughout. Only initial UNIT ATTENTION readiness checks
+guards are checked throughout. It reads the same files again using 4096-byte
+requests: five records must return short and one must fill the request.
+Every payload and residual is checked; unused buffer bytes and a sixteen-byte
+trailing guard must remain untouched. Empty filemark reads must leave the
+entire buffer untouched and report the full request as residual.
+
+An additional negative-ILI probe rewinds, skips two records, and requests
+256 bytes from the 4096-byte record. DOS must return failure, driver error
+`31`, CHECK CONDITION/NO SENSE, the full residual and no synthetic EOF. Only
+the requested buffer area may change. The next explicit read must return
+the following 63-byte record, proving the oversized record was consumed and
+neither replayed nor exposed as successful partial data.
+
+Only initial UNIT ATTENTION readiness checks
 are retried; data and finalization operations are never replayed by the test.
 The host gate checks mhVTL sysfs identity, library-to-drive mapping and the
 explicit scratch barcode before launch. Physical devices are refused.
@@ -231,3 +244,5 @@ explicit scratch barcode before launch. Physical devices are refused.
 Emulator coverage does not qualify the write path for production backups on
 real drives and media. Real-drive fixed-block and broader error/partial-
 transfer qualification remain outstanding.
+The current mhVTL LTO profile advertises variable block limits; these runs
+do not establish mandatory fixed-block behavior on a different drive profile.

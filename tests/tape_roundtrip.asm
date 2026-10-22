@@ -128,8 +128,34 @@ ready:
         require_ok
         mov dx, offset verify_message
         call print_message
+        call verify_files
+
+        ; Repeat with an oversized buffer: five records must return short,
+        ; including through legacy managers without ASPI residual support.
+        mov byte ptr [stage], 'R'
+        mov word ptr [control], 5
+        call run_mtop
+        require_ok
+        mov word ptr [read_size], 4096
+        mov dx, offset short_message
+        call print_message
+        call verify_files
+        mov dx, offset newline
+        call print_message
+        mov dx, offset short_success
+        call print_message
+        call check_oversized_record
+        call close_device
+        call restore_int24
+        mov dx, offset success_message
+        call print_message
+        mov ax, 4C00h
+        int 21h
+
+verify_files proc near
         mov word ptr [record_index], 0
         mov word ptr [record_end], 4
+        mov byte ptr [stage], 'V'
         call read_records
         mov byte ptr [stage], 'F'
         call read_filemark
@@ -139,14 +165,55 @@ ready:
         mov byte ptr [stage], 'f'
         call read_filemark
         call read_filemark            ; two terminating marks from final close
-        call close_device
-        call restore_int24
+        ret
+verify_files endp
+
+check_oversized_record proc near
+        mov byte ptr [stage], 'N'
+        mov dx, offset negative_message
+        call print_message
+        mov word ptr [control], 5
+        call run_mtop
+        require_ok
+        mov word ptr [control], 3      ; skip the first two records
+        mov word ptr [control+2], 2
+        call run_mtop
+        require_ok
+        call prepare_read_buffer
+        mov bx, word ptr [handle]
+        mov cx, 256                   ; next physical record has 4096 bytes
+        mov dx, offset buffer
+        mov ah, 3Fh
+        int 21h
+        jc oversized_record_failed
+        jmp failed
+oversized_record_failed:
+        call get_status
+        require_ok
+        cmp byte ptr [status_extended+7], 31
+        require_equal
+        cmp byte ptr [status+8], 2     ; CHECK CONDITION, NO SENSE + negative ILI
+        require_equal
+        cmp byte ptr [status+9], 0
+        require_equal
+        cmp word ptr [status+12], 256  ; DOS accepted none of the failed read
+        require_equal
+        test word ptr [status_extended+4], 0040h ; must not synthesize an EOF
+        require_equal
+        mov cx, 256                   ; DMA may change only the requested area
+        call check_read_tail
+
+        ; The oversized physical record was consumed, never replayed. The
+        ; next explicit read must return the following 63-byte record.
+        mov word ptr [record_index], 3
+        mov word ptr [record_end], 4
+        call read_records
         mov dx, offset newline
         call print_message
-        mov dx, offset success_message
+        mov dx, offset negative_success
         call print_message
-        mov ax, 4C00h
-        int 21h
+        ret
+check_oversized_record endp
 
 write_records proc near
 write_next:
@@ -184,6 +251,11 @@ read_next:
         int 21h
         call record_parameters
         push cx
+        call prepare_read_buffer
+        cmp word ptr [read_size], 0
+        je read_size_ready
+        mov cx, word ptr [read_size]
+read_size_ready:
         mov bx, word ptr [handle]
         mov dx, offset buffer
         mov ah, 3Fh
@@ -200,13 +272,56 @@ compare_next:
         inc si
         inc al
         loop compare_next
+        call record_parameters
+        call check_read_tail
         call check_status
+        call record_parameters
+        mov ax, word ptr [read_size]
+        or ax, ax
+        jz read_residual_ready          ; exact-size pass expects zero residual
+        sub ax, cx
+read_residual_ready:
+        cmp word ptr [status+12], ax
+        require_equal
         inc word ptr [record_index]
         mov ax, word ptr [record_index]
         cmp ax, word ptr [record_end]
         jb read_next
         ret
 read_records endp
+
+prepare_read_buffer proc near
+        push ax
+        push cx
+        push di
+        push es
+        push ds
+        pop es
+        mov di, offset buffer
+        mov cx, 4112                  ; data plus trailing sixteen-byte guard
+        mov al, 0A5h
+        rep stosb
+        pop es
+        pop di
+        pop cx
+        pop ax
+        ret
+prepare_read_buffer endp
+
+; CX = returned payload length. Every byte after it must remain untouched.
+check_read_tail proc near
+        mov si, offset buffer
+        add si, cx
+        mov ax, 4112
+        sub ax, cx
+        mov cx, ax
+check_tail_next:
+        cmp byte ptr [si], 0A5h
+        require_equal
+        inc si
+        loop check_tail_next
+        ret
+check_read_tail endp
 
 record_parameters proc near
         mov bx, word ptr [record_index]
@@ -222,6 +337,7 @@ read_filemark proc near
         mov dl, '|'
         mov ah, 02h
         int 21h
+        call prepare_read_buffer
         mov bx, word ptr [handle]
         mov cx, 4096
         mov dx, offset buffer
@@ -230,7 +346,11 @@ read_filemark proc near
         require_ok
         or ax, ax
         require_equal
+        xor cx, cx
+        call check_read_tail
         call check_status
+        cmp word ptr [status+12], 4096
+        require_equal
         ret
 read_filemark endp
 
@@ -396,16 +516,22 @@ status_phase db 0
 failure_ax dw 0
 record_index dw 0
 record_end dw 0
+read_size dw 0
 record_lengths dw 512, 1024, 4096, 63, 2048, 511
 control dw 7
         dd 0
         include tests/tape_status.inc
 status db 18 dup (0)
 buffer db 4096 dup (0)
+buffer_guard db 16 dup (0)
 begin_message db 'OpenASPI virtual scratch tape acceptance test', 13, 10, '$'
 first_message db 'Writing four variable records in first file', 13, 10, '$'
 append_message db 'Appending two variable records in second file', 13, 10, '$'
 verify_message db 'Rewinding and comparing all six records and filemarks', 13, 10, '$'
+short_message db 13, 10, 'Repeating reads with guarded 4096-byte buffers', 13, 10, '$'
+short_success db 'OpenASPI tape short-record verification passed: 6 records, guarded buffers', 13, 10, '$'
+negative_message db 'Rejecting a 4096-byte record in a guarded 256-byte buffer', 13, 10, '$'
+negative_success db 'OpenASPI tape oversized-record rejection passed', 13, 10, '$'
 success_message db 'OpenASPI tape roundtrip passed: 8254 bytes, 6 records, 2 files', 13, 10, '$'
 failure_message db 'OpenASPI tape roundtrip FAILED at stage $'
 diagnostic_message db 'Hex: driver/parameter/check SCSI/sense/opcode/residual-low/DOS-AX: $'
