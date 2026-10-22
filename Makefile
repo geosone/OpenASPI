@@ -21,6 +21,7 @@ DOSFDD  := $(BUILD)/dos/ASPIFDD.SYS
 SHSUCD  ?= deps/shsucd
 NASM    ?= nasm
 DOSSHSUCDX := $(BUILD)/dos/SHSUCDX.COM
+DOSCDAUDIO := $(BUILD)/dos/CDAUDIO.COM
 DOSSCAN := $(BUILD)/dos/ASPISCAN.COM
 DOSTAPECTL := $(BUILD)/dos/TAPECTL.COM
 DOSWINCHECK := $(BUILD)/dos/WINCHECK.COM
@@ -34,7 +35,7 @@ CPPFLAGS += -Iinclude
 
 .PHONY: all tools test check dos-c-check dos-smoke dos-cda-smoke dos-disk-smoke dos-tape-smoke dos-mhvtl-smoke dos-mhvtl-roundtrip dos-mhvtl-write-protect gdi-install dist clean
 
-all: $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(DOSSHSUCDX) $(DOSSCAN) $(DOSTAPECTL) $(DOSWINCHECK) $(WIN16CHECK) $(TESTBIN) $(ASPITESTBIN)
+all: $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(DOSSHSUCDX) $(DOSCDAUDIO) $(DOSSCAN) $(DOSTAPECTL) $(DOSWINCHECK) $(WIN16CHECK) $(TESTBIN) $(ASPITESTBIN)
 
 test: $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(TESTBIN) $(ASPITESTBIN)
 	$(TESTBIN)
@@ -109,10 +110,15 @@ $(DOSFDD): drivers/aspifdd/aspifdd.asm $(BLKDEPS) | $(JWASM)
 	mkdir -p $(@D)
 	$(JWASM) -q -bin -0 -W4 -WX -Fl=$(BUILD)/dos/ASPIFDD.lst -Fw$(BUILD)/dos/ASPIFDD.err -Fo=$@ $<
 
-# SHSUCDX 4.00 with digital CD audio (/A:1) for VSBHDA, from deps/shsucd
+# SHSUCDX 4.00 with digital CD audio (/A:ON|OFF|AUTO) for VSBHDA and
+# CDAUDIO.COM to switch it at run time, from deps/shsucd
 $(DOSSHSUCDX): $(SHSUCD)/shsucdx.nsm
 	mkdir -p $(@D)
 	cd $(SHSUCD) && $(NASM) -O9 -w-all -o $(abspath $@) shsucdx.nsm
+
+$(DOSCDAUDIO): $(SHSUCD)/cdaudio.asm
+	mkdir -p $(@D)
+	$(NASM) -f bin -o $@ $<
 
 $(DOSSCAN): tools/aspiscan/aspiscan.asm common/aspi/dos_aspi.inc | $(JWASM)
 	mkdir -p $(@D)

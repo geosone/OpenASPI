@@ -74,7 +74,10 @@ ASPICD always sets bits 7 (prefetching), 8 (audio channel manipulation) and
 - bits 0 and 11 (door open, no disk) when TEST UNIT READY reports no disk.
 
 ASPICDA reports the fixed value `0216h`; the per-drive bits and "no disk"
-are to do.
+are to do.  It reads page 2Ah at INIT (Audio Play, CD-DA commands, CD-DA
+accurate) and lists it with `/V`; bit 4 stays set on all drives, because
+SHSUCDX with `/A:ON` plays CD audio digitally also where the drive has no
+analog output.
 
 ## READ LONG
 
@@ -117,7 +120,7 @@ SCSI-2/MMC on SCSI adapters).
 2. IOCTL input 4 / output 3 (audio channel volume and routing, MODE SENSE /
    MODE SELECT page 0Eh).
 3. IOCTL input 14 (UPC/EAN, READ SUB-CHANNEL format 2).
-4. Device status per drive: door lock state, "no disk", raw and audio
-   capability (MODE SENSE page 2Ah).
+4. Device status per drive: door lock state, "no disk", raw capability
+   (page 2Ah is read already).
 5. READ LONG: range check against the volume size, real prefetch/seek.
 6. Optional `/ID=`, `/L` and a unit limit to pick drives.

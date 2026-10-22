@@ -8,7 +8,7 @@
 ;   SHSUCDX /D:ASPICDA0         (or MSCDEX /D:ASPICDA0)
 ;
 ; Reads are cooked (2048 bytes, READ(10)) or raw (2352 bytes, READ CD), so
-; the CD-audio SHSUCDX (deps/shsucd, /A:1) can hand digital audio sectors to
+; the CD-audio SHSUCDX (deps/shsucd, /A:ON) can hand digital audio sectors to
 ; VSBHDA.  Addresses are HSG (LBA) or Red Book (MSF).
 ;
 ; Options: /D:name  device name (default ASPICDA0)
@@ -35,6 +35,13 @@ CD_STATUS       equ     0216h
 
 OPT_VERBOSE     equ     01h
 
+; drive capabilities (MODE SENSE page 2Ah), the 4th byte of a unit entry
+CAP_KNOWN       equ     80h             ; page 2Ah was read
+CAP_ANALOG      equ     01h             ; plays audio (analog output)
+CAP_CDDA        equ     02h             ; reads audio sectors (READ CD)
+CAP_ACCURATE    equ     04h             ; CD-DA stream is accurate
+UNIT_ENTRY      equ     4
+
 driver_start:
         dd      0FFFFFFFFh
         dw      DEV_ATTR
@@ -47,8 +54,8 @@ unit_count      db      0
 
 request_ptr     dd      0
 
-; the drives: host adapter, target, LUN
-unit_table      db      MAX_UNITS * 3 dup (0)
+; the drives: host adapter, target, LUN, capabilities
+unit_table      db      MAX_UNITS * UNIT_ENTRY dup (0)
 
 strategy proc far
         mov     word ptr cs:[request_ptr], bx
@@ -168,7 +175,7 @@ select_unit proc near
         stc
         ret
 select_unit_ok:
-        mov     ah, 3
+        mov     ah, UNIT_ENTRY
         mul     ah
         mov     di, ax
         mov     al, byte ptr [unit_table+di]
@@ -710,7 +717,7 @@ init_next_device:
         mov     al, byte ptr [unit_count]
         cmp     al, MAX_UNITS
         jae     init_scan_done
-        mov     ah, 3
+        mov     ah, UNIT_ENTRY
         mul     ah
         mov     di, ax
         mov     al, byte ptr [scan_ha]
@@ -719,6 +726,10 @@ init_next_device:
         mov     byte ptr [unit_table+di+1], al
         mov     al, byte ptr [scan_lun]
         mov     byte ptr [unit_table+di+2], al
+        push    di
+        call    cd_capabilities
+        pop     di
+        mov     byte ptr [unit_table+di+3], al
         inc     byte ptr [unit_count]
         test    byte ptr [options], OPT_VERBOSE
         jz      init_next_device
@@ -786,15 +797,86 @@ print_unit proc near
         mov     dl, ' '
         mov     ah, 02h
         int     21h
+        mov     al, byte ptr [unit_table+di+3]
+        push    ax
         call    aspi_inquiry
-        jc      print_unit_done
+        jc      print_unit_caps
         call    print_inquiry_name
+print_unit_caps:
+        pop     ax
+        mov     dx, offset msg_caps_unknown
+        test    al, CAP_KNOWN
+        jz      print_unit_text
+        push    ax
+        mov     dx, offset msg_analog_no
+        test    al, CAP_ANALOG
+        jz      print_analog
+        mov     dx, offset msg_analog_yes
+print_analog:
+        mov     ah, 09h
+        int     21h
+        pop     ax
+        mov     dx, offset msg_digital_no
+        test    al, CAP_CDDA
+        jz      print_unit_text
+        mov     dx, offset msg_digital_yes
+        test    al, CAP_ACCURATE
+        jnz     print_unit_text
+        mov     dx, offset msg_digital_inexact
+print_unit_text:
+        mov     ah, 09h
+        int     21h
 print_unit_done:
         mov     dx, offset msg_crlf
         mov     ah, 09h
         int     21h
         ret
 print_unit endp
+
+; MODE SENSE(10) page 2Ah of the scan_* drive -> AL = CAP_* (0 if the
+; drive has no such page: pre-MMC, the capabilities are unknown)
+cd_capabilities proc near
+        mov     al, byte ptr [scan_ha]
+        mov     byte ptr [unit_ha], al
+        mov     al, byte ptr [scan_target]
+        mov     byte ptr [unit_target], al
+        mov     al, byte ptr [scan_lun]
+        mov     byte ptr [unit_lun], al
+        mov     al, SRB_DIR_IN
+        mov     cl, 10
+        call    aspi_prepare
+        mov     byte ptr [srb+SRB_CDB], 5Ah     ; MODE SENSE(10)
+        mov     byte ptr [srb+SRB_CDB+1], 08h   ; no block descriptors
+        mov     byte ptr [srb+SRB_CDB+2], 2Ah   ; CD capabilities page
+        mov     byte ptr [srb+SRB_CDB+8], 40
+        mov     word ptr [srb+SRB_BufLen], 40
+        mov     word ptr [srb+SRB_BufPointer], offset toc_data
+        mov     word ptr [srb+SRB_BufPointer+2], cs
+        call    call_aspi
+        call    aspi_result
+        mov     al, 0
+        jc      cd_caps_done
+        mov     bx, word ptr [toc_data+6]       ; block descriptor length
+        xchg    bl, bh
+        cmp     bx, 16
+        ja      cd_caps_done
+        add     bx, offset toc_data+8
+        mov     ah, byte ptr [bx]
+        and     ah, 3Fh
+        cmp     ah, 2Ah
+        jne     cd_caps_done
+        mov     al, CAP_KNOWN
+        test    byte ptr [bx+4], 01h            ; Audio Play
+        jz      cd_caps_cdda
+        or      al, CAP_ANALOG
+cd_caps_cdda:
+        mov     ah, byte ptr [bx+5]
+        and     ah, 03h                         ; CD-DA commands, accurate
+        shl     ah, 1
+        or      al, ah
+cd_caps_done:
+        ret
+cd_capabilities endp
 
 print_digit proc near
         cmp     al, 10
@@ -891,5 +973,11 @@ msg_no_drive    db      'No CD/DVD drives found - ASPICDA not installed', 13, 10
 msg_installed   db      ' CD/DVD drive(s), device $'
 msg_unit        db      '  $'
 msg_crlf        db      13, 10, '$'
+msg_caps_unknown db     ' (audio capabilities unknown)$'
+msg_analog_yes  db      ' (analog audio$'
+msg_analog_no   db      ' (no analog audio$'
+msg_digital_yes db      ', digital audio)$'
+msg_digital_inexact db  ', digital audio inexact)$'
+msg_digital_no  db      ', no digital audio)$'
 
         end     driver_start

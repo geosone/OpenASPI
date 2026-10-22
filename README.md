@@ -14,8 +14,10 @@ FAT12/FAT16 volumes read and written.  See the
 [driver suite](docs/driver-suite.md) for their responsibilities and
 differences.
 
-`deps/shsucd` is SHSUCDX with digital CD audio (`/A:1`) for VSBHDA; the
-build writes `build/dos/SHSUCDX.COM`.
+`deps/shsucd` is SHSUCDX with digital CD audio for VSBHDA (`/A:ON`,
+`/A:OFF` analog from the drive, `/A:AUTO` digital while VSBHDA is loaded)
+and `CDAUDIO.COM` to switch the mode at run time; the build writes
+`build/dos/SHSUCDX.COM` and `build/dos/CDAUDIO.COM`.
 
 This is development software. The tape write path is emulator-tested but is
 not yet qualified for production backups on real media.
