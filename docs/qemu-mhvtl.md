@@ -133,9 +133,16 @@ exercise default IMMED close. Pending rewind must survive reopen/status queries 
 the successful read at BOT. `MHVTL_CLOSE_REWIND=sync` is the default; other
 values are rejected. These mode choices affect only the write-test roundtrip.
 
+A final explicit-filemark phase rewrites the scratch tape from BOT: record
+512, `MTWEOF 0`, record 1024, `MTWEOF 2`, record 4096, then final close.
+Reading must find no mark for count zero, exactly two marks for count two,
+and the two normal close-generated marks after the last record. It checks
+every payload byte, residual and buffer guard, then rewinds to BOT. This
+separate 5,632-byte layout replaces the earlier six-record tape contents.
+
 Success requires the roundtrip, short-record, oversized-record rejection,
-positioning and mode-specific close-rewind markers plus the checked exit
-status; any `FAILED` marker rejects the run. Logs and the temporary
+positioning, mode-specific close-rewind and explicit-filemark markers plus
+the checked exit status; any `FAILED` marker rejects the run. Logs and the temporary
 boot floppy are under `build/dos-mhvtl/`, which is recreated each run.
 Do not run multiple integration scripts against this output directory at once.
 
@@ -143,7 +150,7 @@ The original exact-read roundtrip passed three times with the local QEMU
 10.2.3 patch, the Tekram 1.60
 manager identified above, and mhVTL's IBM ULT3580-TD8 scratch `OA2101L8`.
 The expanded short-record, oversized-record rejection, positioning and
-synchronous/immediate close-rewind checks passed with that legacy manager,
+synchronous/immediate close-rewind and explicit-filemark checks passed with that legacy manager,
 which advertises no ASPI residual extension. This exercises the driver's
 sense-information fallback through a real DOS manager.
 The non-writing `/READY` smoke also passed with the installed, unmodified

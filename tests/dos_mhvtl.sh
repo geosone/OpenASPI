@@ -263,6 +263,7 @@ if test "$write_test" = 1; then
         grep -q 'OpenASPI tape oversized-record rejection passed' "$OUT/serial.log"
         grep -q 'OpenASPI tape positioning verification passed' "$OUT/serial.log"
         grep -q "OpenASPI tape close-rewind verification passed: $close_label" "$OUT/serial.log"
+        grep -q 'OpenASPI tape explicit-filemark verification passed' "$OUT/serial.log"
     fi
     grep -q 'OpenASPI roundtrip DOS exit passed' "$OUT/serial.log"
     ! grep -q 'FAILED' "$OUT/serial.log"

@@ -265,6 +265,21 @@ clear it after the following successful read at BOT. Both modes have passed
 with Tekram/mhVTL. The fast virtual drive does not qualify prolonged physical
 rewind timing; the mock fixtures separately cover BUSY/progress and failures.
 
+### Explicit filemarks and empty files
+
+A final, separate phase overwrites the same scratch tape from BOT with a
+512-byte record, `MTWEOF 0`, a 1024-byte record, `MTWEOF 2`, and a 4096-byte
+record followed by final close. Reads must return the first two records
+without an intervening EOF, exactly two explicit filemarks (an empty file),
+the third record, and the two expected close-generated filemarks. Payloads,
+residuals, untouched buffer tails and both status ABIs are checked as in
+the initial roundtrip. A checked rewind leaves the drive at BOT. This adds
+5,632 bytes in three records; the earlier 8,254-byte layout is no longer
+the final tape contents. The host requires the explicit-filemark success
+marker as well as the earlier phase markers and checked DOS exit.
+This phase passed with Tekram 1.60 and mhVTL in both close-rewind modes,
+using the local QEMU filemark workaround, on 2026-10-22.
+
 ### Write-protection acceptance
 
 `make dos-mhvtl-write-protect` uses the same explicit scratch/library identity

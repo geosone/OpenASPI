@@ -156,6 +156,7 @@ endif
         call check_oversized_record
         call check_positioning
         call check_close_rewind
+        call check_explicit_filemarks
         call close_device
         call restore_int24
         mov dx, offset success_message
@@ -444,6 +445,53 @@ else
 endif
         ret
 check_close_status endp
+
+check_explicit_filemarks proc near
+        mov byte ptr [stage], 'M'
+        mov dx, offset marks_message
+        call print_message
+        ; The preceding phase left NRMT0 at BOT. Use a separate layout so
+        ; both the zero-count command and exact multi-mark count are visible.
+        mov word ptr [record_index], 0
+        mov word ptr [record_end], 1
+        call write_records
+        xor ax, ax                    ; MTWEOF 0: flush, no filemark
+        xor dx, dx
+        call move_tape
+        mov word ptr [record_end], 2
+        call write_records
+        xor ax, ax                    ; MTWEOF 2: an intentionally empty file
+        mov dx, 2
+        call move_tape
+        mov word ptr [record_end], 3
+        call write_records
+        call close_device             ; two more marks terminate the last file
+        call open_device
+        mov byte ptr [stage], 'M'
+        call check_status
+        mov ax, 5
+        xor dx, dx
+        call move_tape
+        mov word ptr [read_size], 4096
+        xor ax, ax
+        call read_one_record
+        mov ax, 1                     ; no EOF may separate these two records
+        call read_one_record
+        call read_filemark
+        call read_filemark            ; exactly two explicit marks
+        mov ax, 2
+        call read_one_record
+        call read_filemark
+        call read_filemark            ; exactly two close-generated marks
+        mov ax, 5
+        xor dx, dx
+        call move_tape                ; leave successful runs at BOT
+        mov dx, offset newline
+        call print_message
+        mov dx, offset marks_success
+        call print_message
+        ret
+check_explicit_filemarks endp
 
 write_records proc near
 write_next:
@@ -772,6 +820,8 @@ negative_success db 'OpenASPI tape oversized-record rejection passed', 13, 10, '
 position_message db 'Checking forward/backward record and filemark positioning', 13, 10, '$'
 position_success db 'OpenASPI tape positioning verification passed', 13, 10, '$'
 close_message db 'Checking RMT0/NRMT0 close and reopen positions', 13, 10, '$'
+marks_message db 'Checking explicit zero-count and two-filemark operations', 13, 10, '$'
+marks_success db 'OpenASPI tape explicit-filemark verification passed', 13, 10, '$'
 ifdef IMMEDIATE_CLOSE
 close_success db 'OpenASPI tape close-rewind verification passed: immediate', 13, 10, '$'
 else
