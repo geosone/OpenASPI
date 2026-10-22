@@ -67,6 +67,7 @@ dos-cda-smoke: all
 
 dos-disk-smoke: all
 	bash tests/dos_disk.sh
+	DETECT_ONLY=1 bash tests/dos_disk.sh
 
 dos-tape-smoke: all
 	bash tests/dos_tape_ioctl.sh
@@ -80,12 +81,15 @@ dos-mhvtl-roundtrip: all
 dos-mhvtl-write-protect: all
 	MHVTL_WRITE_TEST=1 MHVTL_WRITE_PROTECT_TEST=1 bash tests/dos_mhvtl.sh
 
-dist: all gdi-install LICENSE
+dist: all gdi-install LICENSE tests/dist_layout.sh
 	rm -rf $(DISTDIR)
 	mkdir -p $(DISTDIR)
-	cp $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(DOSSCAN) $(DOSTAPECTL) $(DOSWINCHECK) $(WIN16CHECK) $(GDIINSTALL) installer/INSTALL.INI \
+	cp $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(DOSSHSUCDX) $(DOSCDAUDIO) $(DOSSCAN) $(DOSTAPECTL) $(DOSWINCHECK) $(WIN16CHECK) $(GDIINSTALL) installer/INSTALL.INI \
 		installer/README.TXT LICENSE $(DISTDIR)/
 	mv $(DISTDIR)/LICENSE $(DISTDIR)/LICENSE.TXT
+	cp $(SHSUCD)/LICENSE.txt $(DISTDIR)/SHSUCD.LIC
+	cp $(SHSUCD)/readme.txt $(DISTDIR)/SHSUCD.TXT
+	sh tests/dist_layout.sh $(DISTDIR) $(SHSUCD)
 
 gdi-install:
 	$(MAKE) -C $(GDI)
@@ -100,7 +104,7 @@ $(DOSCDA): drivers/aspicda/aspicda.asm common/aspi/dos_aspi.inc common/aspi/aspi
 	$(JWASM) -q -bin -0 -W4 -WX -Fl=$(BUILD)/dos/ASPICDA.lst -Fw$(BUILD)/dos/ASPICDA.err -Fo=$@ $<
 
 BLKDEPS := common/dos/blkdrv.inc common/aspi/dos_aspi.inc common/aspi/aspi_client.inc \
-		common/aspi/aspi_init.inc common/dos/devreq.inc
+		common/aspi/aspi_init.inc common/aspi/removable.inc common/dos/devreq.inc
 
 $(DOSDSK): drivers/aspidsk/aspidsk.asm $(BLKDEPS) | $(JWASM)
 	mkdir -p $(@D)
@@ -120,7 +124,7 @@ $(DOSCDAUDIO): $(SHSUCD)/cdaudio.asm
 	mkdir -p $(@D)
 	$(NASM) -f bin -o $@ $<
 
-$(DOSSCAN): tools/aspiscan/aspiscan.asm common/aspi/dos_aspi.inc | $(JWASM)
+$(DOSSCAN): tools/aspiscan/aspiscan.asm common/aspi/dos_aspi.inc common/aspi/removable.inc | $(JWASM)
 	mkdir -p $(@D)
 	$(JWASM) -q -bin -0 -W4 -WX -Fl=$(BUILD)/dos/ASPISCAN.lst -Fw$(BUILD)/dos/ASPISCAN.err -Fo=$@ $<
 

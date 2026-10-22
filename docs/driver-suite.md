@@ -20,8 +20,26 @@ the same host/target/LUN: each takes a device class that the others skip.
 | shared core | `common/dos/blkdrv.inc` | `common/dos/blkdrv.inc` (`FDD_DRIVER`) | own |
 
 ASPIDSK and ASPIFDD share one block driver core; ASPIFDD only changes the
-device selection and the removable-media policy.  The selection is the same
-table in both, so a device belongs to exactly one of them.
+device selection and the removable-media policy. Selection uses the same
+`common/aspi/removable.inc` policy in both drivers and ASPISCAN, so installer
+preselection agrees with device ownership. Ordinary removable USB sticks
+belong to ASPIDSK, not ASPIFDD. Model matching stays within the 24 INQUIRY
+vendor/product bytes and cannot match a suffix in the revision field.
+
+## Functional compatibility target
+
+The target is functional coverage of Adaptec ASPIDISK in ASPIDSK, Adaptec
+ASPICD in ASPICDA, and **both MKELS120 and GUEST's ZIP device functions in
+ASPIFDD**. GUEST is a reference for the ZIP-specific functions, not a separate
+replacement driver project. Those functions belong inside ASPIFDD, with common
+block transport reused from `blkdrv.inc`. Its EXE versus SYS packaging does
+not remove ZIP functionality from ASPIFDD's scope. Runtime-loading mechanics
+are a separate concern, not a substitute for implementing device functions.
+
+Version 0.1 is not full compatibility. Follow the linked command matrices:
+media sensing/change, formatting, eject/lock and verified device-specific
+behavior still need implementation and tests. Unsupported functions and no-op
+handlers must not be counted as completed reference-driver functionality.
 
 ## ASPIDSK.SYS
 

@@ -246,8 +246,8 @@ probe_done:
 probe_device endp
 
 ; Count a device selected by the command-line filter.  DISK and FDD are both
-; direct-access devices (type 00); the INQUIRY removable-media bit separates
-; fixed disks from LS-120, ZIP and similar removable devices.
+; direct-access devices (type 00). Use exactly the drivers' shared removable
+; model policy: ordinary removable sticks/readers belong to DISK, not FDD.
 count_match proc near
         mov     al, byte ptr [filter]
         cmp     al, FILTER_ANY
@@ -268,8 +268,8 @@ match_direct:
         jne     match_done
         cmp     byte ptr [srb+SRB_Status], SS_COMP
         jne     match_done
-        test    byte ptr [inquiry_data+1], 80h
-        jnz     match_removable
+        call    is_fdd_model
+        jnc     match_removable
         cmp     al, FILTER_DISK
         je      match_found
         ret
@@ -551,5 +551,7 @@ FILTER_ANY          equ 5
 filter              db  FILTER_TAPE
 quiet               db  0
 match_count         db  0
+
+        include common/aspi/removable.inc
 
         end     start

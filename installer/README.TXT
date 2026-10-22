@@ -2,12 +2,16 @@ OpenASPI 0.1 - open ASPI device drivers for DOS
 ================================================
 
 OpenASPI is a free DOS driver suite for devices reached through an installed
-ASPI manager. The planned drivers are:
+ASPI manager. The drivers are:
 
   ASPIDSK.SYS  disks and disk-style devices
   ASPIFDD.SYS  LS-120/240, ZIP, Clik! and removable media
   ASPICDA.SYS  CD/DVD and digital CD audio
   ASPITAP.SYS  SCSI tape, compatible with the ASPITAPE interface
+
+SHSUCDX.COM and CDAUDIO.COM are included for the CD/DVD redirector and CD
+audio mode selection. SHSUCD.LIC contains the upstream license notice and
+SHSUCD.TXT its documentation.
 
 Place an ASPI manager such as AHCIASPI, EUSBASPI or an Adaptec manager before
 these drivers in CONFIG.SYS. Run INSTALL.EXE to install or update OpenASPI.

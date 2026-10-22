@@ -29,6 +29,25 @@ make test
 make check
 ```
 
+`make dos-disk-smoke` also runs a memory-only test of the real block request
+core: rejected WRITE AND VERIFY must fall back with the original 32-bit LBA,
+buffer and chunk count; other failures preserve their error and never retry.
+It checks the shared removable-model policy, then boots a removable generic
+USB stick alone to require `/DISK` success and `/FDD` absence. Disk writes in
+these tests target disposable QEMU image files, never host block devices.
+
+`make dist` includes SHSUCDX.COM, CDAUDIO.COM and the upstream SHSUCD license
+and readme, and validates the payload with `tests/dist_layout.sh`. To check
+packaging with an already built installer without rebuilding shared GDI:
+
+```sh
+make -o gdi-install DISTDIR=build/package-check dist
+```
+
+The fallback, ordinary/removable disk, ZIP/LS-120 image read/write, detector,
+CD AHCI/IDE and distribution tests passed on 2026-10-23. This is emulator
+coverage, not qualification of destructive operations on physical media.
+
 `make` builds the DOS driver, diagnostic tools, Win16 environment probe and
 host test programs. `make test` runs the host protocol/SRB tests and checks
 the DOS device-header layout. `make check` also builds the tools and compiles

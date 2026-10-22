@@ -423,7 +423,7 @@ rw_request proc near
         test    byte ptr [di+U_FLAGS], UF_MEDIA
         jnz     read_have_media
         mov     al, ERR_NOT_READY
-        jmp     short read_error
+        jmp     read_error
 read_have_media:
         mov     ax, word ptr es:[bx+RH_BUFFER]
         mov     word ptr [xfer_buffer], ax
@@ -453,18 +453,30 @@ read_chunk:
         mov     al, byte ptr [rw_opcode]
         mov     byte ptr [xfer_opcode], al
         pop     ax
+        ; xfer_sectors returns errors in AL and may clobber DX. A rejected
+        ; WRITE AND VERIFY must retry the exact original LBA, not those
+        ; error registers. Keep it independently until the chunk succeeds.
+        push    ax
+        push    dx
         call    xfer_sectors
-        jnc     read_chunk_ok
+        jnc     read_chunk_completed
         cmp     al, 08h                                 ; ILLEGAL REQUEST:
         jne     read_chunk_failed                       ; no WRITE AND
         cmp     byte ptr [rw_opcode], 2Eh               ; VERIFY, write
         jne     read_chunk_failed
         mov     byte ptr [rw_opcode], 2Ah
+        pop     dx
+        pop     ax
         pop     bx
         pop     es
         jmp     read_chunk
 read_chunk_failed:
+        add     sp, 4                           ; discard LBA; preserve AL error
         stc
+        jmp     short read_chunk_ok
+read_chunk_completed:
+        pop     dx
+        pop     ax
 read_chunk_ok:
         pop     bx
         pop     es
@@ -519,61 +531,7 @@ resident_end label byte
         include common/aspi/aspi_init.inc
 
 ; INQUIRY vendor/product substrings of removable-media drives for ASPIFDD
-fdd_models:
-        db      'ZIP', 0
-        db      'LS-120', 0
-        db      'LS-240', 0
-        db      'CLIK', 0
-        db      'SUPERDISK', 0
-        db      'JAZ', 0
-        db      0
-
-; Is the scan_* device (type 00, inquiry_data read) one of fdd_models with
-; the removable bit?  CF clear if it is.
-is_fdd_model proc near
-        test    byte ptr [inquiry_data+1], 80h
-        jz      fdd_no
-        mov     si, offset fdd_models
-fdd_next_model:
-        cmp     byte ptr [si], 0
-        je      fdd_no
-        mov     di, offset inquiry_data+8
-        mov     cx, 24
-fdd_try_at:
-        push    si
-        push    di
-fdd_compare:
-        lodsb
-        or      al, al
-        jz      fdd_match
-        mov     ah, byte ptr [di]
-        cmp     ah, 'a'
-        jb      fdd_upper
-        cmp     ah, 'z'
-        ja      fdd_upper
-        sub     ah, 20h
-fdd_upper:
-        inc     di
-        cmp     al, ah
-        je      fdd_compare
-        pop     di
-        pop     si
-        inc     di
-        loop    fdd_try_at
-fdd_skip_model:
-        lodsb
-        or      al, al
-        jnz     fdd_skip_model
-        jmp     fdd_next_model
-fdd_match:
-        pop     di
-        pop     si
-        clc
-        ret
-fdd_no:
-        stc
-        ret
-is_fdd_model endp
+        include common/aspi/removable.inc
 
 first_drive     db      0
 

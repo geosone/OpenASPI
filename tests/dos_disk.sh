@@ -16,10 +16,14 @@ EUSBASPI_DIR=${EUSBASPI_DIR:-$ROOT/../eusbaspi}
 AHCIASPI_DIR=${AHCIASPI_DIR:-$ROOT/../ahciaspi}
 DOS_DIR=${DOS_DIR:-$HOME/Iso/Dos}
 SVARDOS_ZIP=${SVARDOS_ZIP:-$DOS_DIR/svardos-20250427-floppy-1.44M.zip}
+DETECT_ONLY=${DETECT_ONLY:-0}
+case "$DETECT_ONLY" in 0|1) ;; *) exit 1 ;; esac
+if test "$DETECT_ONLY" = 1; then OUT="$OUT-detect"; fi
 
 make -C "$ROOT" all >/dev/null
 rm -rf "$OUT"
 mkdir -p "$OUT"
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -Fo="$OUT/BLKFALL.COM" "$ROOT/tests/block_fallback.asm"
 
 nasm -f bin -w-reloc-abs-word -I"$EUSBASPI_DIR/src/" \
     -o "$OUT/EUSBASPI.SYS" "$EUSBASPI_DIR/src/eusbaspi.asm"
@@ -42,6 +46,7 @@ printf '%s\r\n' \
     'SHELL=COMMAND.COM /P' > "$OUT/CONFIG.SYS"
 printf '%s\r\n' \
     '@ECHO OFF' \
+    'BLKFALL > AUX' \
     'TYPE E:\DSKTEST.TXT > AUX' \
     'TYPE F:\ZIPTEST.TXT > AUX' \
     'TYPE G:\SFTEST.TXT > AUX' \
@@ -55,9 +60,17 @@ printf '%s\r\n' \
     'MD E:\NEWDIR' \
     'ECHO written by ASPIDSK > E:\NEWDIR\W.TXT' \
     'QEXIT' > "$OUT/AUTOEXEC.BAT"
+if test "$DETECT_ONLY" = 1; then
+    printf '%s\r\n' '@ECHO OFF' 'BLKFALL > AUX' \
+        'ASPISCAN /Q /DISK' 'IF ERRORLEVEL 1 GOTO failed' \
+        'ASPISCAN /Q /FDD' 'IF ERRORLEVEL 2 GOTO failed' \
+        'IF NOT ERRORLEVEL 1 GOTO failed' \
+        'ECHO Removable stick detection passed > AUX' 'QEXIT' \
+        ':failed' 'ECHO Removable stick detection FAILED > AUX' 'QEXIT' > "$OUT/AUTOEXEC.BAT"
+fi
 mcopy -o -i "$OUT/boot.img" "$OUT/CONFIG.SYS" "$OUT/AUTOEXEC.BAT" \
     "$OUT/EUSBASPI.SYS" "$ROOT/build/dos/ASPIDSK.SYS" \
-    "$ROOT/build/dos/ASPIFDD.SYS" "$OUT/QEXIT.COM" ::/
+    "$ROOT/build/dos/ASPIFDD.SYS" "$ROOT/build/dos/ASPISCAN.COM" "$OUT/BLKFALL.COM" "$OUT/QEXIT.COM" ::/
 
 # partitioned stick (FAT16, partition at 63) with a file larger than one
 # 64-sector READ(10)
@@ -79,6 +92,15 @@ mkfs.fat -F16 -n SUPERDISK "$OUT/ls120.img" >/dev/null
 printf 'ASPIFDD LS-120 PASSED\r\n' > "$OUT/SFTEST.TXT"
 mcopy -i "$OUT/ls120.img" "$OUT/SFTEST.TXT" ::/
 
+fdd_devices=()
+if test "$DETECT_ONLY" = 0; then
+    fdd_devices=(-device usb-bot,id=bot2,bus=usbhc.0,port=2
+        -drive "id=zip,if=none,format=raw,file=$OUT/zip.img"
+        -device scsi-hd,bus=bot2.0,drive=zip,removable=on,vendor=IOMEGA,product=ZIP-100
+        -device usb-bot,id=bot3,bus=usbhc.0,port=3
+        -drive "id=ls120,if=none,format=raw,file=$OUT/ls120.img"
+        -device scsi-hd,bus=bot3.0,drive=ls120,removable=on,vendor=MATSHITA,product=LS-120)
+fi
 set +e
 timeout "${TIMEOUT:-90}" qemu-system-i386 \
     -machine pc -m 32 -display none -vga std \
@@ -86,13 +108,8 @@ timeout "${TIMEOUT:-90}" qemu-system-i386 \
     -device pci-ohci,id=usbhc \
     -device usb-bot,id=bot1,bus=usbhc.0,port=1 \
     -drive id=stick,if=none,format=raw,file="$OUT/stick.img" \
-    -device scsi-hd,bus=bot1.0,drive=stick,vendor=OPENASPI,product=STICK \
-    -device usb-bot,id=bot2,bus=usbhc.0,port=2 \
-    -drive id=zip,if=none,format=raw,file="$OUT/zip.img" \
-    -device scsi-hd,bus=bot2.0,drive=zip,removable=on,vendor=IOMEGA,product=ZIP-100 \
-    -device usb-bot,id=bot3,bus=usbhc.0,port=3 \
-    -drive id=ls120,if=none,format=raw,file="$OUT/ls120.img" \
-    -device scsi-hd,bus=bot3.0,drive=ls120,removable=on,vendor=MATSHITA,product=LS-120 \
+    -device scsi-hd,bus=bot1.0,drive=stick,removable=on,vendor=OPENASPI,product=STICK \
+    "${fdd_devices[@]}" \
     -serial file:"$OUT/serial.log" \
     -device isa-debug-exit,iobase=0xf4,iosize=0x04
 rc=$?
@@ -101,6 +118,14 @@ set -e
 if [ "$rc" -eq 124 ]; then
     echo 'QEMU timeout' >&2
     exit 1
+fi
+test "$rc" -eq 1 || { echo "Unexpected QEMU exit: $rc" >&2; exit 1; }
+grep -q 'Block fallback LBA/buffer/count and hard-error tests passed' "$OUT/serial.log"
+if test "$DETECT_ONLY" = 1; then
+    grep -q 'Removable stick detection passed' "$OUT/serial.log"
+    ! grep -q 'FAILED' "$OUT/serial.log"
+    echo 'OpenASPI removable USB stick detector regression passed'
+    exit 0
 fi
 
 mcopy -o -i "$OUT/boot.img" ::/BIG.BIN "$OUT/BIG.OUT"

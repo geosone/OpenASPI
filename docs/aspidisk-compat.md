@@ -95,6 +95,13 @@ and 61h.
 
 ## Iomega GUEST.EXE
 
+The compatibility goal is to implement GUEST's ZIP-specific device functions
+**inside ASPIFDD**, alongside the MKELS120/LS-120 functions. This is not a
+separate GUEST clone or second ZIP block driver. The runtime loader discussed
+below is only an optional loading mechanism; it does not replace media,
+eject/lock, formatting or reference-verified ZIP-specific device behavior in
+ASPIFDD itself. Version 0.1 does not yet claim that functional coverage.
+
 Iomega `GUEST.EXE` 6.0 (zip100 / Iomega DOS driver package, SHA-256
 `8ca1ca07ceb37372b23175e934d6a95d30814b322ba2510ef552090320e8228e`) is the
 "portable" Zip/Jaz driver: a program started at the DOS prompt or from
