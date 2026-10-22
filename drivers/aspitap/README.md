@@ -18,8 +18,9 @@ rewind/unload and explicit filemark writing. Variable-block reads use the ASPI
 manager's residual count to return short record lengths to DOS when available;
 exact-length reads also work with older managers without that extension.
 `RMT0` rewinds only when its final tracked handle closes; `NRMT0` never rewinds
-on close. Variable-block writes and explicit `MTWEOF` filemarks are emulator-
-tested, including a failed write-protected request. Fixed-block transfers are
+on close. Variable-block writes and explicit `MTWEOF` filemarks are tested
+through a DOS ASPI manager and mhVTL, including a rejected write-protected
+request with diagnostics retained across close/reopen. Fixed-block transfers are
 selected automatically for drives whose SCSI `READ BLOCK LIMITS` response
 requires one block size; nonintegral raw DOS requests are rejected. The historical
 optional `MT0`/`NMT0` 1024-byte software-buffering layer is enabled by `-b`.

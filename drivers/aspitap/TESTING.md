@@ -265,7 +265,7 @@ clear it after the following successful read at BOT. Both modes have passed
 with Tekram/mhVTL. The fast virtual drive does not qualify prolonged physical
 rewind timing; the mock fixtures separately cover BUSY/progress and failures.
 
-### Write-protection acceptance (prepared; device run pending)
+### Write-protection acceptance
 
 `make dos-mhvtl-write-protect` uses the same explicit scratch/library identity
 variables, but runs a separate probe. Before preparation and immediately
@@ -280,9 +280,12 @@ close/reopen and another TUR. No failed WRITE is replayed. A dedicated
 `write-protect-acceptance` mock fixture validates the CDB/payload and rejects
 unexpected media commands. It uses a legacy manager without residual support.
 
-The mock passed and the host gate refused the currently unprotected `OA2101L8`.
-The actual mhVTL protected-media run remains pending manual host preparation;
-these checks are not yet device-level write-protection qualification. See
+The mock passed and the host gate refused `OA2101L8` while it was unprotected.
+After manual unload, `edit_tape -w on` and reload, the protected-media probe
+passed twice on 2026-10-22 through Tekram 1.60, installed unmodified QEMU
+10.2.3 and mhVTL's IBM ULT3580-TD8. Both DOS runs checked the rejected WRITE,
+full residual and diagnostic retention across TUR and close/reopen. This
+qualifies the virtual-drive path, not physical-media write protection. See
 [the host procedure](../../docs/qemu-mhvtl.md#write-protection-probe).
 
 Only initial UNIT ATTENTION readiness checks

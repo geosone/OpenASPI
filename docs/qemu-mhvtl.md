@@ -149,7 +149,8 @@ sense-information fallback through a real DOS manager.
 The non-writing `/READY` smoke also passed with the installed, unmodified
 QEMU. The LTO profile has variable block limits, so this qualifies the
 variable-record scenarios, not physical hardware,
-fixed-block media, write protection, media replacement or production backups.
+fixed-block media, media replacement or production backups. The separate
+virtual-drive write-protection result is described below.
 
 ## Write-protection probe
 
@@ -161,8 +162,13 @@ be set; otherwise no DOS WRITE is attempted. `sg_modes` and `od` are required.
 The DOS program tests one rejected WRITE and retention of its DATA PROTECT
 diagnostics across TUR and close/reopen, not the writable roundtrip.
 
-**Current status:** the DOS mock passed and the real unprotected-media gate
-correctly refused `OA2101L8`. The actual protected-media run has not passed yet.
+**Verified on 2026-10-22:** the DOS mock passed and the host gate correctly
+refused `OA2101L8` while it was unprotected. After manual unload, protection
+and reload, the protected-media DOS probe passed twice through Tekram 1.60,
+installed unmodified QEMU 10.2.3 and mhVTL's IBM ULT3580-TD8. Each run verified
+the failed WRITE, DATA PROTECT, full residual and preserved diagnostics across
+TUR and close/reopen. This probe does not read filemarks and needs no local
+QEMU filemark patch. Physical-drive write protection remains unqualified.
 
 mhVTL's `edit_tape -w on` changes cartridge MAM; the drive reads that flag on
 load. The cartridge therefore must be unloaded first and reloaded afterward.
