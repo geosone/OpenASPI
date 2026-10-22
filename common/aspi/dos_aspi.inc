@@ -28,7 +28,7 @@ SRB_HaStat              equ     18h
 SRB_TargStat            equ     19h
 SRB_PostProc            equ     1Ah
 SRB_Workspace           equ     1Eh
-SRB_CDB                 equ     40h
+SRB_CDB                 equ     40h     ; sense follows actual SRB_CDBLen bytes
 
 SC_HA_INQUIRY           equ     00h
 SC_GET_DEV_TYPE         equ     01h

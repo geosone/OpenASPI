@@ -24,6 +24,12 @@ Unexpected media commands cause a persistent fixture failure, so unwanted
 record retries or finalization commands cannot pass unnoticed. Scanner
 INQUIRY probes are separate from the ordered media scenario.
 
+The `async` fixture completes tape requests only after three hardware timer
+interrupts. It catches premature reuse of a pending SRB and requires IRQs
+to remain enabled while the driver waits. All fixtures place DOS autosense
+immediately after the actual six-byte CDB, including fixed/descriptor sense
+and rewind-progress diagnostics.
+
 ### Transfers and tape operations
 
 Fixtures cover raw-mode setup, full and residual variable-block reads,
@@ -212,6 +218,15 @@ against that output directory concurrently.
 `make dos-mhvtl-smoke` exercises the driver through an external DOS ASPI
 manager and QEMU passthrough to mhVTL. Setup, device selection and safety
 requirements are in [qemu-mhvtl.md](../../docs/qemu-mhvtl.md).
+
+`make dos-mhvtl-roundtrip` is a separate, destructive virtual-scratch test.
+It writes four variable records, closes and reopens `NRMT0`, appends two more
+records, rewinds and compares every byte and all three filemarks. The total
+is 8,254 bytes in six records and two files. Both status ABIs and destination
+guards are checked throughout. Only initial UNIT ATTENTION readiness checks
+are retried; data and finalization operations are never replayed by the test.
+The host gate checks mhVTL sysfs identity, library-to-drive mapping and the
+explicit scratch barcode before launch. Physical devices are refused.
 
 Emulator coverage does not qualify the write path for production backups on
 real drives and media. Real-drive fixed-block and broader error/partial-

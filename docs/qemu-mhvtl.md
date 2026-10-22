@@ -82,6 +82,68 @@ The script verifies through sysfs that the tape node has SCSI peripheral type
 `01h`; this prevents accidentally passing an unrelated `/dev/sgN` device to
 the test.
 
+## Destructive scratch-cartridge roundtrip
+
+This test overwrites a **virtual scratch cartridge** from the beginning.
+Never select media containing wanted data. It refuses physical SCSI nodes.
+Load the scratch cartridge manually first; library robotics are not part of
+the DOS test. Do not change the loaded cartridge or access the same drive
+from another process during the run.
+
+```sh
+ASPI_MANAGER=/path/to/ASPI.SYS \
+QEMU_BIN=/path/to/patched/qemu-system-i386 \
+MHVTL_TAPE=/dev/sg6 \
+MHVTL_VERIFY_CHANGER=/dev/sg13 \
+MHVTL_VERIFY_DRIVE=0 \
+MHVTL_SCRATCH_BARCODE=OA2101L8 \
+make dos-mhvtl-roundtrip
+```
+
+The verification changer is queried read-only on the host; it need not be
+passed to DOS. The gate checks both nodes under `mhvtl_pseudo`, peripheral
+types, common adapter, `/etc/mhvtl/device.conf` library/slot mapping, and the
+exact barcode in the selected zero-based changer drive. The checks run before
+preparation and again immediately before QEMU starts. An alternate config
+path can be selected with `MHVTL_DEVICE_CONF`.
+
+The test uses synchronous-close `ASPITAP.SYS -w` and raw `NRMT0`. It writes
+four differently sized records, finalizes that file, reopens without rewind,
+appends two records, then rewinds and checks all 8,254 bytes and the three
+filemarks. Success requires both the DOS program's marker and its checked
+exit status; any `FAILED` marker rejects the run. Logs and the temporary
+boot floppy are under `build/dos-mhvtl/`, which is recreated each run.
+Do not run multiple integration scripts against this output directory at once.
+
+The roundtrip passed three times with the local QEMU 10.2.3 patch, the Tekram 1.60
+manager identified above, and mhVTL's IBM ULT3580-TD8 scratch `OA2101L8`.
+The non-writing `/READY` smoke also passed with the installed, unmodified
+QEMU. This qualifies this variable-record scenario, not physical hardware,
+fixed-block media, write protection, media replacement or production backups.
+
+### QEMU 10.2.3 filemark workaround
+
+Unmodified QEMU 10.2.3 stalls at an empty filemark on the tested
+`dc390`/`scsi-generic` path: fixed sense's FILEMARK bit survives in
+`scsi_parse_sense_buf().key`, so the sense branch bypasses the normal empty
+transfer completion and calls `scsi_req_data(req, 0)`.
+[The local test patch](../tests/qemu/scsi-generic-empty-sense.patch) preserves
+partial data but routes zero-byte results to status completion. It does not
+change the installed system QEMU and is not claimed as an upstream fix.
+
+Apply it to a separate QEMU 10.2.3 source checkout with `patch -p1`, build
+`qemu-system-i386` there, and select that binary through `QEMU_BIN`. The local
+acceptance build used `--target-list=i386-softmmu --without-default-features
+--enable-tcg --disable-docs --disable-werror --disable-download
+--disable-guest-agent`; normal QEMU build dependencies are required.
+
+### mhVTL media-name workaround
+
+Some mhVTL revisions create `data.0` but `vtlcmd load map` still checks for
+`data`. For the verified new-format scratch cartridge only, a `data` symlink
+to `data.0` permits the host-side import. Do not rename or replace cartridge
+data files. This compatibility symlink is not created by the DOS test.
+
 ## Equivalent QEMU devices
 
 SeaBIOS hangs when the emulated DC-390 already has targets during boot. The

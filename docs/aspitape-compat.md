@@ -329,6 +329,12 @@ succeeds. Polling is paced by BIOS ticks and handles midnight rollover.
 The wait bounds the retry loop; an individual SCSI command still depends on
 the ASPI manager's own execution timeout.
 
+ASPI submission enables hardware interrupts while waiting and restores the
+caller's flags afterward. `SS_PENDING` is not a completion: the resident SRB
+and caller's transfer buffer must not be reused after an arbitrary CPU poll
+count. Autosense starts at `SRB_CDB + SRB_CDBLen` (six bytes for all commands
+currently submitted by ASPITAP), not after a sixteen-byte maximum CDB area.
+
 `-i` adds Ctrl-Break detection to the deferred rewind wait. A temporary
 INT 1Bh handler records the break and chains the previous handler. The old
 vector is restored on every ordinary exit; if another resident handler

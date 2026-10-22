@@ -12,6 +12,16 @@ JWASM=${JWASM:-$ROOT/build/tools/jwasm/jwasm}
 
 : "${ASPI_MANAGER:?Set ASPI_MANAGER to the DOS ASPI manager matching QEMU_SCSI_CONTROLLER}"
 : "${MHVTL_TAPE:?Set MHVTL_TAPE to an mhVTL tape generic device such as /dev/sg6}"
+write_test=${MHVTL_WRITE_TEST:-0}
+case "$write_test" in 0|1) ;; *) echo 'MHVTL_WRITE_TEST must be 0 or 1' >&2; exit 1 ;; esac
+verify_scratch() {
+    : "${MHVTL_VERIFY_CHANGER:?Set the mhVTL changer used only to verify scratch identity}"
+    : "${MHVTL_VERIFY_DRIVE:?Set the zero-based library drive index}"
+    : "${MHVTL_SCRATCH_BARCODE:?Explicitly select the virtual cartridge that may be overwritten}"
+    bash "$ROOT/tests/mhvtl_write_guard.sh" "$MHVTL_TAPE" "$MHVTL_VERIFY_CHANGER" \
+        "$MHVTL_VERIFY_DRIVE" "$MHVTL_SCRATCH_BARCODE"
+}
+if test "$write_test" = 1; then verify_scratch; fi
 
 scsi_address() {
     local sg_name sys_device
@@ -121,6 +131,11 @@ make -C "$ROOT" all >/dev/null
 rm -rf -- "$OUT"
 mkdir -p "$OUT"
 "$JWASM" -q -bin -0 -W4 -WX -Fo="$OUT/QEXIT.COM" "$ROOT/tests/qexit.asm"
+driver_line='DEVICE=ASPITAP.SYS'
+if test "$write_test" = 1; then
+    "$JWASM" -q -bin -0 -W4 -WX -Fo="$OUT/TAPERW.COM" "$ROOT/tests/tape_roundtrip.asm"
+    driver_line='DEVICE=ASPITAP.SYS -w'
+fi
 if test "$hotplug" = 1; then
     "$JWASM" -q -bin -0 -W4 -WX -Fo="$OUT/DELAY.SYS" "$ROOT/tests/delay.asm"
 fi
@@ -138,22 +153,35 @@ if test "$hotplug" = 1; then
     printf '%s\r\n' \
         'DEVICE=DELAY.SYS' \
         "$manager_line" \
-        'DEVICE=ASPITAP.SYS' \
+        "$driver_line" \
         'SHELL=COMMAND.COM /P' > "$OUT/CONFIG.SYS"
 else
     printf '%s\r\n' \
         "$manager_line" \
-        'DEVICE=ASPITAP.SYS' \
+        "$driver_line" \
         'SHELL=COMMAND.COM /P' > "$OUT/CONFIG.SYS"
 fi
 
 tapectl_command='TAPECTL > AUX'
 test "${CHECK_READY:-0}" = 0 || tapectl_command='TAPECTL /READY > AUX'
-printf '%s\r\n' \
+autoexec_lines=(
     '@ECHO OFF' \
     'ASPISCAN > AUX' \
-    "$tapectl_command" \
-    'QEXIT' > "$OUT/AUTOEXEC.BAT"
+    "$tapectl_command"
+)
+if test "$write_test" = 1; then
+    autoexec_lines+=(
+        'TAPERW /SCRATCH > AUX'
+        'IF ERRORLEVEL 1 GOTO rw_failed'
+        'ECHO OpenASPI roundtrip DOS exit passed > AUX'
+        'GOTO finished'
+        ':rw_failed'
+        'ECHO OpenASPI roundtrip DOS exit FAILED > AUX'
+        ':finished'
+    )
+fi
+autoexec_lines+=('QEXIT')
+printf '%s\r\n' "${autoexec_lines[@]}" > "$OUT/AUTOEXEC.BAT"
 
 mcopy -o -i "$OUT/boot.img" \
     "$OUT/CONFIG.SYS" "$OUT/AUTOEXEC.BAT" "$ASPI_MANAGER" \
@@ -161,6 +189,10 @@ mcopy -o -i "$OUT/boot.img" \
     "$ROOT/build/dos/TAPECTL.COM" "$OUT/QEXIT.COM" ::/
 if test "$hotplug" = 1; then
     mcopy -o -i "$OUT/boot.img" "$OUT/DELAY.SYS" ::/
+fi
+if test "$write_test" = 1; then
+    mcopy -o -i "$OUT/boot.img" "$OUT/TAPERW.COM" ::/
+    verify_scratch
 fi
 
 set +e
@@ -201,5 +233,10 @@ tr -d '\r' < "$OUT/serial.log"
 grep -q ' TAPE ' "$OUT/serial.log"
 grep -q 'ASPITAP RMT0 resident' "$OUT/serial.log"
 grep -q 'OpenASPI TAPECTL status passed' "$OUT/serial.log"
+if test "$write_test" = 1; then
+    grep -q 'OpenASPI tape roundtrip passed:' "$OUT/serial.log"
+    grep -q 'OpenASPI roundtrip DOS exit passed' "$OUT/serial.log"
+    ! grep -q 'FAILED' "$OUT/serial.log"
+fi
 
 echo "OpenASPI $QEMU_SCSI_CONTROLLER/mhVTL smoke test passed for $MHVTL_TAPE ($tape_address -> $guest_tape_target:$guest_tape_lun)"

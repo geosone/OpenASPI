@@ -41,6 +41,9 @@
 #define OA_ASPI_UNIQUE_SIZE      16u
 #define OA_ASPI_CDB_SIZE         16u
 #define OA_ASPI_SENSE_SIZE       32u
+/* DOS autosense begins after the actual CDB length (6/10/12/16), not
+ * necessarily after all sixteen bytes reserved for CDB storage below. */
+#define OA_ASPI_SENSE_OFFSET(cdb_length) (64u + (cdb_length))
 
 #if defined(__WATCOMC__)
 #pragma pack(push, 1)
@@ -106,7 +109,9 @@ struct oa_aspi_exec_scsi {
     struct oa_aspi_far_pointer post;
     oa_u8 workspace[34];
     oa_u8 cdb[OA_ASPI_CDB_SIZE];
-    oa_u8 sense[OA_ASPI_SENSE_SIZE];
+    /* Extra storage; use OA_ASPI_SENSE_OFFSET(cdb_length) from the SRB base
+     * to access autosense. For a six-byte CDB it overlaps cdb[6..15]. */
+    oa_u8 sense_tail[OA_ASPI_SENSE_SIZE];
 }
 #if !defined(__WATCOMC__)
 __attribute__((packed))

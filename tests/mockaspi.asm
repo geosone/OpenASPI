@@ -9,6 +9,9 @@
 
         include common/aspi/dos_aspi.inc
 
+; Six-byte tape CDB followed immediately by DOS ASPI autosense.
+TAPE_SENSE      equ     SRB_CDB + 6
+
 driver_start:
         dd      0FFFFFFFFh
         dw      0C000h                  ; character device + IOCTL read
@@ -50,6 +53,21 @@ interrupt proc far
         jmp     short request_done
 
 initialize:
+ifdef ASYNC_COMPLETION
+        pushf
+        cli
+        push es
+        xor ax, ax
+        mov es, ax
+        mov ax, word ptr es:[70h]
+        mov word ptr [async_old_timer], ax
+        mov ax, word ptr es:[72h]
+        mov word ptr [async_old_timer+2], ax
+        mov word ptr es:[70h], offset async_timer
+        mov word ptr es:[72h], cs
+        pop es
+        popf
+endif
 ifdef REWIND_BREAK
         ; Isolate the synthetic Ctrl-Break from DOS' normal termination
         ; behavior; ASPITAP must chain this sentinel and restore its vector.
@@ -308,7 +326,7 @@ else
         call    set_descriptor_condition
 endif
 ifdef READ_STREAM_DEFERRED
-        or      byte ptr es:[bx+SRB_CDB+16], 1
+        or      byte ptr es:[bx+TAPE_SENSE+0], 1
 endif
 ifdef READ_ILI_MISMATCH
 if READ_ILI_MISMATCH eq 1
@@ -316,14 +334,14 @@ if READ_ILI_MISMATCH eq 1
 elseif READ_ILI_MISMATCH eq 2
         mov     word ptr es:[bx+SRB_BufLen], 8 ; manager claims fewer bytes
 else
-        mov     word ptr es:[bx+SRB_CDB+34], 0 ; sense claims zero residual
+        mov     word ptr es:[bx+TAPE_SENSE+18], 0 ; sense claims zero residual
 endif
 endif
 ifdef READ_STREAM_TRANSPORT
         call    corrupt_stream_completion
 endif
 ifdef READ_STREAM_KEY
-        mov     byte ptr es:[bx+SRB_CDB+17], READ_STREAM_KEY
+        mov     byte ptr es:[bx+TAPE_SENSE+1], READ_STREAM_KEY
 endif
 ifdef READ_BAD_RESIDUAL
         call    corrupt_read_residual
@@ -335,13 +353,13 @@ read_filemark:
         mov     dx, 16                  ; no bytes transferred
         call    set_read_condition
 ifdef READ_STREAM_DEFERRED
-        or      byte ptr es:[bx+SRB_CDB+16], 1
+        or      byte ptr es:[bx+TAPE_SENSE+0], 1
 endif
 ifdef READ_STREAM_TRANSPORT
         call    corrupt_stream_completion
 endif
 ifdef READ_STREAM_KEY
-        or      byte ptr es:[bx+SRB_CDB+18], READ_STREAM_KEY
+        or      byte ptr es:[bx+TAPE_SENSE+2], READ_STREAM_KEY
 endif
 ifdef READ_BAD_RESIDUAL
         call    corrupt_read_residual
@@ -386,13 +404,13 @@ endif
         mov     dx, 16
         call    set_descriptor_condition
 ifdef READ_STREAM_DEFERRED
-        or      byte ptr es:[bx+SRB_CDB+16], 1
+        or      byte ptr es:[bx+TAPE_SENSE+0], 1
 endif
 ifdef READ_STREAM_TRANSPORT
         call    corrupt_stream_completion
 endif
 ifdef READ_STREAM_KEY
-        mov     byte ptr es:[bx+SRB_CDB+17], READ_STREAM_KEY
+        mov     byte ptr es:[bx+TAPE_SENSE+1], READ_STREAM_KEY
 endif
 ifdef READ_BAD_RESIDUAL
         call    corrupt_read_residual
@@ -403,21 +421,21 @@ read_negative_ili:
 ifndef NO_RESIDUAL
         mov     word ptr es:[bx+SRB_BufLen], 16
 endif
-        mov     byte ptr es:[bx+SRB_CDB+16], 0F0h
-        mov     byte ptr es:[bx+SRB_CDB+18], 20h
+        mov     byte ptr es:[bx+TAPE_SENSE+0], 0F0h
+        mov     byte ptr es:[bx+TAPE_SENSE+2], 20h
 ifdef READ_COMBINED
 if READ_COMBINED eq 1
-        or      byte ptr es:[bx+SRB_CDB+18], 80h ; negative ILI + FILEMARK
+        or      byte ptr es:[bx+TAPE_SENSE+2], 80h ; negative ILI + FILEMARK
 elseif READ_COMBINED eq 2
-        or      byte ptr es:[bx+SRB_CDB+18], 40h ; negative ILI + EOM
+        or      byte ptr es:[bx+TAPE_SENSE+2], 40h ; negative ILI + EOM
 else
-        or      byte ptr es:[bx+SRB_CDB+18], 0C0h
+        or      byte ptr es:[bx+TAPE_SENSE+2], 0C0h
 endif
 endif
-        mov     byte ptr es:[bx+SRB_CDB+19], 0FFh
-        mov     byte ptr es:[bx+SRB_CDB+20], 0FFh
-        mov     byte ptr es:[bx+SRB_CDB+21], 0FFh
-        mov     byte ptr es:[bx+SRB_CDB+22], 0FCh ; actual is four bytes too large
+        mov     byte ptr es:[bx+TAPE_SENSE+3], 0FFh
+        mov     byte ptr es:[bx+TAPE_SENSE+4], 0FFh
+        mov     byte ptr es:[bx+TAPE_SENSE+5], 0FFh
+        mov     byte ptr es:[bx+TAPE_SENSE+6], 0FCh ; actual is four bytes too large
         mov     byte ptr es:[bx+SRB_HaStat], 0
         mov     byte ptr es:[bx+SRB_TargStat], 2
         mov     byte ptr es:[bx+SRB_Status], SS_ERR
@@ -433,6 +451,22 @@ bad_scsi:
         mov     byte ptr es:[bx+SRB_Status], SS_ERR
 
 aspi_done:
+ifdef ASYNC_COMPLETION
+        cmp byte ptr es:[bx+SRB_Cmd], SC_EXEC_SCSI_CMD
+        jne async_return
+        cmp byte ptr es:[bx+SRB_CDB], 12h ; scanner has its own polling loop
+        je async_return
+        pushf
+        cli
+        mov al, byte ptr es:[bx+SRB_Status]
+        mov byte ptr cs:[async_status], al
+        mov word ptr cs:[async_srb], bx
+        mov word ptr cs:[async_srb+2], es
+        mov byte ptr es:[bx+SRB_Status], SS_PENDING
+        mov byte ptr cs:[async_ticks], 3
+        popf
+async_return:
+endif
         pop     es
         pop     si
         pop     di
@@ -442,6 +476,33 @@ aspi_done:
         pop     bp
         retf
 aspi_entry endp
+
+ifdef ASYNC_COMPLETION
+; Complete only from timer IRQs, well after 65535 CPU polls.
+async_timer proc far
+        pushf
+        call dword ptr cs:[async_old_timer]
+        push ax
+        push bx
+        push es
+        cmp byte ptr cs:[async_ticks], 0
+        je async_timer_done
+        dec byte ptr cs:[async_ticks]
+        jne async_timer_done
+        les bx, dword ptr cs:[async_srb]
+        mov al, byte ptr cs:[async_status]
+        mov byte ptr es:[bx+SRB_Status], al
+async_timer_done:
+        pop es
+        pop bx
+        pop ax
+        iret
+async_timer endp
+async_old_timer dd 0
+async_srb dd 0
+async_ticks db 0
+async_status db 0
+endif
 
 ; Validate and complete the two writes issued by the DOS test. ES:BX points
 ; at the SRB and remains valid when this routine returns.
@@ -497,8 +558,8 @@ write_validated:
 ifndef NO_RESIDUAL
         mov     word ptr es:[bx+SRB_BufLen], 2
 endif
-        mov     byte ptr es:[bx+SRB_CDB+16], 70h
-        mov     byte ptr es:[bx+SRB_CDB+18], 07h ; DATA PROTECT
+        mov     byte ptr es:[bx+TAPE_SENSE+0], 70h
+        mov     byte ptr es:[bx+TAPE_SENSE+2], 07h ; DATA PROTECT
         mov     byte ptr es:[bx+SRB_HaStat], 0
         mov     byte ptr es:[bx+SRB_TargStat], 2
         mov     byte ptr es:[bx+SRB_Status], SS_ERR
@@ -625,20 +686,20 @@ ifdef REWIND_DEFERRED
         jmp rewind_test_good
 rewind_deferred_first:
 if REWIND_DEFERRED eq 1
-        mov byte ptr es:[bx+SRB_CDB+16], 71h
-        mov byte ptr es:[bx+SRB_CDB+18], 2
-        mov byte ptr es:[bx+SRB_CDB+28], 4
-        mov byte ptr es:[bx+SRB_CDB+29], 1
+        mov byte ptr es:[bx+TAPE_SENSE+0], 71h
+        mov byte ptr es:[bx+TAPE_SENSE+2], 2
+        mov byte ptr es:[bx+TAPE_SENSE+12], 4
+        mov byte ptr es:[bx+TAPE_SENSE+13], 1
 else
-        mov byte ptr es:[bx+SRB_CDB+16], 73h
-        mov byte ptr es:[bx+SRB_CDB+17], 2
-        mov byte ptr es:[bx+SRB_CDB+18], 4
-        mov byte ptr es:[bx+SRB_CDB+19], 1
+        mov byte ptr es:[bx+TAPE_SENSE+0], 73h
+        mov byte ptr es:[bx+TAPE_SENSE+1], 2
+        mov byte ptr es:[bx+TAPE_SENSE+2], 4
+        mov byte ptr es:[bx+TAPE_SENSE+3], 1
 endif
 else
-        mov byte ptr es:[bx+SRB_CDB+16], 70h
-        mov byte ptr es:[bx+SRB_CDB+18], 2
-        mov byte ptr es:[bx+SRB_CDB+28], 3Ah ; no media: do not retry
+        mov byte ptr es:[bx+TAPE_SENSE+0], 70h
+        mov byte ptr es:[bx+TAPE_SENSE+2], 2
+        mov byte ptr es:[bx+TAPE_SENSE+12], 3Ah ; no media: do not retry
 endif
 else
         cmp byte ptr cs:[rewind_polls], 1
@@ -660,26 +721,26 @@ endif
 rewind_test_sense:
         cmp byte ptr cs:[rewind_polls], 2
         jne rewind_test_descriptor
-        mov byte ptr es:[bx+SRB_CDB+16], 70h
-        mov byte ptr es:[bx+SRB_CDB+18], 2
-        mov byte ptr es:[bx+SRB_CDB+28], 4
-        mov byte ptr es:[bx+SRB_CDB+29], 1 ; becoming ready
+        mov byte ptr es:[bx+TAPE_SENSE+0], 70h
+        mov byte ptr es:[bx+TAPE_SENSE+2], 2
+        mov byte ptr es:[bx+TAPE_SENSE+12], 4
+        mov byte ptr es:[bx+TAPE_SENSE+13], 1 ; becoming ready
         jmp short rewind_test_condition
 rewind_test_descriptor:
         cmp byte ptr cs:[rewind_polls], 3
         jne rewind_test_progress
-        mov byte ptr es:[bx+SRB_CDB+16], 72h
-        mov byte ptr es:[bx+SRB_CDB+17], 2
-        mov byte ptr es:[bx+SRB_CDB+18], 4
-        mov byte ptr es:[bx+SRB_CDB+19], 7 ; operation in progress
+        mov byte ptr es:[bx+TAPE_SENSE+0], 72h
+        mov byte ptr es:[bx+TAPE_SENSE+1], 2
+        mov byte ptr es:[bx+TAPE_SENSE+2], 4
+        mov byte ptr es:[bx+TAPE_SENSE+3], 7 ; operation in progress
         jmp short rewind_test_condition
 rewind_test_progress:
         cmp byte ptr cs:[rewind_polls], 4
         je rewind_test_report_progress
         jmp rewind_test_good
 rewind_test_report_progress:
-        mov byte ptr es:[bx+SRB_CDB+16], 70h
-        mov byte ptr es:[bx+SRB_CDB+29], 1Ah ; no-sense rewind progress
+        mov byte ptr es:[bx+TAPE_SENSE+0], 70h
+        mov byte ptr es:[bx+TAPE_SENSE+13], 1Ah ; no-sense rewind progress
 endif
 rewind_test_condition:
         mov byte ptr es:[bx+SRB_TargStat], 2
@@ -1021,12 +1082,12 @@ ifndef NO_RESIDUAL
         mov     word ptr es:[bx+SRB_BufLen], dx
 endif
         mov     word ptr es:[bx+SRB_BufLen+2], 0
-        mov     byte ptr es:[bx+SRB_CDB+16], 0F0h
-        mov     byte ptr es:[bx+SRB_CDB+18], al
-        mov     byte ptr es:[bx+SRB_CDB+19], 0
-        mov     byte ptr es:[bx+SRB_CDB+20], 0
-        mov     byte ptr es:[bx+SRB_CDB+21], dh
-        mov     byte ptr es:[bx+SRB_CDB+22], dl
+        mov     byte ptr es:[bx+TAPE_SENSE+0], 0F0h
+        mov     byte ptr es:[bx+TAPE_SENSE+2], al
+        mov     byte ptr es:[bx+TAPE_SENSE+3], 0
+        mov     byte ptr es:[bx+TAPE_SENSE+4], 0
+        mov     byte ptr es:[bx+TAPE_SENSE+5], dh
+        mov     byte ptr es:[bx+TAPE_SENSE+6], dl
         mov     byte ptr es:[bx+SRB_HaStat], 0
         mov     byte ptr es:[bx+SRB_TargStat], 2
         mov     byte ptr es:[bx+SRB_Status], SS_ERR
@@ -1040,24 +1101,24 @@ ifndef NO_RESIDUAL
         mov     word ptr es:[bx+SRB_BufLen], dx
 endif
         mov     word ptr es:[bx+SRB_BufLen+2], 0
-        mov     byte ptr es:[bx+SRB_CDB+16], 72h
-        mov     byte ptr es:[bx+SRB_CDB+17], 00h
-        mov     byte ptr es:[bx+SRB_CDB+18], 00h
-        mov     byte ptr es:[bx+SRB_CDB+19], 00h
-        mov     byte ptr es:[bx+SRB_CDB+23], 16
-        mov     byte ptr es:[bx+SRB_CDB+24], 00h
-        mov     byte ptr es:[bx+SRB_CDB+25], 0Ah
-        mov     byte ptr es:[bx+SRB_CDB+26], 80h
-        mov     byte ptr es:[bx+SRB_CDB+27], 00h
-        mov     word ptr es:[bx+SRB_CDB+28], 0
-        mov     word ptr es:[bx+SRB_CDB+30], 0
-        mov     word ptr es:[bx+SRB_CDB+32], 0
-        mov     byte ptr es:[bx+SRB_CDB+34], dh
-        mov     byte ptr es:[bx+SRB_CDB+35], dl
-        mov     byte ptr es:[bx+SRB_CDB+36], 04h
-        mov     byte ptr es:[bx+SRB_CDB+37], 02h
-        mov     byte ptr es:[bx+SRB_CDB+38], 00h
-        mov     byte ptr es:[bx+SRB_CDB+39], al
+        mov     byte ptr es:[bx+TAPE_SENSE+0], 72h
+        mov     byte ptr es:[bx+TAPE_SENSE+1], 00h
+        mov     byte ptr es:[bx+TAPE_SENSE+2], 00h
+        mov     byte ptr es:[bx+TAPE_SENSE+3], 00h
+        mov     byte ptr es:[bx+TAPE_SENSE+7], 16
+        mov     byte ptr es:[bx+TAPE_SENSE+8], 00h
+        mov     byte ptr es:[bx+TAPE_SENSE+9], 0Ah
+        mov     byte ptr es:[bx+TAPE_SENSE+10], 80h
+        mov     byte ptr es:[bx+TAPE_SENSE+11], 00h
+        mov     word ptr es:[bx+TAPE_SENSE+12], 0
+        mov     word ptr es:[bx+TAPE_SENSE+14], 0
+        mov     word ptr es:[bx+TAPE_SENSE+16], 0
+        mov     byte ptr es:[bx+TAPE_SENSE+18], dh
+        mov     byte ptr es:[bx+TAPE_SENSE+19], dl
+        mov     byte ptr es:[bx+TAPE_SENSE+20], 04h
+        mov     byte ptr es:[bx+TAPE_SENSE+21], 02h
+        mov     byte ptr es:[bx+TAPE_SENSE+22], 00h
+        mov     byte ptr es:[bx+TAPE_SENSE+23], al
         mov     byte ptr es:[bx+SRB_HaStat], 0
         mov     byte ptr es:[bx+SRB_TargStat], 2
         mov     byte ptr es:[bx+SRB_Status], SS_ERR

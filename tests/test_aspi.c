@@ -38,7 +38,11 @@ static void test_execute_layout(void)
     assert(offsetof(struct oa_aspi_exec_scsi, ha_status) == 24u);
     assert(offsetof(struct oa_aspi_exec_scsi, workspace) == 30u);
     assert(offsetof(struct oa_aspi_exec_scsi, cdb) == 64u);
-    assert(offsetof(struct oa_aspi_exec_scsi, sense) == 80u);
+    assert(offsetof(struct oa_aspi_exec_scsi, sense_tail) == 80u);
+    assert(OA_ASPI_SENSE_OFFSET(6u) == 70u);
+    assert(OA_ASPI_SENSE_OFFSET(10u) == 74u);
+    assert(OA_ASPI_SENSE_OFFSET(12u) == 76u);
+    assert(OA_ASPI_SENSE_OFFSET(16u) == 80u);
 }
 
 int main(void)

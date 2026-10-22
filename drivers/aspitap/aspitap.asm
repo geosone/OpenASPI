@@ -17,6 +17,10 @@
 
         include common/aspi/dos_aspi.inc
 
+; DOS ASPI places autosense immediately after the actual CDB, not after
+; the maximum CDB storage. Every command submitted by ASPITAP is six bytes.
+TAPE_SENSE      equ     SRB_CDB + 6
+
 DEV_ATTR        equ     08840h          ; character + open/close + generic IOCTL
 REQ_COMMAND     equ     02h
 REQ_STATUS      equ     03h
@@ -1364,12 +1368,12 @@ rewind_status_valid:
         je      rewind_check_sense
         jmp     rewind_wait_error
 rewind_check_sense:
-        mov     al, byte ptr [srb+SRB_CDB+16]
+        mov     al, byte ptr [srb+TAPE_SENSE+0]
         and     al, 7Fh
-        mov     si, offset srb+SRB_CDB+28 ; fixed sense ASC/ASCQ
+        mov     si, offset srb+TAPE_SENSE+12 ; fixed sense ASC/ASCQ
         cmp     al, 70h
         je      rewind_check_progress
-        mov     si, offset srb+SRB_CDB+18 ; descriptor sense ASC/ASCQ
+        mov     si, offset srb+TAPE_SENSE+2 ; descriptor sense ASC/ASCQ
         cmp     al, 72h
         jne     rewind_wait_error
 rewind_check_progress:
@@ -1772,7 +1776,7 @@ remember_sense_key proc near
         mov     byte ptr [sense_info_valid], 0
         mov     word ptr [sense_info_high], 0
         mov     word ptr [sense_info_low], 0
-        mov     al, byte ptr [srb+SRB_CDB+16]
+        mov     al, byte ptr [srb+TAPE_SENSE+0]
         and     al, 7Fh
         mov     byte ptr [sense_response], al
         cmp     al, 70h
@@ -1789,16 +1793,16 @@ sense_not_fixed_deferred:
         je      descriptor_sense
         jmp     sense_done
 descriptor_sense:
-        mov     al, byte ptr [srb+SRB_CDB+17]
+        mov     al, byte ptr [srb+TAPE_SENSE+1]
         and     al, 0Fh
         mov     byte ptr [last_sense_key], al
         xor     cx, cx
-        mov     cl, byte ptr [srb+SRB_CDB+23]
+        mov     cl, byte ptr [srb+TAPE_SENSE+7]
         cmp     cx, 24
         jbe     descriptor_length_ready
         mov     cx, 24
 descriptor_length_ready:
-        mov     si, offset srb+SRB_CDB+24
+        mov     si, offset srb+TAPE_SENSE+8
 descriptor_loop:
         cmp     cx, 2
         jae     descriptor_header_ready
@@ -1847,18 +1851,18 @@ descriptor_next:
         sub     cx, bx
         jmp     descriptor_loop
 fixed_sense:
-        mov     al, byte ptr [srb+SRB_CDB+16]
+        mov     al, byte ptr [srb+TAPE_SENSE+0]
         test    al, 80h
         jz      fixed_sense_flags
         mov     byte ptr [sense_info_valid], 1
-        mov     ah, byte ptr [srb+SRB_CDB+19]
-        mov     al, byte ptr [srb+SRB_CDB+20]
+        mov     ah, byte ptr [srb+TAPE_SENSE+3]
+        mov     al, byte ptr [srb+TAPE_SENSE+4]
         mov     word ptr [sense_info_high], ax
-        mov     ah, byte ptr [srb+SRB_CDB+21]
-        mov     al, byte ptr [srb+SRB_CDB+22]
+        mov     ah, byte ptr [srb+TAPE_SENSE+5]
+        mov     al, byte ptr [srb+TAPE_SENSE+6]
         mov     word ptr [sense_info_low], ax
 fixed_sense_flags:
-        mov     al, byte ptr [srb+SRB_CDB+18]
+        mov     al, byte ptr [srb+TAPE_SENSE+2]
         mov     ah, al
         and     ah, SENSE_FILEMARK or SENSE_EOM or SENSE_ILI
         mov     byte ptr [sense_flags], ah
@@ -2227,6 +2231,12 @@ block_limits_done:
 detect_block_limits endp
 
 call_aspi proc near
+        ; DOS can enter a character driver with IRQs disabled. Real ASPI
+        ; managers may complete asynchronously, through their hardware IRQ.
+        ; The manager owns command timeouts: never reuse a pending SRB just
+        ; because a CPU-speed-dependent polling budget has expired.
+        pushf
+        sti
         push    ds
         push    es
         push    cs
@@ -2236,12 +2246,12 @@ call_aspi proc near
         add     sp, 4
         pop     es
         pop     ds
-        mov     cx, 0FFFFh
 wait_aspi:
         cmp     byte ptr [srb+SRB_Status], SS_PENDING
         jne     aspi_complete
-        loop    wait_aspi
+        jmp     wait_aspi
 aspi_complete:
+        popf
         ret
 call_aspi endp
 

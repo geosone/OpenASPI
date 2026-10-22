@@ -1,0 +1,16 @@
+Subject: scsi-generic: do not start a zero-length data phase after sense
+
+Local QEMU 10.2.3 integration-test workaround, not an upstream release fix.
+mhVTL filemarks return CHECK CONDITION with a full residual and fixed sense
+byte 2 = 80h. scsi_parse_sense_buf retains that FILEMARK bit in sense.key.
+The sense branch bypasses the existing zero-length completion check and
+calls scsi_req_data(req, 0), leaving DC-390 waiting indefinitely. Preserve
+partial data on sense, but let empty results reach normal status completion.
+
+--- a/hw/scsi/scsi-generic.c
++++ b/hw/scsi/scsi-generic.c
+@@ -307,3 +307,3 @@
+-        if (sense.key) {
++        if (sense.key && len > 0) {
+             goto req_complete;
+         }

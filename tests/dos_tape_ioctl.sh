@@ -24,6 +24,10 @@ run_fixture() {
     local autoexec_lines=()
 
     case "$variant" in
+        async)
+            defines=(-DASYNC_COMPLETION)
+            # Delay tape completions by three hardware timer interrupts.
+            ;;
         tapectl-*)
             defines=(-DBUFFERED_TEST -DBUFFER_ERROR -DBUFFER_WRITE_ERROR)
             test_source="$ROOT/tests/tape_buffered.asm"
@@ -564,6 +568,7 @@ if test "$#" -gt 0; then
     for variant in "$@"; do run_fixture "$variant"; done
 else
 run_fixture residual
+run_fixture async
 run_fixture legacy
 run_fixture read-bad-residual
 run_fixture read-bad-residual-high

@@ -62,8 +62,8 @@ ifdef TAPECTL_NOT_READY
         jne tapectl_poll_ready
         cmp byte ptr es:[bx+SRB_CDB], 0
         jne tapectl_poll_ready
-        mov byte ptr es:[bx+SRB_CDB+16], 70h
-        mov byte ptr es:[bx+SRB_CDB+18], 2 ; NOT READY, distinct from saved error
+        mov byte ptr es:[bx+TAPE_SENSE+0], 70h
+        mov byte ptr es:[bx+TAPE_SENSE+2], 2 ; NOT READY, distinct from saved error
         mov byte ptr es:[bx+SRB_TargStat], 2
         mov byte ptr es:[bx+SRB_Status], SS_ERR
         ret
@@ -88,8 +88,8 @@ else
 endif
         jne buffered_bad
 endif
-        mov byte ptr es:[bx+SRB_CDB+16], 70h
-        mov byte ptr es:[bx+SRB_CDB+18], 3 ; MEDIUM ERROR
+        mov byte ptr es:[bx+TAPE_SENSE+0], 70h
+        mov byte ptr es:[bx+TAPE_SENSE+2], 3 ; MEDIUM ERROR
         mov byte ptr es:[bx+SRB_TargStat], 2
         mov byte ptr es:[bx+SRB_Status], SS_ERR
         ret
@@ -195,11 +195,11 @@ else
 ifdef BUFFER_SHORT_WRITE
         mov word ptr es:[bx+SRB_BufLen], 512
 ifdef RAW_EOT
-        mov byte ptr es:[bx+SRB_CDB+16], 70h
-        mov byte ptr es:[bx+SRB_CDB+18], 40h ; EOM, no other sense key
+        mov byte ptr es:[bx+TAPE_SENSE+0], 70h
+        mov byte ptr es:[bx+TAPE_SENSE+2], 40h ; EOM, no other sense key
 ifdef RAW_EOT_HARD
         mov word ptr es:[bx+SRB_BufLen], 0
-        mov byte ptr es:[bx+SRB_CDB+18], 43h ; EOM must not hide MEDIUM ERROR
+        mov byte ptr es:[bx+TAPE_SENSE+2], 43h ; EOM must not hide MEDIUM ERROR
 endif
         mov byte ptr es:[bx+SRB_TargStat], 2
         mov byte ptr es:[bx+SRB_Status], SS_ERR
@@ -214,13 +214,13 @@ elseif RAW_EOT_COMPLETION eq 3
 elseif RAW_EOT_COMPLETION eq 4
         mov byte ptr es:[bx+SRB_TargStat], 8
 elseif RAW_EOT_COMPLETION eq 5
-        mov byte ptr es:[bx+SRB_CDB+16], 71h
+        mov byte ptr es:[bx+TAPE_SENSE+0], 71h
 else
         push dx
         mov al, 40h
         xor dx, dx
         call set_descriptor_condition
-        mov byte ptr es:[bx+SRB_CDB+16], 73h
+        mov byte ptr es:[bx+TAPE_SENSE+0], 73h
         pop dx
 endif
 endif
@@ -229,8 +229,8 @@ else
         jmp buffered_good
 endif
 else
-        mov byte ptr es:[bx+SRB_CDB+16], 70h
-        mov byte ptr es:[bx+SRB_CDB+18], 7 ; DATA PROTECT
+        mov byte ptr es:[bx+TAPE_SENSE+0], 70h
+        mov byte ptr es:[bx+TAPE_SENSE+2], 7 ; DATA PROTECT
         mov byte ptr es:[bx+SRB_TargStat], 2
         mov byte ptr es:[bx+SRB_Status], SS_ERR
         ret
@@ -344,11 +344,11 @@ if BUFFER_REFILL_ERROR eq 1
 elseif BUFFER_REFILL_ERROR eq 2
         mov byte ptr es:[bx+SRB_HaStat], 11h
 elseif BUFFER_REFILL_ERROR eq 3
-        or byte ptr es:[bx+SRB_CDB+18], 2 ; FILEMARK must not hide NOT READY
+        or byte ptr es:[bx+TAPE_SENSE+2], 2 ; FILEMARK must not hide NOT READY
 elseif BUFFER_REFILL_ERROR eq 4
-        mov byte ptr es:[bx+SRB_CDB+16], 71h
+        mov byte ptr es:[bx+TAPE_SENSE+0], 71h
 elseif BUFFER_REFILL_ERROR eq 5
-        or byte ptr es:[bx+SRB_CDB+18], 20h ; contradictory ILI + FILEMARK
+        or byte ptr es:[bx+TAPE_SENSE+2], 20h ; contradictory ILI + FILEMARK
         mov word ptr es:[bx+SRB_BufLen], 0
 else
         mov word ptr es:[bx+SRB_BufLen], 512 ; half a mandatory fixed block

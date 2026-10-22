@@ -49,6 +49,9 @@ boundary tests and an optional sanitizer run.
   `scsi-generic` passthrough to an mhVTL tape. It requires an external DOS ASPI
   manager and explicitly selected `/dev/sgN` nodes. Follow the separate
   [mhVTL setup and safety instructions](qemu-mhvtl.md).
+- `make dos-mhvtl-roundtrip` overwrites an explicitly selected virtual scratch
+  cartridge and verifies write/read/append and filemarks. It adds mandatory
+  library/drive/barcode checks; see the same integration guide before use.
 
 The boot tests require external tools and local test media described in
 [reference material](reference-material.md) and the test scripts. They are
