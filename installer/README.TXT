@@ -11,7 +11,8 @@ ASPI manager. The planned drivers are:
 
 Place an ASPI manager such as AHCIASPI, EUSBASPI or an Adaptec manager before
 these drivers in CONFIG.SYS. Run INSTALL.EXE to install or update OpenASPI.
-Run INSTALL /U from the installation directory to remove it.
+The drivers go to C:\OPENASPI (shared with AHCIASPI and EUSBASPI); run
+INSTALL /U in C:\OPENASPI\ASPI to remove OpenASPI.
 
 ASPISCAN.COM lists the active ASPI adapters and devices and identifies tape
 devices without reading or changing their media. During setup it is also run
