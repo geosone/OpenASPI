@@ -288,6 +288,12 @@ full residual and diagnostic retention across TUR and close/reopen. This
 qualifies the virtual-drive path, not physical-media write protection. See
 [the host procedure](../../docs/qemu-mhvtl.md#write-protection-probe).
 
+After a second manual unload, `edit_tape -w off` and reload of the same
+scratch cartridge, the complete writable roundtrip passed again with both
+synchronous and default IMMED close-rewind. This covers writing after the
+protection change across separate DOS boots, not live media replacement in
+an existing DOS session.
+
 Only initial UNIT ATTENTION readiness checks
 are retried; data and finalization operations are never replayed by the test.
 The host gate checks mhVTL sysfs identity, library-to-drive mapping and the

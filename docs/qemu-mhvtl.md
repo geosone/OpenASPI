@@ -169,6 +169,10 @@ installed unmodified QEMU 10.2.3 and mhVTL's IBM ULT3580-TD8. Each run verified
 the failed WRITE, DATA PROTECT, full residual and preserved diagnostics across
 TUR and close/reopen. This probe does not read filemarks and needs no local
 QEMU filemark patch. Physical-drive write protection remains unqualified.
+After protection was manually removed by unload/edit/reload, the full
+writable roundtrip passed again in both close-rewind modes using the local
+QEMU filemark patch. These separate DOS boots do not qualify live media
+replacement or clearing saved errors within an existing session.
 
 mhVTL's `edit_tape -w on` changes cartridge MAM; the drive reads that flag on
 load. The cartridge therefore must be unloaded first and reloaded afterward.
