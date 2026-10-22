@@ -14,6 +14,11 @@ JWASM=${JWASM:-$ROOT/build/tools/jwasm/jwasm}
 : "${MHVTL_TAPE:?Set MHVTL_TAPE to an mhVTL tape generic device such as /dev/sg6}"
 write_test=${MHVTL_WRITE_TEST:-0}
 case "$write_test" in 0|1) ;; *) echo 'MHVTL_WRITE_TEST must be 0 or 1' >&2; exit 1 ;; esac
+protect_test=${MHVTL_WRITE_PROTECT_TEST:-0}
+case "$protect_test" in 0|1) ;; *) echo 'MHVTL_WRITE_PROTECT_TEST must be 0 or 1' >&2; exit 1 ;; esac
+if test "$protect_test" = 1 && test "$write_test" != 1; then
+    echo 'Write-protection acceptance requires the scratch identity gate' >&2; exit 1
+fi
 close_rewind=${MHVTL_CLOSE_REWIND:-sync}
 case "$close_rewind" in
     sync) close_label=synchronous ;;
@@ -26,6 +31,9 @@ verify_scratch() {
     : "${MHVTL_SCRATCH_BARCODE:?Explicitly select the virtual cartridge that may be overwritten}"
     bash "$ROOT/tests/mhvtl_write_guard.sh" "$MHVTL_TAPE" "$MHVTL_VERIFY_CHANGER" \
         "$MHVTL_VERIFY_DRIVE" "$MHVTL_SCRATCH_BARCODE"
+    if test "$protect_test" = 1; then
+        bash "$ROOT/tests/mhvtl_protect_guard.sh" "$MHVTL_TAPE"
+    fi
 }
 if test "$write_test" = 1; then verify_scratch; fi
 
@@ -140,6 +148,7 @@ mkdir -p "$OUT"
 driver_line='DEVICE=ASPITAP.SYS'
 if test "$write_test" = 1; then
     roundtrip_defines=()
+    if test "$protect_test" = 1; then roundtrip_defines+=(-DWRITE_PROTECT_TEST); fi
     if test "$close_rewind" = sync; then
         driver_line='DEVICE=ASPITAP.SYS -w'
     else
@@ -246,11 +255,15 @@ grep -q ' TAPE ' "$OUT/serial.log"
 grep -q 'ASPITAP RMT0 resident' "$OUT/serial.log"
 grep -q 'OpenASPI TAPECTL status passed' "$OUT/serial.log"
 if test "$write_test" = 1; then
-    grep -q 'OpenASPI tape roundtrip passed:' "$OUT/serial.log"
-    grep -q 'OpenASPI tape short-record verification passed:' "$OUT/serial.log"
-    grep -q 'OpenASPI tape oversized-record rejection passed' "$OUT/serial.log"
-    grep -q 'OpenASPI tape positioning verification passed' "$OUT/serial.log"
-    grep -q "OpenASPI tape close-rewind verification passed: $close_label" "$OUT/serial.log"
+    if test "$protect_test" = 1; then
+        grep -q 'OpenASPI tape write-protect verification passed' "$OUT/serial.log"
+    else
+        grep -q 'OpenASPI tape roundtrip passed:' "$OUT/serial.log"
+        grep -q 'OpenASPI tape short-record verification passed:' "$OUT/serial.log"
+        grep -q 'OpenASPI tape oversized-record rejection passed' "$OUT/serial.log"
+        grep -q 'OpenASPI tape positioning verification passed' "$OUT/serial.log"
+        grep -q "OpenASPI tape close-rewind verification passed: $close_label" "$OUT/serial.log"
+    fi
     grep -q 'OpenASPI roundtrip DOS exit passed' "$OUT/serial.log"
     ! grep -q 'FAILED' "$OUT/serial.log"
 fi

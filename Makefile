@@ -26,7 +26,7 @@ DISTDIR := $(BUILD)/dist
 CFLAGS  ?= -std=c90 -Wall -Wextra -Werror -pedantic -O2
 CPPFLAGS += -Iinclude
 
-.PHONY: all tools test check dos-c-check dos-smoke dos-tape-smoke dos-mhvtl-smoke dos-mhvtl-roundtrip gdi-install dist clean
+.PHONY: all tools test check dos-c-check dos-smoke dos-tape-smoke dos-mhvtl-smoke dos-mhvtl-roundtrip dos-mhvtl-write-protect gdi-install dist clean
 
 all: $(DOSDRV) $(DOSSCAN) $(DOSTAPECTL) $(DOSWINCHECK) $(WIN16CHECK) $(TESTBIN) $(ASPITESTBIN)
 
@@ -59,6 +59,9 @@ dos-mhvtl-smoke: all
 
 dos-mhvtl-roundtrip: all
 	MHVTL_WRITE_TEST=1 bash tests/dos_mhvtl.sh
+
+dos-mhvtl-write-protect: all
+	MHVTL_WRITE_TEST=1 MHVTL_WRITE_PROTECT_TEST=1 bash tests/dos_mhvtl.sh
 
 dist: all gdi-install LICENSE
 	rm -rf $(DISTDIR)

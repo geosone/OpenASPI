@@ -52,6 +52,9 @@ boundary tests and an optional sanitizer run.
 - `make dos-mhvtl-roundtrip` overwrites an explicitly selected virtual scratch
   cartridge and verifies write/read/append and filemarks. It adds mandatory
   library/drive/barcode checks; see the same integration guide before use.
+- `make dos-mhvtl-write-protect` runs the protected-media probe only after a
+  read-only WP-bit check. It needs manually prepared write-protected scratch
+  media; its current mock/device qualification status is in the integration guide.
 
 The boot tests require external tools and local test media described in
 [reference material](reference-material.md) and the test scripts. They are

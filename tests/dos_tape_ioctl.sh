@@ -22,8 +22,15 @@ run_fixture() {
     local post_tapectl='' expected_tapectl_exit=0
     local initial_tapectl='TAPECTL' post_result='saved' device_marker=''
     local autoexec_lines=()
+    local test_arguments=''
 
     case "$variant" in
+        write-protect-acceptance)
+            defines=(-DWRITE_PROTECT_TEST -DWRITE_PROTECT_ACCEPTANCE -DNO_RESIDUAL)
+            test_source="$ROOT/tests/tape_roundtrip.asm"
+            success_text='OpenASPI tape write-protect verification passed'
+            test_arguments=' /SCRATCH'
+            ;;
         async)
             defines=(-DASYNC_COMPLETION)
             # Delay tape completions by three hardware timer interrupts.
@@ -425,7 +432,7 @@ run_fixture() {
         'BOOTLOG > AUX'
         'ASPISCAN > AUX'
         "$initial_tapectl > AUX"
-        'TAPETEST > AUX'
+        "TAPETEST$test_arguments > AUX"
     )
     if test -n "$post_tapectl"; then
         autoexec_lines+=(
@@ -521,7 +528,7 @@ run_fixture() {
         esac
     fi
     case "$variant" in
-      legacy|fixed-legacy|fixed-multiblock*-legacy|fixed-residual-*-legacy|buffered-legacy|buffered-fixed-legacy|buffered-boundary*-legacy|buffered-refill-*-legacy|buffered-write-error-legacy|buffered-close-error-legacy|final-*-legacy|raw-write-error-legacy|read-stream-*-legacy|read-combined-*-legacy)
+      write-protect-acceptance|legacy|fixed-legacy|fixed-multiblock*-legacy|fixed-residual-*-legacy|buffered-legacy|buffered-fixed-legacy|buffered-boundary*-legacy|buffered-refill-*-legacy|buffered-write-error-legacy|buffered-close-error-legacy|final-*-legacy|raw-write-error-legacy|read-stream-*-legacy|read-combined-*-legacy)
         grep -q 'extensions=0000' "$run_dir/serial.log"
         ;;
       no-manager|no-adapters|bad-inquiry) ;;
@@ -570,6 +577,7 @@ else
 run_fixture residual
 run_fixture async
 run_fixture legacy
+run_fixture write-protect-acceptance
 run_fixture read-bad-residual
 run_fixture read-bad-residual-high
 run_fixture read-bad-residual-status16

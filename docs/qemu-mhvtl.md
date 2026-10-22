@@ -151,6 +151,43 @@ QEMU. The LTO profile has variable block limits, so this qualifies the
 variable-record scenarios, not physical hardware,
 fixed-block media, write protection, media replacement or production backups.
 
+## Write-protection probe
+
+The separate `make dos-mhvtl-write-protect` target requires the same
+`ASPI_MANAGER`, `MHVTL_TAPE`, `MHVTL_VERIFY_CHANGER`, `MHVTL_VERIFY_DRIVE` and
+`MHVTL_SCRATCH_BARCODE` variables. It adds a read-only `sg_modes` MODE SENSE(6)
+check before preparation and again before QEMU starts. The device WP bit must
+be set; otherwise no DOS WRITE is attempted. `sg_modes` and `od` are required.
+The DOS program tests one rejected WRITE and retention of its DATA PROTECT
+diagnostics across TUR and close/reopen, not the writable roundtrip.
+
+**Current status:** the DOS mock passed and the real unprotected-media gate
+correctly refused `OA2101L8`. The actual protected-media run has not passed yet.
+
+mhVTL's `edit_tape -w on` changes cartridge MAM; the drive reads that flag on
+load. The cartridge therefore must be unloaded first and reloaded afterward.
+`vtlcmd` does not provide a live write-protect toggle. Preparing the current
+root-owned scratch cartridge requires host-administrator action. Do not edit
+the MAM while the cartridge is loaded, use WORM as a substitute, or change
+media during a test.
+
+For the verified current setup, drive 0 contains `OA2101L8`, library ID is 10,
+and storage slot 21 is empty. After rechecking that identity and slot, run
+manually as root, with no guest accessing the drive:
+
+```sh
+bash /home/mario/mars/OpenAspi/tests/mhvtl_write_guard.sh /dev/sg6 /dev/sg13 0 OA2101L8 &&
+mtx -f /dev/sg13 unload 21 0 &&
+edit_tape -l 10 -m OA2101L8 -w on &&
+mtx -f /dev/sg13 load 21 0
+```
+
+Only that disposable cartridge is in scope. Node, library and slot numbers
+are examples of the checked local setup, not portable constants. The script
+does not move media or modify write protection automatically. After completing
+the protected test, use the same manual unload/edit/reload procedure with
+`-w off` to restore writable scratch media.
+
 ### QEMU 10.2.3 filemark workaround
 
 Unmodified QEMU 10.2.3 stalls at an empty filemark on the tested

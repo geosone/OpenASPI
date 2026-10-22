@@ -96,6 +96,15 @@ ready_unit_attention:
         jnz ready_again
         jmp failed
 ready:
+ifdef WRITE_PROTECT_TEST
+        call check_write_protection
+        call close_device
+        call restore_int24
+        mov dx, offset protect_success
+        call print_message
+        mov ax, 4C00h
+        int 21h
+endif
         mov byte ptr [stage], 'R'
         mov word ptr [control], 5
         call run_mtop
@@ -169,6 +178,57 @@ verify_files proc near
         call read_filemark            ; two terminating marks from final close
         ret
 verify_files endp
+
+ifdef WRITE_PROTECT_TEST
+check_write_protection proc near
+        mov byte ptr [stage], 'W'
+        call prepare_read_buffer        ; known payload; host requires WP first
+        mov bx, word ptr [handle]
+        mov cx, 512
+        mov dx, offset buffer
+        mov ah, 40h
+        int 21h
+        jc protected_write_failed
+        jmp failed                      ; a successful write is never acceptable
+protected_write_failed:
+        call check_protected_status
+        mov word ptr [control], 7        ; successful TUR cannot erase saved error
+        call run_mtop
+        require_ok
+        call check_protected_status
+        call close_device
+        call open_device
+        mov byte ptr [stage], 'W'
+        call check_protected_status
+        call run_mtop                   ; also catches erroneous close commands
+        require_ok
+        call check_protected_status
+        ret
+check_write_protection endp
+
+check_protected_status proc near
+        call get_status
+        require_ok
+        cmp byte ptr [status_extended+7], 7
+        require_equal
+        cmp byte ptr [status+8], 2
+        require_equal
+        cmp byte ptr [status+9], 7       ; DATA PROTECT
+        require_equal
+        cmp byte ptr [status+10], 0Ah    ; original WRITE, not a later TUR/close
+        require_equal
+        cmp word ptr [status+12], 512
+        require_equal
+        test word ptr [status_extended+4], 0200h
+        jnz protected_error_saved
+        jmp failed
+protected_error_saved:
+        test word ptr [status_extended+4], 0008h ; failed write is not WRITTEN
+        require_equal
+        ret
+check_protected_status endp
+protect_success db 'OpenASPI tape write-protect verification passed', 13, 10, '$'
+endif
 
 check_oversized_record proc near
         mov byte ptr [stage], 'N'

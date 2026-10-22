@@ -265,6 +265,26 @@ clear it after the following successful read at BOT. Both modes have passed
 with Tekram/mhVTL. The fast virtual drive does not qualify prolonged physical
 rewind timing; the mock fixtures separately cover BUSY/progress and failures.
 
+### Write-protection acceptance (prepared; device run pending)
+
+`make dos-mhvtl-write-protect` uses the same explicit scratch/library identity
+variables, but runs a separate probe. Before preparation and immediately
+before QEMU launch, a read-only MODE SENSE(6) must confirm the device's WP bit.
+Missing, malformed or unprotected responses reject the run before DOS starts.
+The ordinary writable roundtrip is never run in this mode.
+
+The DOS probe submits exactly one 512-byte WRITE and requires failure with
+DATA PROTECT, CHECK CONDITION, full residual, a saved-write-error flag and no
+WRITTEN state. The original WRITE diagnostics must survive successful TUR,
+close/reopen and another TUR. No failed WRITE is replayed. A dedicated
+`write-protect-acceptance` mock fixture validates the CDB/payload and rejects
+unexpected media commands. It uses a legacy manager without residual support.
+
+The mock passed and the host gate refused the currently unprotected `OA2101L8`.
+The actual mhVTL protected-media run remains pending manual host preparation;
+these checks are not yet device-level write-protection qualification. See
+[the host procedure](../../docs/qemu-mhvtl.md#write-protection-probe).
+
 Only initial UNIT ATTENTION readiness checks
 are retried; data and finalization operations are never replayed by the test.
 The host gate checks mhVTL sysfs identity, library-to-drive mapping and the

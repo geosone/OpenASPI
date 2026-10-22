@@ -180,6 +180,10 @@ execute_scsi:
         call    execute_read_block_limits
         jmp     aspi_done
 execute_data:
+ifdef WRITE_PROTECT_ACCEPTANCE
+        call protect_acceptance_command
+        jmp aspi_done
+endif
 ifdef BUFFERED_TEST
         ; ASPISCAN probes INQUIRY before the ordered media scenario starts.
         ; It is deliberately unsupported, not a protocol-sequence violation.
@@ -476,6 +480,73 @@ endif
         pop     bp
         retf
 aspi_entry endp
+
+ifdef WRITE_PROTECT_ACCEPTANCE
+; TUR, one protected WRITE, diagnostic TUR, reopen diagnostic TUR. Any
+; unwanted command poisons later TURs, including replay/filemarks at close.
+protect_acceptance_command proc near
+        cmp byte ptr es:[bx+SRB_CDB], 12h
+        jne protect_fixture_check
+        jmp protect_fixture_inquiry
+protect_fixture_check:
+        cmp byte ptr cs:[protect_fixture_bad], 0
+        jne protect_fixture_early_fail
+        cmp byte ptr es:[bx+SRB_CDBLen], 6
+        jne protect_fixture_early_fail
+        cmp byte ptr es:[bx+SRB_SenseLen], 32
+        jne protect_fixture_early_fail
+        cmp byte ptr cs:[protect_fixture_index], 1
+        je protect_fixture_write
+        cmp byte ptr cs:[protect_fixture_index], 4
+        jae protect_fixture_fail
+        cmp byte ptr es:[bx+SRB_CDB], 0
+        jne protect_fixture_fail
+        cmp byte ptr es:[bx+SRB_Flags], SRB_DIR_NONE
+        jne protect_fixture_fail
+        inc byte ptr cs:[protect_fixture_index]
+        mov byte ptr es:[bx+SRB_Status], SS_COMP
+        ret
+protect_fixture_early_fail:
+        jmp protect_fixture_fail
+protect_fixture_write:
+        cmp byte ptr es:[bx+SRB_CDB], 0Ah
+        jne protect_fixture_fail
+        cmp byte ptr es:[bx+SRB_Flags], SRB_DIR_OUT
+        jne protect_fixture_fail
+        cmp word ptr es:[bx+SRB_BufLen], 512
+        jne protect_fixture_fail
+        cmp word ptr es:[bx+SRB_BufLen+2], 0
+        jne protect_fixture_fail
+        cmp word ptr es:[bx+SRB_CDB+1], 0
+        jne protect_fixture_fail
+        cmp word ptr es:[bx+SRB_CDB+3], 2
+        jne protect_fixture_fail
+        push es
+        les di, dword ptr es:[bx+SRB_BufPointer]
+        mov cx, 512
+        mov al, 0A5h
+        cld
+        repe scasb
+        pop es
+        jne protect_fixture_fail
+        inc byte ptr cs:[protect_fixture_index]
+        mov byte ptr es:[bx+SRB_Status], SS_ERR
+        mov byte ptr es:[bx+SRB_TargStat], 2
+        mov byte ptr es:[bx+TAPE_SENSE], 70h
+        mov byte ptr es:[bx+TAPE_SENSE+2], 7
+        ret
+protect_fixture_fail:
+        mov byte ptr cs:[protect_fixture_bad], 1
+protect_fixture_inquiry:
+        mov byte ptr es:[bx+SRB_Status], SS_ERR
+        mov byte ptr es:[bx+SRB_TargStat], 2
+        mov byte ptr es:[bx+TAPE_SENSE], 70h
+        mov byte ptr es:[bx+TAPE_SENSE+2], 5
+        ret
+protect_acceptance_command endp
+protect_fixture_index db 0
+protect_fixture_bad db 0
+endif
 
 ifdef ASYNC_COMPLETION
 ; Complete only from timer IRQs, well after 65535 CPU polls.
