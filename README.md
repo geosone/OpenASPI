@@ -7,10 +7,15 @@ backup application.
 
 ## Status
 
-The current focus is `ASPITAP.SYS`, an ASPITAPE-compatible tape driver.
-`ASPIDSK.SYS` (disks), `ASPIFDD.SYS` (removable media) and `ASPICDA.SYS`
-(CD/DVD) are planned components. See the [driver suite](docs/driver-suite.md)
-for their responsibilities.
+`ASPITAP.SYS` is an ASPITAPE-compatible tape driver.  `ASPICDA.SYS`
+(CD/DVD), `ASPIDSK.SYS` (disks) and `ASPIFDD.SYS` (LS-120, ZIP and similar)
+have a first version: CD/DVD reads (cooked and raw) for MSCDEX or SHSUCDX,
+FAT12/FAT16 volumes read and written.  See the
+[driver suite](docs/driver-suite.md) for their responsibilities and
+differences.
+
+`deps/shsucd` is SHSUCDX with digital CD audio (`/A:1`) for VSBHDA; the
+build writes `build/dos/SHSUCDX.COM`.
 
 This is development software. The tape write path is emulator-tested but is
 not yet qualified for production backups on real media.

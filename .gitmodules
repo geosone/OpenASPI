@@ -7,3 +7,6 @@
 [submodule "deps/gdi"]
 	path = deps/gdi
 	url = https://github.com/geosone/gdi.git
+[submodule "deps/shsucd"]
+	path = deps/shsucd
+	url = https://github.com/geosone/shsucd.git

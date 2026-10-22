@@ -1,8 +1,27 @@
 # Driver suite
 
-All four drivers consume the same ASPI-manager layer and SCSI helpers.  Device
-claiming is centralized so two OpenASPI drivers cannot attach to the same
-host/target/LUN.
+All four drivers consume the same ASPI-manager layer and SCSI helpers
+(`common/aspi/aspi_client.inc`, `aspi_init.inc`) and the DOS request
+definitions (`common/dos/devreq.inc`).  Two OpenASPI drivers never attach to
+the same host/target/LUN: each takes a device class that the others skip.
+
+## DSK, FDD, CDA: the differences
+
+| | ASPIDSK | ASPIFDD | ASPICDA |
+|---|---|---|---|
+| devices | type 00h: disks, SSDs, USB sticks, card readers | type 00h with the removable bit and a known model: LS-120/240, ZIP, Clik!, Jaz | type 05h: CD/DVD |
+| DOS driver kind | block device | block device | character device with the CD-ROM extension |
+| drive letters | from DOS at boot, one per volume | from DOS at boot, one per drive, also without a disk | from MSCDEX/SHSUCDX (`/D:name`) |
+| file system | FAT, read by DOS | FAT, read by DOS | ISO 9660/High Sierra, read by the redirector |
+| sector | 512 bytes | 512 bytes | 2048 cooked, 2352 raw |
+| medium | partitioned, or a whole-disk volume | superfloppy (LS-120) or partitioned (ZIP) | a disc with data and audio tracks |
+| media change | sticks and card readers: UNIT ATTENTION | always "don't know": DOS reads the disk again | IOCTL "media changed" for the redirector |
+| special | many partitions, FAT32, large disks | eject/lock, format (FORMAT UNIT), media types | audio play, TOC, raw/digital audio, tray |
+| shared core | `common/dos/blkdrv.inc` | `common/dos/blkdrv.inc` (`FDD_DRIVER`) | own |
+
+ASPIDSK and ASPIFDD share one block driver core; ASPIFDD only changes the
+device selection and the removable-media policy.  The selection is the same
+table in both, so a device belongs to exactly one of them.
 
 ## ASPIDSK.SYS
 
@@ -40,6 +59,10 @@ media change, TOC access, tray control, and the configured `/D:` device name.
 `ASPITAP.SYS` owns sequential-access devices (peripheral type `01h`).  It is a
 DOS character driver compatible with the documented ASPITAPE interface and
 provides rewind/no-rewind names.  See `aspitape-compat.md`.
+
+Compatibility notes on the historical drivers (command coverage, options,
+what is still missing): [ASPICD.SYS](aspicd-compat.md),
+[ASPIDISK.SYS, MKELS120.SYS and Iomega GUEST.EXE](aspidisk-compat.md).
 
 ## Development order
 

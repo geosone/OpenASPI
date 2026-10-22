@@ -42,6 +42,11 @@ boundary tests and an optional sanitizer run.
 - `make dos-smoke` boots the local SvarDOS fixture in QEMU, loads the sibling
   AHCIASPI manager, verifies clean rejection when no tape is present and runs
   the scanner and installer probes against an emulated ATAPI CD-ROM.
+- `make dos-cda-smoke` boots SvarDOS with AHCIASPI, ASPICDA and SHSUCDX
+  (from `deps/shsucd`) and reads files from a CD on AHCI and on IDE.
+- `make dos-disk-smoke` boots SvarDOS with EUSBASPI, ASPIDSK and ASPIFDD and
+  three USB devices (a stick, a ZIP, an LS-120 superfloppy) and reads and
+  writes each of them; the images are checked afterwards (`fsck.fat`).
 - `make dos-tape-smoke` boots a test-only ASPI manager exposing an emulated
   tape. Driver scenarios and focused runs are documented in
   [ASPITAP testing](../drivers/aspitap/TESTING.md).
