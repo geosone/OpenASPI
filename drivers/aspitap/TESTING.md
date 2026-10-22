@@ -236,6 +236,19 @@ the requested buffer area may change. The next explicit read must return
 the following 63-byte record, proving the oversized record was consumed and
 neither replayed nor exposed as successful partial data.
 
+The positioning phase checks the virtual drive's position through payloads, not just
+successful command returns. `MTFSF 1` from BOT must reach the second file;
+`MTBSR 1` must permit rereading its first record. `MTFSR 1` skips the final
+record of that file and the next read must be its terminating filemark.
+`MTBSF 2` then stops on the BOT side of the inter-file mark: the next read
+must be EOF and the following read must match the second file's first record.
+
+An `MTFSR 6` from BOT must fail at the first filemark, with driver error `31`
+and CHECK CONDITION/NO SENSE, rather than silently counting records across
+files. It must not queue a synthetic EOF; the next explicit read must return
+the first record of file two. A final checked rewind leaves successful runs
+at BOT. These positioning checks passed through the Tekram/mhVTL path.
+
 Only initial UNIT ATTENTION readiness checks
 are retried; data and finalization operations are never replayed by the test.
 The host gate checks mhVTL sysfs identity, library-to-drive mapping and the

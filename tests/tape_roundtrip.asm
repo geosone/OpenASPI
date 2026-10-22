@@ -145,6 +145,7 @@ ready:
         mov dx, offset short_success
         call print_message
         call check_oversized_record
+        call check_positioning
         call close_device
         call restore_int24
         mov dx, offset success_message
@@ -214,6 +215,89 @@ oversized_record_failed:
         call print_message
         ret
 check_oversized_record endp
+
+check_positioning proc near
+        mov byte ptr [stage], 'P'
+        mov dx, offset position_message
+        call print_message
+        mov word ptr [read_size], 4096
+        mov ax, 5                     ; REW -> BOT
+        xor dx, dx
+        call move_tape
+        mov ax, 1                     ; FSF 1 -> start of second file
+        mov dx, 1
+        call move_tape
+        mov ax, 4
+        call read_one_record
+        mov ax, 4                     ; BSR 1 -> before the same record
+        mov dx, 1
+        call move_tape
+        mov ax, 4
+        call read_one_record
+        mov ax, 3                     ; FSR 1 skips second file's final record
+        mov dx, 1
+        call move_tape
+        call read_filemark            ; consume first terminating filemark
+        mov ax, 2                     ; BSF 2 -> BOT side of inter-file mark
+        mov dx, 2
+        call move_tape
+        call read_filemark            ; reverse file spacing stops before it
+        mov ax, 4
+        call read_one_record
+
+        ; Block spacing must stop at a filemark, not silently skip into the
+        ; next file. After the reported error, the next read is in file two.
+        mov byte ptr [stage], 'B'
+        mov ax, 5
+        xor dx, dx
+        call move_tape
+        mov word ptr [control], 3
+        mov word ptr [control+2], 6    ; first file contains only four records
+        call run_mtop
+        jc spacing_boundary_failed
+        jmp failed
+spacing_boundary_failed:
+        call get_status
+        require_ok
+        cmp byte ptr [status_extended+7], 31
+        require_equal
+        cmp byte ptr [status+8], 2
+        require_equal
+        cmp byte ptr [status+9], 0
+        require_equal
+        test word ptr [status_extended+4], 0040h
+        require_equal
+        mov ax, 4
+        call read_one_record
+        mov ax, 5                     ; leave successful tests at known BOT
+        xor dx, dx
+        call move_tape
+        mov dx, offset newline
+        call print_message
+        mov dx, offset position_success
+        call print_message
+        ret
+check_positioning endp
+
+; AX = mtop operation, DX = unsigned 16-bit magnitude (encoded by driver).
+move_tape proc near
+        mov word ptr [control], ax
+        mov word ptr [control+2], dx
+        mov word ptr [control+4], 0
+        call run_mtop
+        require_ok
+        call check_status
+        ret
+move_tape endp
+
+; AX = expected record index in the existing deterministic data pattern.
+read_one_record proc near
+        mov word ptr [record_index], ax
+        inc ax
+        mov word ptr [record_end], ax
+        call read_records
+        ret
+read_one_record endp
 
 write_records proc near
 write_next:
@@ -532,6 +616,8 @@ short_message db 13, 10, 'Repeating reads with guarded 4096-byte buffers', 13, 1
 short_success db 'OpenASPI tape short-record verification passed: 6 records, guarded buffers', 13, 10, '$'
 negative_message db 'Rejecting a 4096-byte record in a guarded 256-byte buffer', 13, 10, '$'
 negative_success db 'OpenASPI tape oversized-record rejection passed', 13, 10, '$'
+position_message db 'Checking forward/backward record and filemark positioning', 13, 10, '$'
+position_success db 'OpenASPI tape positioning verification passed', 13, 10, '$'
 success_message db 'OpenASPI tape roundtrip passed: 8254 bytes, 6 records, 2 files', 13, 10, '$'
 failure_message db 'OpenASPI tape roundtrip FAILED at stage $'
 diagnostic_message db 'Hex: driver/parameter/check SCSI/sense/opcode/residual-low/DOS-AX: $'
