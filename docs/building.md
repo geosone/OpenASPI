@@ -50,7 +50,8 @@ boundary tests and an optional sanitizer run.
   manager and explicitly selected `/dev/sgN` nodes. Follow the separate
   [mhVTL setup and safety instructions](qemu-mhvtl.md).
 - `make dos-mhvtl-roundtrip` overwrites an explicitly selected virtual scratch
-  cartridge and verifies write/read/append and filemarks. It adds mandatory
+  cartridge and verifies raw/buffered write/read, append, padding and filemarks.
+  It adds mandatory
   library/drive/barcode checks; see the same integration guide before use.
 - `make dos-mhvtl-write-protect` runs the protected-media probe only after a
   read-only WP-bit check. It needs manually prepared write-protected scratch

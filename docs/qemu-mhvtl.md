@@ -133,16 +133,26 @@ exercise default IMMED close. Pending rewind must survive reopen/status queries 
 the successful read at BOT. `MHVTL_CLOSE_REWIND=sync` is the default; other
 values are rejected. These mode choices affect only the write-test roundtrip.
 
-A final explicit-filemark phase rewrites the scratch tape from BOT: record
+An explicit-filemark phase rewrites the scratch tape from BOT: record
 512, `MTWEOF 0`, record 1024, `MTWEOF 2`, record 4096, then final close.
 Reading must find no mark for count zero, exactly two marks for count two,
 and the two normal close-generated marks after the last record. It checks
 every payload byte, residual and buffer guard, then rewinds to BOT. This
 separate 5,632-byte layout replaces the earlier six-record tape contents.
 
+The writable test also enables `-b` and then runs a separate buffered-alias
+phase. It writes 2,500 bytes through `NMT0`, verifies three physical 1024-byte
+records and 572 zero padding bytes through raw `NRMT0`, then reads through
+`NMT0` using different request sizes. Cached data and deferred EOF must survive
+`MTNOP`. An `MT0` close with unread cache must rewind before a raw reopen can
+read the first record. This final phase leaves a three-record 3072-byte layout
+at BOT, replacing the explicit-filemark layout. Detailed byte counts and
+status expectations are in [ASPITAP testing](../drivers/aspitap/TESTING.md).
+
 Success requires the roundtrip, short-record, oversized-record rejection,
-positioning, mode-specific close-rewind and explicit-filemark markers plus
-the checked exit status; any `FAILED` marker rejects the run. Logs and the temporary
+positioning, mode-specific close-rewind, explicit-filemark and buffered-roundtrip
+markers plus the checked exit status; any `FAILED` marker rejects the run.
+Logs and the temporary
 boot floppy are under `build/dos-mhvtl/`, which is recreated each run.
 Do not run multiple integration scripts against this output directory at once.
 
@@ -153,6 +163,9 @@ The expanded short-record, oversized-record rejection, positioning and
 synchronous/immediate close-rewind and explicit-filemark checks passed with that legacy manager,
 which advertises no ASPI residual extension. This exercises the driver's
 sense-information fallback through a real DOS manager.
+The buffered-alias phase also passed in both close-rewind modes on 2026-10-22,
+including independently checked physical records, padding, cached reads and
+`MT0` rewind after a partial read.
 The non-writing `/READY` smoke also passed with the installed, unmodified
 QEMU. The LTO profile has variable block limits, so this qualifies the
 variable-record scenarios, not physical hardware,

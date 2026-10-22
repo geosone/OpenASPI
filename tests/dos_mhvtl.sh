@@ -154,6 +154,10 @@ if test "$write_test" = 1; then
     else
         roundtrip_defines+=(-DIMMEDIATE_CLOSE)
     fi
+    if test "$protect_test" = 0; then
+        driver_line+=' -b'
+        roundtrip_defines+=(-DBUFFERED_ROUNDTRIP)
+    fi
     "$JWASM" -q -bin -0 -W4 -WX "${roundtrip_defines[@]}" \
         -Fo="$OUT/TAPERW.COM" "$ROOT/tests/tape_roundtrip.asm"
 fi
@@ -264,6 +268,7 @@ if test "$write_test" = 1; then
         grep -q 'OpenASPI tape positioning verification passed' "$OUT/serial.log"
         grep -q "OpenASPI tape close-rewind verification passed: $close_label" "$OUT/serial.log"
         grep -q 'OpenASPI tape explicit-filemark verification passed' "$OUT/serial.log"
+        grep -q 'OpenASPI tape buffered-roundtrip verification passed' "$OUT/serial.log"
     fi
     grep -q 'OpenASPI roundtrip DOS exit passed' "$OUT/serial.log"
     ! grep -q 'FAILED' "$OUT/serial.log"

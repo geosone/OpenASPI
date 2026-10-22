@@ -272,7 +272,7 @@ rewind timing; the mock fixtures separately cover BUSY/progress and failures.
 
 ### Explicit filemarks and empty files
 
-A final, separate phase overwrites the same scratch tape from BOT with a
+A separate phase overwrites the same scratch tape from BOT with a
 512-byte record, `MTWEOF 0`, a 1024-byte record, `MTWEOF 2`, and a 4096-byte
 record followed by final close. Reads must return the first two records
 without an intervening EOF, exactly two explicit filemarks (an empty file),
@@ -284,6 +284,35 @@ the final tape contents. The host requires the explicit-filemark success
 marker as well as the earlier phase markers and checked DOS exit.
 This phase passed with Tekram 1.60 and mhVTL in both close-rewind modes,
 using the local QEMU filemark workaround, on 2026-10-22.
+
+### Buffered-alias device roundtrip
+
+The writable integration run now loads `-b` and includes a final independent
+phase through `NMT0` and `MT0`. It rewrites the approved scratch tape at BOT
+with 2,500 patterned bytes submitted as 300-, 900- and 1300-byte writes.
+Status and `MTNOP` between writes must retain the partial output cache.
+Final close must produce three 1024-byte physical records: the original
+2,500 bytes followed by exactly 572 zero padding bytes, then two filemarks.
+Raw `NRMT0` reads independently verify those physical boundaries and bytes.
+
+After rewind, `NMT0` reads of 300, 900 and 1900 bytes must return 300, 900 and
+1872 bytes. This checks cached splits, combined records, padding, and short
+completion at the first filemark. `MTNOP` between reads must preserve cache
+and deferred EOF. The next read returns the deferred zero-byte EOF; the next
+one reads the second physical mark. All destination tails/guards and both
+status ABIs are checked. Status residuals refer to the last physical command,
+not the aggregate buffered API request: the synthetic EOF retains TUR's zero
+residual; reading the next physical mark reports the 1024-byte refill residual.
+
+Finally, `MT0` reads 300 bytes and closes with unread cache remaining. Raw
+reopen must read the first physical record at BOT, not cached or later data.
+The phase checks synchronous/default IMMED close state and ends at BOT with
+a raw handle restored. Its three-record 3072-byte layout is the final tape
+contents, replacing the preceding explicit-filemark phase. The host requires
+the buffered-roundtrip marker; the protected-media probe does not enable `-b`
+or run this phase. Physical-drive buffered qualification remains outstanding.
+Both close-rewind modes passed through Tekram 1.60 and mhVTL with the local
+QEMU filemark workaround on 2026-10-22; no driver-code change was required.
 
 ### Write-protection acceptance
 

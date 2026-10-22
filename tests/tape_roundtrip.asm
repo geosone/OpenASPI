@@ -157,6 +157,9 @@ endif
         call check_positioning
         call check_close_rewind
         call check_explicit_filemarks
+ifdef BUFFERED_ROUNDTRIP
+        call check_buffered_roundtrip
+endif
         call close_device
         call restore_int24
         mov dx, offset success_message
@@ -633,7 +636,8 @@ read_filemark proc near
         xor cx, cx
         call check_read_tail
         call check_status
-        cmp word ptr [status+12], 4096
+        mov ax, word ptr [filemark_residual]
+        cmp word ptr [status+12], ax
         require_equal
         ret
 read_filemark endp
@@ -809,6 +813,9 @@ hex_digit_ready:
         ret
 print_hex_byte endp
 
+ifdef BUFFERED_ROUNDTRIP
+        include tests/tape_buffered_roundtrip.inc
+endif
 scratch_argument db '/SCRATCH'
 tape_name db 'NRMT0', 0
 rewind_name db 'RMT0', 0
@@ -824,6 +831,7 @@ critical_count db 0
 record_index dw 0
 record_end dw 0
 read_size dw 0
+filemark_residual dw 4096
 record_lengths dw 512, 1024, 4096, 63, 2048, 511
 control dw 7
         dd 0
