@@ -79,6 +79,29 @@ The interface of ASPIDSK and ASPIFDD:
 Reached through a generic IOCTL or a far entry point that EXFAT.SYS finds
 from the device header.
 
+### Tools: EXFMT and EXCHK
+
+DOS FORMAT and CHKDSK know FAT only, and they need a block device, which an
+exFAT drive of EXFAT.SYS is not.  So exFAT gets its own two tools.  They
+work like EXFAT.SYS without ASPI: they use the sector interface of
+EXFAT.SYS, so BIOS disks and ASPIDSK/ASPIFDD media are handled the same way.
+
+- **EXFMT**: creates exFAT (boot region with its backup and checksum,
+  allocation bitmap, upcase table, root directory with volume label),
+  cluster size by medium size as Windows does.  The target is an exFAT
+  drive letter, a FAT drive (reformatted in its partition, as ASPIFMT does),
+  or a blank medium: BIOS disk number (`/D:80`) or ASPIDSK/ASPIFDD letter.
+  Like ASPIFMT: without `/YES` only the layout is shown; read check of the
+  data area, bad clusters marked in the FAT and allocation bitmap.
+- **EXCHK**: checks an exFAT volume: boot sector checksums, entry set
+  checksums, allocation bitmap against the cluster chains, lost and cross
+  linked clusters, the VolumeDirty flag.  First version only reports;
+  `/F` repairs later, with the writing of EXFAT.SYS.
+- While a tool writes, EXFAT.SYS locks the drive (no open files, caches
+  flushed) and reads the volume again afterwards.
+- ASPIFMT stays the FAT formatter for ASPIFDD; it can get `/FS:EXFAT`
+  calling the same format code.
+
 ### The exFAT part
 
 The same for both back ends; the back ends only give "read sector n of
@@ -95,7 +118,7 @@ volume v" and "has the medium changed".
 - Writing as a second step: allocation bitmap, FAT chains and contiguous
   (NoFatChain) files, entry set checksums, directory growth.
 - Tools that read sectors themselves (CHKDSK, SCANDISK, DEFRAG) do not work
-  on the drive, as on CD-ROM drives.
+  on the drive, as on CD-ROM drives; EXFMT and EXCHK take their place.
 - No exFAT in a DOS kernel: EXFAT.SYS works with every DOS that has a
   redirector interface (MS-DOS 5 and later, FreeDOS, EDR-DOS).
 - Clean-room implementation after the published Microsoft exFAT
