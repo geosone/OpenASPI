@@ -126,8 +126,14 @@ volume v" and "has the medium changed".
   before a release.
 
 Release: EXFAT.SYS, EXFMT and EXCHK are part of the OpenASPI release, and
-the release files also get a separate `exfat-<version>.zip` with only these
-three (and their documentation), for systems without ASPI.
+the release files also get a separate exFAT package for systems without
+ASPI.  Like every package it comes with the GeosOne DOS Installer: an
+`exfat-<version>.zip` with INSTALL.EXE and its own INSTALL.INI (Id=EXFAT,
+default directory `%BOOT%\EXFAT`, the DEVICE line in CONFIG.SYS with `/L:x`
+and `/X` as options), plus the disk images as for OpenASPI.  In the
+OpenASPI installer exFAT is one more option (EXFAT.SYS after ASPIDSK and
+ASPIFDD in CONFIG.SYS); both installers install the same files, so the
+exFAT package can later be replaced by OpenASPI and the other way round.
 
 Tests: QEMU with an exFAT disk image made by `mkfs.exfat` (MBR, GPT and
 superfloppy) as IDE disk and USB stick through the BIOS, without ASPI; then
@@ -172,3 +178,6 @@ Tests: QEMU disk images made by `mkfs.fat` with fragmented files (written
 and deleted in turns), checked by `fsck.fat` on the host after DEFRAG and
 after ASPICHK `/F`; power loss in the middle of a DEFRAG (QEMU stopped) and
 ASPICHK afterwards.
+
+Release: both in the OpenASPI release and its installer (options ASPICHK
+and DEFRAG, no CONFIG.SYS line).
