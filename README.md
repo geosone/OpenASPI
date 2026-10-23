@@ -55,6 +55,7 @@ layout. See [installation media](installer/README.md).
 - [Reference material](docs/reference-material.md) and
   [mhVTL integration](docs/qemu-mhvtl.md).
 - [Remaining driver work](docs/driver-status.md).
+- [Future plans](docs/future-plans.md): exFAT through EXFAT.SYS with ASPIDSK/ASPIFDD.
 
 OpenTape is a separate sibling project for backup, restore and the user
 interface. OpenASPI owns the drivers and low-level ASPI/SCSI support;
