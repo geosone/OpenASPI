@@ -6,6 +6,8 @@
 # the files written by the Linux exFAT driver.
 #   SUPER=1: the exFAT disk without a partition table (superfloppy)
 #   SVARDOS=1: SvarDOS (EDR-DOS kernel) instead of MS-DOS 7.1
+#   HIGH=DIR: MS-DOS with HIMEM.SYS, EMM386.EXE and MEM.EXE from DIR and
+#             DEVICEHIGH=EXFAT.SYS; MEM /C must show it in upper memory
 
 set -euo pipefail
 
@@ -15,6 +17,7 @@ AHCIASPI_DIR=${AHCIASPI_DIR:-$ROOT/../ahciaspi}
 MSDOS_IMG=${MSDOS_IMG:-$ROOT/../msdosinst/out/DISK1.IMG}
 SUPER=${SUPER:-0}
 SVARDOS=${SVARDOS:-0}
+HIGH=${HIGH:-}
 SVARDOS_ZIP=${SVARDOS_ZIP:-$HOME/Iso/Dos/svardos-20250427-floppy-1.44M.zip}
 
 make -C "$ROOT" build/dos/EXFAT.SYS >/dev/null
@@ -34,7 +37,13 @@ while IFS= read -r file; do
         *) mdel -i "$OUT/boot.img" "$file" ;;
     esac
 done < <(mdir -b -i "$OUT/boot.img" ::/)
-printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' 'DEVICE=A:\EXFAT.SYS' > "$OUT/CONFIG.SYS"
+if test -n "$HIGH"; then
+    printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' 'DEVICE=A:\HIMEM.SYS' \
+        'DEVICE=A:\EMM386.EXE NOEMS' 'DOS=HIGH,UMB' 'DEVICEHIGH=A:\EXFAT.SYS' > "$OUT/CONFIG.SYS"
+    mcopy -o -i "$OUT/boot.img" "$HIGH/HIMEM.SYS" "$HIGH/EMM386.EXE" "$HIGH/MEM.EXE" ::/
+else
+    printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' 'DEVICE=A:\EXFAT.SYS' > "$OUT/CONFIG.SYS"
+fi
 # every command with "> AUX": SvarCOM has no CTTY
 printf '%s > AUX\r\n' \
     'ECHO === DIR' 'DIR D:' \
@@ -45,6 +54,7 @@ printf '%s > AUX\r\n' \
     'ECHO === WRITE' 'COPY A:\QEXIT.COM D:\NEU.COM' 'MD D:\NEU' 'DEL D:\README.TXT' \
     'ECHO === COPY' 'MD C:\OUT' 'COPY D:\*.* C:\OUT' 'COPY D:\SUB\*.* C:\OUT' \
     'ECHO === END' > "$OUT/AUTOEXEC.BAT"
+if test -n "$HIGH"; then printf '%s > AUX\r\n' 'MEM /C' >> "$OUT/AUTOEXEC.BAT"; fi
 printf '%s\r\n' \
     'QEXIT' >> "$OUT/AUTOEXEC.BAT"
 mcopy -o -i "$OUT/boot.img" "$OUT/CONFIG.SYS" "$OUT/AUTOEXEC.BAT" \
@@ -84,6 +94,10 @@ check 'EINLA~11'
 check 'UNTERO~1'
 check 'Datei 11'
 check 'tief'
+if test -n "$HIGH"; then
+    grep -qE '^  EXFAT +[0-9.,]+ +\([0-9]+K\) +0 +\(0K\)' "$OUT/serial.txt" ||
+        { echo "EXFAT.SYS not in upper memory"; fail=1; }
+fi
 mkdir -p "$OUT/copies"
 mcopy -n -i "$OUT/fat.img@@32256" '::/OUT/*' "$OUT/copies/" 2>/dev/null || fail=1
 F=$OUT/x/files

@@ -31,5 +31,5 @@ $(BUILD)/dos/codepage.obj: common/exfat/codepage.c $(EXFATHDR)
 # raw binary: the device header of exfatsys.asm at offset 0
 $(DOSEXFAT): $(EXFATOBJ) drivers/exfat/exfat.mk
 	$(WLINK) format raw bin option offset=0,quiet,nodefaultlibs,map=$(BUILD)/dos/EXFAT.map disable 1014,1023 \
-		order clname CODE segment _HDR segment _TEXT clname DATA clname BSS clname STK \
+		order clname CODE segment _HDR segment _TEXT clname DATA clname BSS clname STK clname INIT \
 		$(foreach o,$(EXFATOBJ),file $(o)) library $(WATCOM)/lib286/dos/clibs.lib name $@

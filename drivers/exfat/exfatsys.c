@@ -10,7 +10,7 @@
 #include "openaspi/exfat.h"
 
 #define VERSION "0.1"
-#define MAXVOL 4
+#define MAXVOL 8
 #define STACKSIZE 1536                  /* as in exfatsys.asm */
 
 #pragma pack(1)
@@ -38,6 +38,8 @@ static oa_u8 first_letter;
 static const struct oa_exfat_cp *cp;
 static struct oa_exfat_ent ent;
 static oa_u8 bounce[512];
+static oa_u8 secbuf[OA_EXFAT_MAXSECT];     /* the sector cache of all volumes */
+static struct drive *buf_owner;
 
 /* walk cache of open files: the cluster last read of a FAT chain */
 static struct { oa_u32 first, idx, clu; } walks[4];
@@ -104,68 +106,16 @@ static int bios_read(void *dev, oa_u32 lba, void __far *buf)
 static oa_u16 rd16(const oa_u8 *p) { return (oa_u16)(p[0] | p[1] << 8); }
 static oa_u32 rd32(const oa_u8 *p) { return rd16(p) | (oa_u32)rd16(p+2) << 16; }
 
-static struct drive *probe_disk;
-static oa_u8 sec[512];
-
-static int read_sec(oa_u32 lba) { return bios_read(probe_disk, lba, sec); }
-
-static void add_volume(oa_u32 start)
-{
-    struct drive *d = &drv[ndrv];
-    if (ndrv >= MAXVOL || read_sec(start) || !oa_exfat_probe(sec)) return;
-    *d = *probe_disk;
-    if (oa_exfat_mount(&d->v, bios_read, d, start, cp)) return;
-    d->letter = 0xFF; d->free_clusters = 0xFFFFFFFFUL;
-    ++ndrv;
-}
-
-static void scan_gpt(void)
-{
-    static const oa_u8 basic[16] = { 0xA2,0xA0,0xD0,0xEB,0xE5,0xB9,0x33,0x44,0x87,0xC0,0x68,0xB6,0xB7,0x26,0x99,0xC7 };
-    oa_u32 lba, n, size, i, start[8];
-    unsigned found = 0, k;
-    if (read_sec(1) || memcmp(sec, "EFI PART", 8) || rd32(sec+76)) return;
-    lba = rd32(sec+72); n = rd32(sec+80); size = rd32(sec+84);
-    if (size < 128 || size > 512 || 512 % size || n > 256) return;
-    for (i = 0; i < n && found < 8; ++i) {
-        if (!(i % (512 / size)) && read_sec(lba + i / (512 / size))) return;
-        k = (unsigned)(i % (512 / size) * size);
-        if (!memcmp(sec + k, basic, 16) && !rd32(sec + k + 36)) start[found++] = rd32(sec + k + 32);
-    }
-    for (k = 0; k < found; ++k) add_volume(start[k]);
-}
-
-static void scan_disk(void)
-{
-    oa_u8 part[64], type;
-    oa_u32 ext, ebr, start;
-    unsigned i, n;
-    if (read_sec(0)) return;
-    if (oa_exfat_probe(sec)) { add_volume(0); return; }
-    if (sec[510] != 0x55 || sec[511] != 0xAA) return;
-    memcpy(part, sec + 446, 64);
-    for (i = 0; i < 4; ++i) if (part[16*i+4] == 0xEE) { scan_gpt(); return; }
-    for (i = 0; i < 4; ++i) if (part[16*i+4] == 0x07) add_volume(rd32(part + 16*i + 8));
-    for (i = 0; i < 4; ++i) {
-        type = part[16*i+4];
-        if (type != 0x05 && type != 0x0F && type != 0x85) continue;
-        ext = ebr = rd32(part + 16*i + 8);
-        for (n = 0; n < 64; ++n) {
-            if (read_sec(ebr) || sec[510] != 0x55 || sec[511] != 0xAA) break;
-            type = sec[446+4+16]; start = rd32(sec+446+8+16);
-            if (sec[446+4] == 0x07) add_volume(ebr + rd32(sec+446+8));
-            if (type != 0x05 && type != 0x0F) break;
-            ebr = ext + start;
-        }
-    }
-}
-
 /* ---- the redirector ---- */
 
 static struct drive *drive_of(oa_u8 letter)
 {
     unsigned i;
-    for (i = 0; i < ndrv; ++i) if (drv[i].letter == letter) return &drv[i];
+    for (i = 0; i < ndrv; ++i) {
+        if (drv[i].letter != letter) continue;
+        if (buf_owner != &drv[i]) { drv[i].v.buf_lba = 0xFFFFFFFFUL; buf_owner = &drv[i]; }
+        return &drv[i];
+    }
     return 0;
 }
 
@@ -510,6 +460,65 @@ int __cdecl assign(void __far *unused)
     return 0;
 }
 
+/* ---- INIT: after the resident part, freed when INIT returns ---- */
+#pragma code_seg("INIT_TEXT", "INIT")
+
+static struct drive *probe_disk;
+#define sec secbuf
+
+static int read_sec(oa_u32 lba) { return bios_read(probe_disk, lba, sec); }
+
+static void add_volume(oa_u32 start)
+{
+    struct drive *d = &drv[ndrv];
+    if (ndrv >= MAXVOL || read_sec(start) || !oa_exfat_probe(sec)) return;
+    *d = *probe_disk;
+    if (oa_exfat_mount(&d->v, bios_read, d, start, cp, secbuf)) return;
+    d->letter = 0xFF; d->free_clusters = 0xFFFFFFFFUL;
+    ++ndrv;
+}
+
+static void scan_gpt(void)
+{
+    static const oa_u8 basic[16] = { 0xA2,0xA0,0xD0,0xEB,0xE5,0xB9,0x33,0x44,0x87,0xC0,0x68,0xB6,0xB7,0x26,0x99,0xC7 };
+    oa_u32 lba, n, size, i, start[8];
+    unsigned found = 0, k;
+    if (read_sec(1) || memcmp(sec, "EFI PART", 8) || rd32(sec+76)) return;
+    lba = rd32(sec+72); n = rd32(sec+80); size = rd32(sec+84);
+    if (size < 128 || size > 512 || 512 % size || n > 256) return;
+    for (i = 0; i < n && found < 8; ++i) {
+        if (!(i % (512 / size)) && read_sec(lba + i / (512 / size))) return;
+        k = (unsigned)(i % (512 / size) * size);
+        if (!memcmp(sec + k, basic, 16) && !rd32(sec + k + 36)) start[found++] = rd32(sec + k + 32);
+    }
+    for (k = 0; k < found; ++k) add_volume(start[k]);
+}
+
+static void scan_disk(void)
+{
+    oa_u8 part[64], type;
+    oa_u32 ext, ebr, start;
+    unsigned i, n;
+    if (read_sec(0)) return;
+    if (oa_exfat_probe(sec)) { add_volume(0); return; }
+    if (sec[510] != 0x55 || sec[511] != 0xAA) return;
+    memcpy(part, sec + 446, 64);
+    for (i = 0; i < 4; ++i) if (part[16*i+4] == 0xEE) { scan_gpt(); return; }
+    for (i = 0; i < 4; ++i) if (part[16*i+4] == 0x07) add_volume(rd32(part + 16*i + 8));
+    for (i = 0; i < 4; ++i) {
+        type = part[16*i+4];
+        if (type != 0x05 && type != 0x0F && type != 0x85) continue;
+        ext = ebr = rd32(part + 16*i + 8);
+        for (n = 0; n < 64; ++n) {
+            if (read_sec(ebr) || sec[510] != 0x55 || sec[511] != 0xAA) break;
+            type = sec[446+4+16]; start = rd32(sec+446+8+16);
+            if (sec[446+4] == 0x07) add_volume(ebr + rd32(sec+446+8));
+            if (type != 0x05 && type != 0x0F) break;
+            ebr = ext + start;
+        }
+    }
+}
+
 static void print(const char *s)
 {
     struct iregs q;
@@ -573,6 +582,7 @@ int __cdecl drv_init(void __far *req)
             print("h\r\n$");
         }
     }
+    buf_owner = 0;
     hook();
     W(rq, 14) = (oa_u16)resident_end;
     W(rq, 16) = DS_SEG();

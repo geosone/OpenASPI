@@ -26,7 +26,9 @@ _BSS    segment word public 'BSS'
 _BSS    ends
 _STK    segment word public 'STK'
 _STK    ends
-DGROUP  group _HDR, _TEXT, CONST, CONST2, _DATA, _BSS, _STK
+INIT_TEXT segment byte public 'INIT'
+INIT_TEXT ends
+DGROUP  group _HDR, _TEXT, CONST, CONST2, _DATA, _BSS, _STK, INIT_TEXT
 
         public  _int13, _int21, _old2f, _old21, _bss_start, _resident_end
 
