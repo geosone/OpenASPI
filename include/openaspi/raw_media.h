@@ -3,7 +3,7 @@
 #include "openaspi/types.h"
 struct oa_raw_media {
     unsigned char packet[32];
-    unsigned drive, error, active, fat32, sense_key, asc;
+    unsigned drive, error, active, fat32, sense_key, asc, driver_error;
     oa_u32 sectors, start, length;
     unsigned char address[3];
 };

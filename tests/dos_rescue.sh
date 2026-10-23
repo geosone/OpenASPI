@@ -1,11 +1,17 @@
 #!/bin/bash
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+MAXLANG=${MAXLANG:-US}
 OUT=${OUT:-$ROOT/build/rescue}
 make -C "$ROOT" all build/host/test_fat_format >/dev/null
 mkdir -p "$OUT"
 test ! -e "$OUT/qmp.sock"
 cp "$ROOT/build/removable-tools/boot.img" "$OUT/boot.img"
+printf '%s\r\n' 'DEVICE=EUSBASPI.SYS' 'DEVICE=ASPIFDD.SYS /V' \
+    'LASTDRIVE=Z' 'SHELL=COMMAND.COM /P' > "$OUT/CONFIG.SYS"
+nasm -f bin -w-reloc-abs-word -I"$ROOT/../eusbaspi/src/" \
+    -o "$OUT/EUSBASPI.SYS" "$ROOT/../eusbaspi/src/eusbaspi.asm"
+mcopy -o -i "$OUT/boot.img" "$OUT/CONFIG.SYS" "$OUT/EUSBASPI.SYS" ::/
 cp --sparse=always "$ROOT/build/removable-tools/storage.img" "$OUT/storage.img"
 "$ROOT/build/host/test_fat_format" 19200 "$OUT/source.img" >/dev/null
 truncate -s $((19200*512)) "$OUT/target.img"
@@ -26,23 +32,39 @@ once = "off"
 immediately = "on"
 EOF
 mcopy -o -i "$OUT/boot.img" "$ROOT/build/dos/ASPIFDD.SYS" "$ROOT/build/dos/ASPIDD.EXE" \
-    "$ROOT/build/dos/ASPICTL.EXE" "$ROOT/build/US/dos/ASPIDDG.EXE" ::/
-for mode in cli gui; do
+    "$ROOT/build/dos/ASPICTL.EXE" "$ROOT/build/$MAXLANG/dos/ASPIDDG.EXE" ::/
+for mode in cli gui select cancel; do
     if [ "$mode" = cli ]; then
         printf '%s\r\n' '@ECHO OFF' \
             'ASPIDD READ D: C:\ERROR.IMG > AUX' 'IF NOT ERRORLEVEL 1 GOTO FAILED' \
             'ASPIDD READ D: C:\RESCUE.IMG /RESCUE /MAP:C:\CLI.MAP > AUX' > "$OUT/AUTOEXEC.BAT"
-    else
+    elif [ "$mode" = gui ]; then
         printf '%s\r\n' '@ECHO OFF' \
             'ASPIDDG D: E: /YES /RESCUE /MAP:C:\GUI.MAP > AUX' > "$OUT/AUTOEXEC.BAT"
+    elif [ "$mode" = select ]; then
+        printf '%s\r\n' '@ECHO OFF' 'SET TEMP=C:\' 'ASPIDDG > AUX' > "$OUT/AUTOEXEC.BAT"
+    else
+        printf '%s\r\n' '@ECHO OFF' 'ASPIDDG D: E: /YES /RESCUE /MAP:C:\CANCEL.MAP > AUX' > "$OUT/AUTOEXEC.BAT"
     fi
-    printf '%s\r\n' 'IF ERRORLEVEL 4 GOTO FAILED' 'IF NOT ERRORLEVEL 3 GOTO FAILED' \
+    if [ "$mode" = cancel ]; then
+        printf '%s\r\n' 'IF ERRORLEVEL 2 GOTO FAILED' 'IF NOT ERRORLEVEL 1 GOTO FAILED' >> "$OUT/AUTOEXEC.BAT"
+    else
+        printf '%s\r\n' 'IF ERRORLEVEL 4 GOTO FAILED' 'IF NOT ERRORLEVEL 3 GOTO FAILED' >> "$OUT/AUTOEXEC.BAT"
+    fi
+    printf '%s\r\n' \
         'ASPICTL STATUS D: > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
+        'ASPICTL STATUS E: > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
         'ECHO RESCUE TEST PASSED > AUX' 'GOTO DONE' ':FAILED' \
         'ECHO RESCUE TEST FAILED > AUX' ':DONE' 'QEXIT' >> "$OUT/AUTOEXEC.BAT"
     mcopy -o -i "$OUT/boot.img" "$OUT/AUTOEXEC.BAT" ::/
     python3 "$ROOT/tests/rescue_vm.py" "$OUT" "$mode"
-    mcopy -o -i "$OUT/storage.img@@32256" "::/$mode.MAP" "$OUT/$mode.MAP"
+    if [ "$mode" = cancel ]; then
+        test "$(grep -Fc 'locks=0' "$OUT/serial-$mode.log")" = 2
+        continue
+    fi
+    name="$mode.MAP"
+    [ "$mode" != select ] || name=OA000.MAP
+    mcopy -o -i "$OUT/storage.img@@32256" "::/$name" "$OUT/$mode.MAP"
     grep -Eq '^1000,(30|31),' "$OUT/$mode.MAP"
     test "$(wc -l < "$OUT/$mode.MAP")" = 2
 done

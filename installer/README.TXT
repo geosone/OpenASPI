@@ -30,9 +30,17 @@ ASPIMGR /TEXT prints an inventory suitable for redirection. This first version
 shows device information; formatting and media actions are not implemented.
 
 ASPICTL EJECT|CLOSE|LOCK|UNLOCK|STATUS X: controls the installed driver.
-EJECT.EXE and CLOSE.EXE are copies of the same program: EJECT F: / CLOSE D:.
+EJECT/CLOSE/LOCK/UNLOCK/STATUS.EXE are copies of the same program.
+Each command also works directly, for example EJECT F: or LOCK F:.
 EJECT /FORCE releases media locks before ejecting (EJECT F: /FORCE).
 Hardware errors still fail the operation. CLOSE applies only to CD drives.
+
+ASPIFMT D: previews an ASPIFDD medium; /YES creates FAT12/16 and scans
+data sectors, marking unreadable clusters bad. /FAT:32 needs FAT32 DOS support.
+ASPIDD D: E: copies equal-sized media; ASPIDD D: uses a temporary image and
+prompts for exchange. /RESCUE records unreadable sectors and fills them with
+zeros (exit status 3). ASPIDDG adds the shared DOS progress/selection UI.
+See tools/aspifmt/README.md and tools/aspidd/README.md in the source tree.
 
 TAPECTL.COM opens NRMT0 in raw mode and reports the ASPITAPE-compatible status
 block. TAPECTL /READY additionally sends the non-destructive TEST UNIT READY

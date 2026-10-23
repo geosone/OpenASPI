@@ -18,16 +18,23 @@ build/tools/jwasm/jwasm
 build/tools/jwlink/jwlink
 ```
 
-The DOS `ASPIMGR.EXE` interface also links the pinned Open386MAX QUILIB
+The DOS `ASPIMGR.EXE` and `ASPIDDG.EXE` interfaces link the pinned Open386MAX QUILIB
 submodule. Its library and compatible assembler are built locally below
 `build/tools/quilib-US` (or `quilib-GR`) and `build/tools/qui-jwasm`.
 Use `make MAXLANG=US` or `make MAXLANG=GR` for English or German. See
 [ASPIMGR](../tools/aspimgr/README.md) for the native DOS GUI test.
-`ASPICTL.EXE`, `EJECT.EXE` and `CLOSE.EXE` provide drive-letter media
+`ASPICTL.EXE` and its EJECT/CLOSE/LOCK/UNLOCK/STATUS aliases provide drive-letter media
 controls. `bash tests/dos_media_control.sh` tests the resident block/CD
 handlers and the complete CD command-line path in QEMU; `make dos-disk-smoke`
 also checks removable-media locks and forced eject. See
 [media controls](media-control.md).
+
+`ASPIFMT.EXE` and `ASPIDD.EXE` are under `build/dos`; the copy GUI is
+`build/US/dos/ASPIDDG.EXE` or `build/GR/dos/ASPIDDG.EXE`. Disposable-image
+integration tests are `tests/dos_removable_tools.sh`, `tests/dos_diskcopy_swap.sh`,
+`tests/dos_format_partition.sh`, `tests/dos_format_bad.sh`,
+`tests/dos_fat32.sh` and `tests/dos_rescue.sh`. The Rescue test accepts
+`MAXLANG=GR`; use a distinct `OUT` directory for each simultaneous run.
 
 Override `JWASM`, `JWLINK` or `CC` on the make command line when required.
 All build products are written below `build/`.
@@ -40,7 +47,9 @@ make test
 make check
 ```
 
-`make dos-disk-smoke` also runs a memory-only test of the real block request
+`make dos-disk-smoke` runs the real INIT path against memory-only ownership
+fixtures for both block drivers; see [ownership checks](block-ownership.md).
+It also runs a memory-only test of the real block request
 core: rejected WRITE AND VERIFY must fall back to WRITE plus separate VERIFY
 with the original 32-bit LBA, buffer and chunk count. VERIFY has no data
 payload; WRITE/VERIFY failures preserve their error and stop before the next
@@ -54,6 +63,15 @@ the actual strategy/interrupt handlers use a memory-only ASPI callback to
 check parameter/query behavior, media changes, errors and buffer boundaries.
 `tests/block_ioctl_dos.asm` checks the DOS INT 21h parameter/query calls on
 all three installed image-backed drives. See [block IOCTL behavior](block-ioctl.md).
+
+`make disksets` builds both language packages sequentially and creates
+`release/US/openaspi-us-disk1.img` and `release/GR/openaspi-gr-disk1.img`.
+Each current package fits on one nonbootable 1.44 MB FAT12 disk; GDI,
+package pages, README and the QUILIB programs select English or German.
+The build verifies actual image contents, language binaries and common
+installation rules. Run `bash tests/dos_install_disks.sh` to check and install
+both sets in disposable QEMU DOS images. See [installation](../installer/README.md).
+GDI builds into private `build/gdi`, overridable with `GDI_OUT`.
 
 `make dist` includes SHSUCDX.COM, CDAUDIO.COM and the upstream SHSUCD license
 and readme, and validates the payload with `tests/dist_layout.sh`. To check

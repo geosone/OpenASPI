@@ -1,4 +1,4 @@
-/* Quick FAT12/16 format through ASPIFDD's exclusive raw-media service. */
+/* FAT filesystem format and surface check through ASPIFDD's raw service. */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -38,23 +38,32 @@ static int bad_cluster(void *ctx,oa_u32 lba,unsigned error)
     (void)error;
     if(cancelled || lba<s->base+s->data_start) return -1;
     cluster=2+(lba-s->base-s->data_start)/f->spc;
-    if(cluster>=f->clusters+2 || (f->bits==32 && cluster==2)) return -1;
+    if(cluster>=f->clusters+2 || (f->bits==32 && cluster==2)) {
+        printf("Unreadable required filesystem area: LBA %lu, cluster %lu.\n",(unsigned long)lba,(unsigned long)cluster);
+        return -1;
+    }
     ++s->bad_sectors;
     offset=oa_fat_entry_offset(f->bits,cluster); position=(unsigned)(offset%512);
     if(offset/512>=f->fat_sectors) return -1;
     fat_lba=s->base+f->reserved+offset/512;
     n=f->bits==32 ? 4 : 2;
-    if(oa_raw_io(s->media,0,fat_lba,1,fat_sector)) return -1;
-    if(position+n>512 && oa_raw_io(s->media,0,fat_lba+1,1,fat_next)) return -1;
+    if(oa_raw_io(s->media,0,fat_lba,1,fat_sector)) {
+        printf("Cannot read FAT metadata: DOS %u.\n",s->media->error); return -1;
+    }
+    if(position+n>512 && oa_raw_io(s->media,0,fat_lba+1,1,fat_next)) {
+        puts("Cannot read FAT entry continuation."); return -1;
+    }
     for(i=0;i<n;++i) entry[i]=position+i<512 ? fat_sector[position+i] : fat_next[position+i-512];
     changed=oa_fat_mark_bad(f->bits,cluster,entry);
-    if(changed<0) return -1;
+    if(changed<0) { puts("Cannot encode FAT bad-cluster entry."); return -1; }
     if(!changed) return 0;
     for(i=0;i<n;++i) {
         if(position+i<512) fat_sector[position+i]=entry[i]; else fat_next[position+i-512]=entry[i];
     }
     for(copy=0;copy<2;++copy) {
-        if(put(s->media,fat_lba+copy*(oa_u32)f->fat_sectors,fat_sector)) return -1;
+        if(put(s->media,fat_lba+copy*(oa_u32)f->fat_sectors,fat_sector)) {
+            printf("Cannot verify FAT bad-cluster entry: DOS %u.\n",s->media->error); return -1;
+        }
         if(position+n>512 && put(s->media,fat_lba+copy*(oa_u32)f->fat_sectors+1,fat_next)) return -1;
     }
     ++s->bad_clusters;
@@ -67,7 +76,7 @@ int main(int argc, char **argv)
     struct oa_fat_layout f;
     unsigned drive, i;
     oa_u32 base, length, end, sector, capacity, old_start, old_length;
-    int yes=0, whole=0, fat32=0, quick=0, rc=1;
+    int yes=0, whole=0, fat32=0, rc=1;
     struct surface_scan scan;
     oa_u32 lba,limit;
     unsigned n;
@@ -76,7 +85,6 @@ int main(int argc, char **argv)
         if (!stricmp(argv[i], "/YES")) yes=1;
         else if (!stricmp(argv[i], "/WHOLE")) whole=1;
         else if (!stricmp(argv[i], "/FAT:32")) fat32=1;
-        else if (!stricmp(argv[i], "/QUICK")) quick=1;
         else goto usage;
     }
     if (oa_raw_info(&m, drive)) {
@@ -120,12 +128,13 @@ int main(int argc, char **argv)
     }
     memset(&scan,0,sizeof(scan)); scan.media=&m; scan.fat=&f; scan.base=base;
     scan.data_start=f.reserved+2UL*f.fat_sectors+(f.bits==32 ? 0 : f.root_sectors);
-    if(!quick) {
+    {
         puts("Checking data surface; repeated unreadable sectors will mark FAT clusters bad.");
         limit=scan.data_start+f.clusters*f.spc;
         for(lba=scan.data_start;lba<limit;lba+=n) {
             n=limit-lba>16 ? 16 : (unsigned)(limit-lba);
             if(cancelled || oa_rescue_read(&scan,scan_read,bad_cluster,base+lba,n,scan_buffer,1)<0) {
+                printf("Surface stopped at LBA %lu: DOS %u, sense %02X/%02X.\n",(unsigned long)(base+lba),m.error,m.sense_key,m.asc);
                 puts("Surface/metadata check failed; no successful format is reported."); goto done;
             }
         }
@@ -147,8 +156,8 @@ done:
               "FAT format and metadata read-back verification passed.");
     return rc;
 usage:
-    puts("ASPIFMT X: [/YES] [/WHOLE] [/FAT:32] [/QUICK]");
-    puts("Default: read surface test and FAT bad-cluster marking. /QUICK skips data scan.");
+    puts("ASPIFMT X: [/YES] [/WHOLE] [/FAT:32]");
+    puts("Read surface test and FAT bad-cluster marking are included.");
     puts("FAT32 needs DOS support. /WHOLE discards partitions.");
     return 2;
 }

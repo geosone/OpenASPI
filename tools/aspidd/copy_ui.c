@@ -13,6 +13,8 @@ static int active;
 static const char *phase;
 static unsigned drive;
 static oa_u32 total,done,errors,painted;
+static char map_path[48],file_path[48];
+static unsigned source_drive=26,target_drive=26;
 #ifdef LANG_GR
 #define MSG(en,de) de
 #else
@@ -39,6 +41,7 @@ static void close_ui(void)
     wput_sca(&w,VIDWORD(7,' ')); move_cursor(0,0); show_cursor(); active=0;
 }
 void abortprep(int flag) { (void)flag; close_ui(); }
+void dd_ui_stop(void) { close_ui(); }
 static void draw(void)
 {
     char text[96],bar[43];
@@ -46,7 +49,9 @@ static void draw(void)
     paintBackgroundScreen();
     line(&DataWin,1,"OpenASPI - ASPIDD",DataYellowColor);
     line(&DataWin,3,phase ? phase : "",DataColor);
-    sprintf(text,MSG("Drive: %c:","Laufwerk: %c:"),'A'+drive);
+    if(source_drive<26 && target_drive<26)
+        sprintf(text,MSG("Source: %c:   Target: %c:","Quelle: %c:   Ziel: %c:"),'A'+source_drive,'A'+target_drive);
+    else sprintf(text,MSG("Drive: %c:","Laufwerk: %c:"),'A'+drive);
     line(&DataWin,5,text,DataColor);
     sprintf(text,"%lu / %lu %s",(unsigned long)done,(unsigned long)total,MSG("sectors","Sektoren"));
     line(&DataWin,7,text,DataColor);
@@ -55,12 +60,22 @@ static void draw(void)
     sprintf(text,"%u%%",percent); line(&DataWin,11,text,DataColor);
     sprintf(text,MSG("Unreadable sectors: %lu","Unlesbare Sektoren: %lu"),(unsigned long)errors);
     line(&DataWin,13,text,DataYellowColor);
+    if(map_path[0]) { sprintf(text,"Map: %.42s",map_path); line(&DataWin,15,text,DataColor); }
+    if(file_path[0]) { sprintf(text,"File/temp: %.36s",file_path); line(&DataWin,18,text,DataColor); }
     line(&QuickWin,2,MSG("Copy progress","Kopierfortschritt"),QuickBackColor);
     line(&QuickWin,5,MSG("Esc: cancel","Esc: Abbruch"),QuickBackColor);
     line(&QuickWin,8,MSG("Writes verified","Schreibpruefung"),QuickBackColor);
 }
+void dd_ui_map(const char *p) { strncpy(map_path,p,sizeof(map_path)-1); map_path[sizeof(map_path)-1]=0; }
+void dd_ui_file(const char *p) { strncpy(file_path,p,sizeof(file_path)-1); file_path[sizeof(file_path)-1]=0; }
+void dd_ui_devices(unsigned s,unsigned d) { source_drive=s; target_drive=d; }
 void dd_ui_phase(const char *s,unsigned d,oa_u32 n)
 {
+#ifdef LANG_GR
+    if(!strcmp(s,"Read source")) s="Quelle lesen";
+    else if(!strcmp(s,"Write/verify target")) s="Ziel schreiben/pruefen";
+    else if(!strcmp(s,"Copy/verify")) s="Kopieren/pruefen";
+#endif
     dd_ui_start(); phase=s; drive=d; total=n; done=0; painted=0xFFFFFFFFUL; draw();
 }
 int dd_ui_progress(oa_u32 n,oa_u32 bad)

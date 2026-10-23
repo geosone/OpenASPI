@@ -12,13 +12,19 @@ ASPICTL STATUS F:
 ASPICTL EJECT F: /FORCE
 ```
 
-The same executable is distributed as `EJECT.EXE` and `CLOSE.EXE`. It selects
+The same executable is distributed as `EJECT.EXE`, `CLOSE.EXE`, `LOCK.EXE`,
+`UNLOCK.EXE` and `STATUS.EXE`. The command registry in `commands.def` drives
+both dispatch and packaged aliases, including future registered commands.
+It selects
 the operation from its invoked filename:
 
 ```text
 EJECT F:
 EJECT F: /FORCE
 CLOSE D:
+LOCK F:
+UNLOCK F:
+STATUS F:
 ```
 
 MSCDEX drive detection selects the CD packet interface. Other drives use

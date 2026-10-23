@@ -122,6 +122,9 @@ static int open_map(unsigned source,unsigned target,const char *image_path)
     }
     if(!map_file) return -1;
     if(fputs("PHYSICAL_LBA,DOS_ERROR,SENSE_KEY,ASC\r\n",map_file)<0 || fflush(map_file)) return -1;
+#ifdef OA_GUI
+    dd_ui_map(map_name);
+#endif
     printf("Rescue map: %s\n",map_name); return 0;
 }
 static int sane_size(struct oa_raw_media *m)
@@ -135,6 +138,9 @@ static int image(unsigned drive,const char *path,int write)
     long size;
     int rc=1;
     if (same_file_drive(path,drive)) { puts("Image file must be on another drive."); return 2; }
+#ifdef OA_GUI
+    dd_ui_file(path);
+#endif
     f=write ? fopen(path,"rb") : new_image(path);
     if (!f) { puts("Cannot open image (new output files must not exist)."); return 1; }
     if (oa_raw_open(&m,drive,write)) {
@@ -204,6 +210,9 @@ static int one_drive(unsigned drive,const char *temp)
     }
     if (!f) { puts("Cannot create temporary image."); return 1; }
     printf("Temporary image: %s\n",path);
+#ifdef OA_GUI
+    dd_ui_file(path);
+#endif
     if (oa_raw_open(&m,drive,0)) goto done;
     sectors=m.sectors;
     rc=!sane_size(&m) || stream(&m,f,0) || fflush(f);
@@ -223,7 +232,7 @@ static int one_drive(unsigned drive,const char *temp)
         /* DOS maps the driver's UNIT ATTENTION/media-change error to 34.
            Consume only these queued exchange notifications before any data
            writes; never retry an interrupted write or a protection error. */
-        if(m.error!=34) break;
+        if(m.sense_key!=6 && m.driver_error!=15 && m.error!=34) break;
     }
     if (!m.active) {
         printf("Target session failed: DOS %u\n",m.error); rc=1; goto done;
@@ -267,6 +276,9 @@ int main(int argc,char **argv)
         d=s; if(n==2 && oa_drive(args[1],&d)) goto usage;
     }
     if(map_option && !rescue_mode) goto usage;
+#ifdef OA_GUI
+    dd_ui_devices(image_mode && write ? 26 : s,image_mode && !write ? 26 : d);
+#endif
     if(!image_mode && !yes) {
 #ifdef OA_GUI
         if(!dd_ui_confirm(s,d)) { dd_ui_finish(1,0); return 2; }
@@ -279,6 +291,9 @@ int main(int argc,char **argv)
     if(open_map(s,d,image_mode && !write ? args[2] : NULL)) {
         puts("Cannot create rescue map on a separate drive (existing maps are preserved).");
         if(map_file) fclose(map_file);
+#ifdef OA_GUI
+        dd_ui_map(map_name); dd_ui_finish(1,0);
+#endif
         return 1;
     }
     rc=image_mode ? image(s,args[2],write) : s==d ? one_drive(s,temp) : copy_drives(s,d);
@@ -292,6 +307,9 @@ int main(int argc,char **argv)
 #endif
     return rc;
 usage:
+#ifdef OA_GUI
+    dd_ui_stop();
+#endif
     puts("ASPIDD X: [Y:] [/YES] [/TEMP:C:\\COPY.IMG]");
     puts("ASPIDD READ X: FILE.IMG");
     puts("ASPIDD WRITE X: FILE.IMG /YES");

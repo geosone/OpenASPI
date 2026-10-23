@@ -19,6 +19,15 @@ SRB_Target              equ     08h
 SRB_Lun                 equ     09h
 SRB_DeviceType          equ     0Ah
 
+; GET DISK INFO (06h), not execute-SCSI buffer fields.
+SRB_DriveFlags          equ     0Ah
+SRB_Int13DriveInfo      equ     0Bh
+SRB_Heads               equ     0Ch
+SRB_Sectors             equ     0Dh
+DISK_NOT_INT13          equ     00h
+DISK_INT13_AND_DOS      equ     01h
+DISK_INT13              equ     02h
+
 SRB_BufLen              equ     0Ah
 SRB_SenseLen            equ     0Eh
 SRB_BufPointer          equ     0Fh

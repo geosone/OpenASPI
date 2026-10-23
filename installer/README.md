@@ -5,6 +5,28 @@ separate installer. Build a package with `make dist`; see the
 [build guide](../docs/building.md). The packaged DOS instructions are in
 [README.TXT](README.TXT).
 
+`make disksets` builds separate English and German installation media:
+`release/US/openaspi-us-disk1.img` and `release/GR/openaspi-gr-disk1.img`.
+Each is a nonbootable 1.44 MB FAT12 disk containing the complete current
+package. Boot your DOS, insert its language's disk and run `A:\INSTALL.EXE`;
+the same EXE also supplies the Windows frontend. DOS itself and an ASPI
+manager are not included. Package directories are `build/packages/US` and
+`build/packages/GR`. Override `RELEASEDIR` to choose a different output root.
+
+The package fixes GDI's language through `Texts=English` or `Texts=German`,
+translates its package-specific pages and selects the matching ASPIMGR and
+ASPIDDG binaries. Installation rules and probe definitions have one shared
+source; German prose is overlaid from `installer/lang/GR.json`. Drivers and
+CLI diagnostics remain shared English binaries. GDI is compiled once into
+OpenASPI's private `build/gdi` (`GDI_OUT` override), preserving the GDI source
+checkout and its own build directory. No runtime language choice is needed.
+
+Disk creation verifies FAT consistency and compares every file read back
+from each image with its package. `bash tests/dos_install_disks.sh` additionally
+checks and silently installs each set into a disposable QEMU DOS image.
+It also inspects the actual welcome page and its buttons, including forced
+German texts on the English DOS test system.
+
 Install an ASPI manager before the OpenASPI drivers in `CONFIG.SYS`.
 Run `INSTALL.EXE` to install or update OpenASPI and `INSTALL /U` from the
 installation directory to remove it. Drivers absent from the package are

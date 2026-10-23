@@ -5,7 +5,7 @@
 ;   FDD_DRIVER      (ASPIFDD only) removable-media policy
 ; and includes dos_aspi.inc and devreq.inc.
 ;
-; One DOS unit per device: the first FAT12/FAT16 partition of a partitioned
+; One DOS unit per device: the first supported FAT partition of a partitioned
 ; medium, or the whole medium of a superfloppy (no partition table, as on
 ; LS-120 disks).  512-byte sectors only.  WRITE uses WRITE(10), WRITE WITH
 ; VERIFY uses WRITE AND VERIFY(10) (WRITE(10) + VERIFY(10) without it); a
@@ -24,7 +24,7 @@ U_TARGET        equ     1
 U_LUN           equ     2
 U_FLAGS         equ     3
 U_START         equ     4               ; dword: first sector of the volume
-U_BPB           equ     8               ; 25-byte DOS BPB
+U_BPB           equ     8               ; 53-byte store, extended BPB for FAT32
 U_DEFAULT_BPB   equ     61              ; installation-time extended BPB
 U_LOCKS         equ     114
 U_CAPACITY      equ     115
@@ -1207,6 +1207,8 @@ ifdef FDD_DRIVER
 else
         jnc     init_next_device
 endif
+        call    check_disk_ownership
+        jc      init_next_device
         mov     al, byte ptr [unit_count]
         mov     ah, UNIT_SIZE
         mul     ah
@@ -1287,6 +1289,80 @@ init_installed:
         mov     word ptr es:[bx+RH_STATUS], ST_DONE
         jmp     request_done
 
+; INIT-only ownership check before TUR, volume reads or DOS unit allocation.
+; Int13 accessibility alone does not mean DOS has claimed the device.
+; Only an explicit unsupported command permits the legacy fallback.
+check_disk_ownership proc near
+        call    clear_srb
+        mov     byte ptr [srb+SRB_Cmd], SC_GET_DISK_INFO
+        mov     al, byte ptr [scan_ha]
+        mov     byte ptr [srb+SRB_HaId], al
+        mov     al, byte ptr [scan_target]
+        mov     byte ptr [srb+SRB_Target], al
+        mov     al, byte ptr [scan_lun]
+        mov     byte ptr [srb+SRB_Lun], al
+        ; A broken manager returning success without output is not flag 0.
+        mov     byte ptr [srb+SRB_DriveFlags], 0FFh
+        call    call_aspi
+        cmp     byte ptr [srb+SRB_Status], SS_INVALID_CMD
+        je      ownership_unsupported
+        cmp     byte ptr [srb+SRB_Status], SS_COMP
+        jne     ownership_failed
+        mov     al, byte ptr [srb+SRB_DriveFlags]
+        cmp     al, DISK_NOT_INT13
+        je      ownership_available
+        cmp     al, DISK_INT13
+        je      ownership_available
+        cmp     al, DISK_INT13_AND_DOS
+        jne     ownership_failed
+        mov     dx, offset msg_bios_owned
+        call    print_ownership_device
+        stc
+        ret
+ownership_failed:
+        mov     dx, offset msg_ownership_failed
+        call    print_ownership_device
+        stc
+        ret
+ownership_unsupported:
+        cmp     byte ptr [ownership_warned], 0
+        jne     ownership_available
+        mov     byte ptr [ownership_warned], 1
+        mov     dx, offset msg_ownership_unknown
+        mov     ah, 09h
+        int     21h
+ownership_available:
+        clc
+        ret
+check_disk_ownership endp
+
+; DX points to the diagnostic prefix. No device commands are issued here.
+print_ownership_device proc near
+        mov     ah, 09h
+        int     21h
+        mov     al, byte ptr [scan_ha]
+        call    print_digit
+        mov     dl, ':'
+        mov     ah, 02h
+        int     21h
+        mov     al, byte ptr [scan_target]
+        call    print_digit
+        mov     dl, ':'
+        mov     ah, 02h
+        int     21h
+        mov     al, byte ptr [scan_lun]
+        call    print_digit
+        mov     dx, offset msg_crlf
+        mov     ah, 09h
+        int     21h
+        ret
+print_ownership_device endp
+
+ownership_warned db 0
+msg_bios_owned db '  BIOS/DOS-owned device skipped: $'
+msg_ownership_failed db '  Disk ownership query failed; device skipped: $'
+msg_ownership_unknown db '  GET DISK INFO unsupported; BIOS ownership unknown.',13,10,'$'
+
 ; "  D: ha:target:lun VENDOR PRODUCT"
 print_unit proc near
         push    di
@@ -1332,19 +1408,26 @@ print_unit_end:
 print_unit endp
 
 print_digit proc near
-        cmp     al, 10
-        jb      print_digit_one
-        push    ax
-        mov     dl, '1'
-        mov     ah, 02h
-        int     21h
-        pop     ax
-        sub     al, 10
+        push    bx
+        push    cx
+        xor     ah, ah
+        mov     bx, 10
+        xor     cx, cx
+print_digit_divide:
+        xor     dx, dx
+        div     bx
+        push    dx
+        inc     cx
+        or      ax, ax
+        jnz     print_digit_divide
 print_digit_one:
-        add     al, '0'
-        mov     dl, al
+        pop     dx
+        add     dl, '0'
         mov     ah, 02h
         int     21h
+        loop    print_digit_one
+        pop     cx
+        pop     bx
         ret
 print_digit endp
 

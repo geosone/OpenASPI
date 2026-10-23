@@ -1,7 +1,7 @@
 JWASM_DIR  ?= deps/JWasm
 JWLINK_DIR ?= deps/jwlink
 GDI        ?= deps/gdi
-GDIINSTALL := $(GDI)/build/INSTALL.EXE
+GDIINSTALL = $(GDI_OUT)/INSTALL.EXE
 CC      ?= cc
 WATCOM  ?= /opt/watcom
 WCC     ?= $(WATCOM)/binl64/wcc
@@ -13,6 +13,7 @@ $(error Unsupported MAXLANG '$(MAXLANG)'; use US or GR)
 endif
 
 BUILD   := build
+GDI_OUT ?= $(abspath $(BUILD)/gdi)
 TOOLSDIR := $(BUILD)/tools
 JWASM   ?= $(TOOLSDIR)/jwasm/jwasm
 JWLINK  ?= $(TOOLSDIR)/jwlink/jwlink
@@ -45,11 +46,12 @@ WIN16CHECK := $(BUILD)/win16/WINCHECK.EXE
 WIN16CHECKOBJ := $(BUILD)/win16/wincheck.obj
 DOSCOBJ := $(BUILD)/dos/tape_cdb.obj $(BUILD)/dos/tape_sense.obj $(BUILD)/dos/tape_abi.obj
 DISTDIR := $(BUILD)/dist
+RELEASEDIR ?= release
 
 CFLAGS  ?= -std=c90 -Wall -Wextra -Werror -pedantic -O2
 CPPFLAGS += -Iinclude
 
-.PHONY: all tools test check dos-c-check dos-smoke dos-cda-smoke dos-media-smoke dos-disk-smoke dos-tape-smoke dos-mhvtl-smoke dos-mhvtl-roundtrip dos-mhvtl-write-protect gdi-install dist clean
+.PHONY: all tools test check dos-c-check dos-smoke dos-cda-smoke dos-media-smoke dos-disk-smoke dos-tape-smoke dos-mhvtl-smoke dos-mhvtl-roundtrip dos-mhvtl-write-protect gdi-install dist disksets clean
 
 all: $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(DOSSHSUCDX) $(DOSCDAUDIO) $(DOSSCAN) $(DOSMGR) $(DOSCTL) $(DOSCTLALIASES) $(DOSFMT) $(DOSDD) $(DOSDDGUI) $(DOSTAPECTL) $(DOSWINCHECK) $(WIN16CHECK) $(TESTBIN) $(ASPITESTBIN)
 
@@ -92,6 +94,7 @@ dos-cda-smoke: all
 	BUS=ide bash tests/dos_cda.sh
 
 dos-disk-smoke: all
+	bash tests/dos_block_ownership.sh
 	bash tests/dos_disk.sh
 	DETECT_ONLY=1 bash tests/dos_disk.sh
 
@@ -110,7 +113,7 @@ dos-mhvtl-roundtrip: all
 dos-mhvtl-write-protect: all
 	MHVTL_WRITE_TEST=1 MHVTL_WRITE_PROTECT_TEST=1 bash tests/dos_mhvtl.sh
 
-dist: all gdi-install LICENSE tests/dist_layout.sh
+dist: all gdi-install LICENSE tests/dist_layout.sh tools/package/localize.py installer/lang/GR.json installer/README.GR.TXT
 	rm -rf $(DISTDIR)
 	mkdir -p $(DISTDIR)
 	cp $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(DOSSHSUCDX) $(DOSCDAUDIO) $(DOSSCAN) $(DOSTAPECTL) $(DOSWINCHECK) $(WIN16CHECK) $(GDIINSTALL) installer/INSTALL.INI \
@@ -122,10 +125,18 @@ dist: all gdi-install LICENSE tests/dist_layout.sh
 	mv $(DISTDIR)/LICENSE $(DISTDIR)/LICENSE.TXT
 	cp $(SHSUCD)/LICENSE.txt $(DISTDIR)/SHSUCD.LIC
 	cp $(SHSUCD)/readme.txt $(DISTDIR)/SHSUCD.TXT
+	python3 tools/package/localize.py $(MAXLANG) $(DISTDIR)
 	sh tests/dist_layout.sh $(DISTDIR) $(SHSUCD)
 
 gdi-install:
-	$(MAKE) -C $(GDI)
+	$(MAKE) -C $(GDI) OUT=$(GDI_OUT)
+
+# Build languages sequentially; shared drivers/CLI and GDI are reused.
+disksets: gdi-install
+	$(MAKE) -o gdi-install MAXLANG=US DISTDIR=$(BUILD)/packages/US dist
+	bash tools/package/mkdisks.sh US $(BUILD)/packages/US $(RELEASEDIR)/US
+	$(MAKE) -o gdi-install MAXLANG=GR DISTDIR=$(BUILD)/packages/GR dist
+	bash tools/package/mkdisks.sh GR $(BUILD)/packages/GR $(RELEASEDIR)/GR
 
 $(DOSDRV): drivers/aspitap/aspitap.asm common/aspi/dos_aspi.inc | $(JWASM)
 	mkdir -p $(@D)
@@ -173,19 +184,19 @@ $(DOSCTL): $(BUILD)/dos/aspictl.obj Makefile
 $(DOSCTLALIASES): $(DOSCTL)
 	cp $< $@
 
-$(BUILD)/dos/raw_client.obj: common/dos/raw_client.c include/openaspi/raw_media.h
+$(BUILD)/dos/raw_client.obj: common/dos/raw_client.c include/openaspi/raw_media.h include/openaspi/rescue.h include/openaspi/types.h
 	mkdir -p $(@D)
 	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(WATCOM)/h -fo=$@ $<
 
-$(BUILD)/dos/fat_format.obj: common/dos/fat_format.c include/openaspi/fat_format.h
+$(BUILD)/dos/fat_format.obj: common/dos/fat_format.c include/openaspi/fat_format.h include/openaspi/types.h
 	mkdir -p $(@D)
 	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(WATCOM)/h -fo=$@ $<
 
-$(BUILD)/dos/aspifmt.obj: tools/aspifmt/aspifmt.c include/openaspi/raw_media.h include/openaspi/fat_format.h
+$(BUILD)/dos/aspifmt.obj: tools/aspifmt/aspifmt.c include/openaspi/raw_media.h include/openaspi/fat_format.h include/openaspi/rescue.h include/openaspi/types.h
 	mkdir -p $(@D)
 	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(WATCOM)/h -fo=$@ $<
 
-$(BUILD)/dos/aspidd.obj: tools/aspidd/aspidd.c include/openaspi/raw_media.h
+$(BUILD)/dos/aspidd.obj: tools/aspidd/aspidd.c include/openaspi/raw_media.h include/openaspi/rescue.h include/openaspi/types.h
 	mkdir -p $(@D)
 	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(WATCOM)/h -fo=$@ $<
 
@@ -205,7 +216,7 @@ $(DOSDD): $(BUILD)/dos/aspidd.obj $(BUILD)/dos/raw_client.obj $(BUILD)/dos/rescu
 
 $(DOSDDGUI): tools/aspidd/aspidd.c tools/aspidd/copy_ui.c tools/aspidd/copy_ui.h \
 		tools/aspidd/dos.mk common/dos/raw_client.c common/dos/rescue_read.c \
-		include/openaspi/raw_media.h include/openaspi/rescue.h $(QUILIB) | $(JWASM) $(JWLINK)
+		include/openaspi/raw_media.h include/openaspi/rescue.h include/openaspi/types.h $(QUILIB) | $(JWASM) $(JWLINK)
 	$(MAKE) -f tools/aspidd/dos.mk OPEN386MAX=$(abspath $(OPEN386MAX)) \
 		OUT=$(abspath $(BUILD)/$(MAXLANG)/aspidd-obj) BINDIR=$(abspath $(@D)) \
 		QUILIB=$(QUILIB) MAXLANG=$(MAXLANG) WATCOM=$(WATCOM) \

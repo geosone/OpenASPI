@@ -1,0 +1,18 @@
+{
+  "Title": "OpenASPI Installation",
+  "Done": "OpenASPI ist installiert. Starten Sie den Rechner neu, um die gewaehlten Treiber zu laden.",
+  "Welcome": [
+    "OpenASPI stellt DOS-Geraetetreiber fuer Festplatten, Wechselmedien,",
+    "CD/DVD und SCSI-Bandlaufwerke an einem ASPI-Manager bereit, zum Beispiel",
+    "AHCIASPI, EUSBASPI oder einem Adaptec-ASPI-Manager.",
+    "",
+    "Laden Sie den ASPI-Manager in CONFIG.SYS vor diesen Geraetetreibern."
+  ],
+  "Options": [
+    "Bandlaufwerke: ASPITAP.SYS",
+    "Festplatten: ASPIDSK.SYS (wenn vorhanden)",
+    "LS-120, ZIP und Wechselmedien: ASPIFDD.SYS (wenn vorhanden)",
+    "CD/DVD und digitales Audio: ASPICDA.SYS (wenn vorhanden)",
+    "Gewaehlte Treiber in den oberen Speicher laden (DEVICEHIGH)"
+  ]
+}

@@ -95,13 +95,13 @@ output; reconstructed C types and register arguments alone are not an ABI.
 | `0194h` | OPEN/CLOSE return success without device I/O | Existing no-op is not proof of locking support |
 | `01B3h` | GET/SET LOGICAL DRIVE both return unit byte zero | Single-logical-drive mapping behavior still needs implementing/testing in OpenASPI |
 | `02D5h` / `02E6h` | Get/set access flag reads/writes the global byte `135Ah` | Software access status, **not** MODE SENSE write-protection detection; enforcement is not demonstrated by these handlers |
-| `0322h` / `0407h` | Get/set parameter paths distinguish 25-byte and extended BPBs and category 08h/48h | Current 60h is FAT12/16 only; 40h/FAT32 are not complete |
+| `0322h` / `0407h` | Get/set parameter paths distinguish 25-byte and extended BPBs and category 08h/48h | 60h supports legacy/extended BPBs; 40h remains open |
 | `0460h` / `0473h` | Track read/write select a shared CHS-to-LBA path | Requires tested geometry, partition offsets, bounds and error handling, not just generic block I/O |
 | `0556h` | 42h/62h share a handler; ordinary path constructs VERIFY(10), with a separate format branch for recognized floptical media and a query-only branch | Do not implement a universal physical FORMAT UNIT just because 42h exists |
 | `1A19h` | Floptical format helper builds FORMAT UNIT plus a small media/track-specific parameter list | Needs a separately validated device profile and scratch-media tests |
 | `018Dh` -> `0699h` | DOS WRITE WITH VERIFY uses a WRITE followed by VERIFY path | OpenASPI fallback now uses WRITE + separate VERIFY instead of silently dropping verification |
-| `1604h` / `164Ch` | Media-ID helpers handle FAT12/16 and extended-BPB metadata layouts | Current 66h covers FAT12/16 reads; 46h and FAT32 require additional implementation |
-| `31D4h` | Uses ASPI command 06h (GET DISK INFO) to check BIOS handling | Avoid duplicate BIOS/driver ownership; define/test behavior when a manager does not support the command |
+| `1604h` / `164Ch` | Media-ID helpers handle FAT12/16 and extended-BPB metadata layouts | 66h covers FAT12/16 and conditional FAT32 reads; 46h remains open |
+| `31D4h` | Uses ASPI command 06h (GET DISK INFO) to check BIOS handling | INIT now skips DOS-owned units; explicit unsupported fallback and malformed/error replies are tested |
 | `3483h` / `36DEh` / `3586h` | Partition discovery, extended-BPB units and reserved removable-volume entries | Multi-partition/removable-letter coverage is larger than today's first-volume-only model |
 
 ### Completion ledger
@@ -117,10 +117,10 @@ because Ghidra found a function.
 | Parameters / Media-ID | Read-only 60h/66h with matching queries | Add 40h/46h and their error/media-change tests; no success-only shims |
 | Software access flag / logical mapping | Not implemented | Distinguish logical policy from hardware write protection and lock state |
 | Track read/write/verify/format | Not implemented | Exact packet/bounds behavior plus validated device-specific destructive paths |
-| FAT32/category 48h | Not implemented | Extended BPB, DOS-version behavior, read/write/metadata and FAT32 filesystem tests |
+| FAT32/category 48h | Extended BPB, parameter/Media-ID reads, DOS filesystem read/write tested on FreeDOS 1.4 | Standard setting/track operations and MS-DOS 7.1/Windows 9x qualification remain open |
 | Multiple primary/extended partitions | First supported primary partition only | EBR traversal, overflow/loop guards, independent units and partition isolation |
 | Removable reserved letters / identity | Limited | Empty-media boot, replacement media with changed partitioning, stable letters and stale-cache rejection |
-| BIOS-owned devices | No ownership exclusion yet | GET DISK INFO and unsupported-manager scenarios without losing legitimate non-BIOS devices |
+| BIOS-owned devices | GET DISK INFO filtering and unsupported-manager fallback, tested through INIT | Actual Adaptec hardware and accurate motherboard/USB BIOS mappings in managers remain unqualified; see [ownership details](block-ownership.md) |
 | Spin-up and options | No /ID=, /NOSPINUP or /PAUSE compatibility yet | Manager/target selection, retry/error behavior and deterministic option tests |
 | Floptical and other sector sizes | Generic 512-byte path only | Device profiles, logical/physical sector translation and separately qualified formatting |
 | Private 7-byte ABI | Not implemented | Exact fields and behavior verified with callers; never expose unchecked internal state |
@@ -150,8 +150,8 @@ services must not make ASPIDSK claim those same targets.
    17h/18h. See [current block IOCTL behavior](block-ioctl.md).
 3. ASPIFDD: 42h format with FORMAT UNIT, 68h media type, eject/lock, the
    LS-120 media types (sensed with READ FORMAT CAPACITIES).
-4. ASPIDSK: all partitions (extended partitions), FAT32 (category 48h, the
-   extended BPB of MS-DOS 7.1), reserved letters for removable disks, skip
+4. ASPIDSK: all partitions (extended partitions), remaining FAT32/category-48
+   compatibility and MS-DOS 7.1 qualification, reserved letters for removable disks, skip
    disks handled by INT 13h, spin-up, `/ID=`.
 5. Sector sizes other than 512 (MO media with 2048-byte sectors).
 

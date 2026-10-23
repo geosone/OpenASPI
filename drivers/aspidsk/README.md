@@ -10,8 +10,8 @@ LS-120, ZIP and similar removable-media drives are left to `ASPIFDD.SYS`.
 
 Version 0.1:
 
-- One drive letter per device: the first FAT12/FAT16 partition (types 01h,
-  04h, 06h, 0Eh), or the whole medium without a partition table.
+- One drive letter per device: the first supported FAT partition (types 01h,
+  04h, 06h, 0Eh; 0Bh/0Ch when FAT32 is enabled), or a superfloppy.
 - READ (READ(10)), WRITE (WRITE(10)) and WRITE WITH VERIFY (WRITE AND
   VERIFY(10), WRITE(10) followed by VERIFY(10) where the combined command is
   unsupported); 512-byte sectors, up to
@@ -19,12 +19,18 @@ Version 0.1:
 - Media check and BUILD BPB for devices with the removable bit (USB
   sticks, card readers): a new medium is read again.
 - A private stack for the ASPI manager.
+- INIT skips devices the manager reports as already claimed by BIOS/DOS;
+  unsupported queries continue with a warning. See
+  [ownership behavior and limits](../../docs/block-ownership.md).
 - Read-only generic IOCTL `08h/60h` (parameters), `08h/66h` (Media-ID) and
   matching capability queries; default
   parameters stay stable while removable media change. See
   [block IOCTL behavior](../../docs/block-ioctl.md).
 
-Not yet: more partitions, FAT32, write/format IOCTLs, skipping
-disks the BIOS already serves; see
+FAT32 extended BPBs and `48h/60h`, `48h/66h` are qualified on FreeDOS 1.4;
+MS-DOS 7.1/Windows 9x qualification remains open.
+
+Not yet: more partitions, write/format IOCTLs and independent detection of
+BIOS mappings that the ASPI manager does not report; see
 [ASPIDISK compatibility](../../docs/aspidisk-compat.md).  Tested in QEMU
 with EUSBASPI and USB mass storage (`make dos-disk-smoke`).

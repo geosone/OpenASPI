@@ -16,6 +16,9 @@ static int request(struct oa_raw_media *m, unsigned minor)
     r.x.dx = FP_OFF(m->packet); s.ds = FP_SEG(m->packet);
     intdosx(&r, &r, &s);
     m->error = r.x.cflag ? r.x.ax : 0;
+    m->driver_error=r.x.cflag ? m->packet[13] : 0;
+    m->sense_key=r.x.cflag ? m->packet[14] : 0;
+    m->asc=r.x.cflag ? m->packet[15] : 0;
     return m->error ? -1 : 0;
 }
 void oa_disk_reset(void)
@@ -56,23 +59,27 @@ int oa_raw_io(struct oa_raw_media *m, int write, oa_u32 lba, unsigned count, voi
 {
     int rc;
     if (!m->active || !count || count > 32 || lba >= m->sectors ||
-        (oa_u32)count > m->sectors - lba) { m->error = 87; return -1; }
+        (oa_u32)count > m->sectors - lba) {
+        m->error = 87; m->driver_error=0; m->sense_key=0; m->asc=0;
+        return -1;
+    }
     *(oa_u32 *)(m->packet + 8) = lba;
     *(unsigned *)(m->packet + 12) = count;
     *(unsigned *)(m->packet + 16) = FP_OFF(buf);
     *(unsigned *)(m->packet + 18) = FP_SEG(buf);
     *(unsigned *)(m->packet + 14)=0;
     rc=request(m, write ? 3 : 2);
-    m->sense_key=m->packet[14]; m->asc=m->packet[15];
     return rc;
 }
 int oa_raw_close(struct oa_raw_media *m)
 {
     int rc;
     unsigned previous=m->error;
+    unsigned old_driver=m->driver_error, old_sense=m->sense_key, old_asc=m->asc;
     if (!m->active) return 0;
+    memset(m->packet+13,0,3);
     rc = request(m, 4);
-    if(!rc) m->error=previous;
+    if(!rc) { m->error=previous; m->driver_error=old_driver; m->sense_key=old_sense; m->asc=old_asc; }
     m->active = 0;
     oa_disk_reset();
     return rc;
@@ -81,9 +88,9 @@ unsigned oa_raw_read_source(void *ctx,oa_u32 lba,unsigned count,void *buf)
 {
     struct oa_raw_media *m=(struct oa_raw_media *)ctx;
     if(!oa_raw_io(m,0,lba,count,buf)) return 0;
-    if(m->error==31 && (m->sense_key==3 || m->sense_key==4 || m->sense_key==11))
+    if(m->sense_key==3 || m->sense_key==4 || m->sense_key==11)
         return m->error|OA_RESCUE_DEVICE_READ;
-    if(m->error==27 && m->sense_key==5 && m->asc!=0x21) return 31;
+    if(m->sense_key==5 && m->asc!=0x21) return 31;
     return m->error;
 }
 int oa_drive(const char *s, unsigned *drive)

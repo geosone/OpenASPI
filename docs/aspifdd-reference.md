@@ -348,8 +348,12 @@ query handlers in `common/dos/blkdrv.inc`, with separate installation-time
 and current BPBs and a fresh boot-sector read for Media-ID. See [current behavior and tests](block-ioctl.md). The other
 operations are tracked separately. Reference-counted `08h/48h` locking and
 locked-aware `08h/49h` eject now have resident-code and QEMU integration
-tests; see [media controls](media-control.md). Media-ID writes, formatting
-and vendor protection remain missing work.
+tests; see [media controls](media-control.md). [ASPIFMT](../tools/aspifmt/README.md)
+now creates FAT filesystems with bad-cluster marking through a checked raw
+session; [ASPIDD](../tools/aspidd/README.md) supplies copying and Rescue.
+Conditional FAT32 uses extended parameter/Media-ID reads, tested on FreeDOS.
+Media-ID writes, standard track/physical formatting and vendor protection
+remain missing work.
 Still open: complete private GUEST packet semantics/caller compatibility,
 original Iomega Tools payloads, ZIP vendor commands, detailed VxD handover,
 and hardware behavior. Static analysis cannot replace those compatibility

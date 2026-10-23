@@ -15,4 +15,4 @@ ASPIDDG.EXE_LIBS := $(QUILIB)
 ASPIDDG.EXE_STACK := 8192
 include $(ROOT)/linux/mk/dos.mk
 unexport JWASM JWLINK
-$(addprefix $(OUT)/,$(COBJS)): include/openaspi/raw_media.h include/openaspi/rescue.h tools/aspidd/copy_ui.h
+$(addprefix $(OUT)/,$(COBJS)): include/openaspi/raw_media.h include/openaspi/rescue.h include/openaspi/types.h tools/aspidd/copy_ui.h

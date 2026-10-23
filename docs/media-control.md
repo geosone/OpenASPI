@@ -68,10 +68,14 @@ emulator limits are not worked around with incorrect device commands;
 the positive eject/close qualification above uses QEMU. Real mechanisms,
 external/manual state changes and Windows storage handover remain unqualified.
 
-## Remaining removable-media tools
+## Removable-media tools
 
 The agreed DOS 8.3 names are `ASPIFMT` for floppy/removable FAT formatting
-and `ASPIDD` for sector-image read/write. They remain to be implemented;
-`ASPICTL`, its EJECT/CLOSE aliases and `ASPIMGR` inventory are available.
+and `ASPIDD` for sector-image read/write. Both are implemented:
+[ASPIFMT](../tools/aspifmt/README.md) scans data sectors and marks bad
+clusters; [ASPIDD/ASPIDDG](../tools/aspidd/README.md) supplies copying,
+single-drive exchange, Rescue and a QUILIB progress UI.
+`ASPICTL`, aliases for every registered command and `ASPIMGR` inventory
+are available.
 FAT filesystem creation and physical, device-specific formatting are distinct
 operations and must not be advertised as completed by accepting an IOCTL.

@@ -12,6 +12,11 @@
 #define OA_ASPI_SET_HA_PARAMS    0x05u
 #define OA_ASPI_GET_DISK_INFO    0x06u
 
+/* GET DISK INFO ownership values (not independent flag bits). */
+#define OA_ASPI_DISK_NOT_INT13      0x00u
+#define OA_ASPI_DISK_INT13_AND_DOS  0x01u
+#define OA_ASPI_DISK_INT13          0x02u
+
 /* SRB completion status. */
 #define OA_ASPI_PENDING          0x00u
 #define OA_ASPI_COMPLETE         0x01u

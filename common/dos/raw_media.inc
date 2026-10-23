@@ -45,12 +45,14 @@ raw_not_active:
 raw_info:
         call    raw_read_capacity
         jnc     raw_capacity_ready
+        call    raw_set_error
         ret
 raw_capacity_ready:
         call    load_volume
         jnc     raw_volume_ready
         cmp     al, ERR_UNKNOWN_MEDIA
         je      raw_volume_ready
+        call    raw_set_error
         stc
         ret
 raw_volume_ready:
@@ -59,6 +61,7 @@ raw_volume_ready:
         mov     ax, 011Eh
         call    medium_control_result
         jnc     raw_prevented
+        call    raw_set_error
         ret
 raw_prevented:
         mov     byte ptr [di+U_LOCKS], 1
@@ -182,37 +185,17 @@ raw_transfer:
         mov     dx, word ptr es:[bp+10]
         call    xfer_sectors
         jnc     raw_transfer_done
-        push    ax
-        xor     ax, ax
-        cmp     byte ptr [srb+SRB_Status], SS_ERR
-        jne     raw_transfer_error_info
-        cmp     byte ptr [srb+SRB_HaStat], 0
-        jne     raw_transfer_error_info
-        cmp     byte ptr [srb+SRB_TargStat], 2
-        jne     raw_transfer_error_info
-        mov     al, byte ptr [srb+SRB_CDB+10]
-        and     al, 7Fh
-        cmp     al, 70h
-        je      raw_transfer_sense
-        cmp     al, 71h
-        jne     raw_transfer_no_sense
-raw_transfer_sense:
-        mov     al, byte ptr [srb+SRB_CDB+12]
-        and     al, 0Fh
-        mov     ah, byte ptr [srb+SRB_CDB+22]
-        jmp     short raw_transfer_error_info
-raw_transfer_no_sense:
-        xor     ax, ax
-raw_transfer_error_info:
-        mov     word ptr es:[bp+14], ax
-        pop     ax
-        stc
+        call    raw_set_error
+        ret
 raw_transfer_done:
         ret
 raw_end:
         mov     ax, 001Eh
         call    medium_control_result
-        jc      raw_end_failed
+        jnc     raw_end_unlocked
+        call    raw_set_error
+        jmp     short raw_end_failed
+raw_end_unlocked:
         mov     byte ptr [di+U_LOCKS], 0
 raw_end_failed:
         pushf
@@ -221,6 +204,43 @@ raw_end_failed:
         popf
         ret
 raw_ioctl endp
+
+; DOS kernels map driver errors differently. Return the original driver
+; error and checked autosense alongside CF, rather than guessing from AX.
+raw_set_error proc near
+        mov     byte ptr es:[bp+13], al
+        push    ax
+        push    si
+        xor     ax, ax
+        cmp     byte ptr [srb+SRB_Status], SS_ERR
+        jne     raw_transfer_error_info
+        cmp     byte ptr [srb+SRB_HaStat], 0
+        jne     raw_transfer_error_info
+        cmp     byte ptr [srb+SRB_TargStat], 2
+        jne     raw_transfer_error_info
+        xor     ah, ah
+        mov     al, byte ptr [srb+SRB_CDBLen]
+        mov     si, ax
+        mov     al, byte ptr [srb+si+SRB_CDB]
+        and     al, 7Fh
+        cmp     al, 70h
+        je      raw_transfer_sense
+        cmp     al, 71h
+        jne     raw_transfer_no_sense
+raw_transfer_sense:
+        mov     al, byte ptr [srb+si+SRB_CDB+2]
+        and     al, 0Fh
+        mov     ah, byte ptr [srb+si+SRB_CDB+12]
+        jmp     short raw_transfer_error_info
+raw_transfer_no_sense:
+        xor     ax, ax
+raw_transfer_error_info:
+        mov     word ptr es:[bp+14], ax
+        pop     si
+        pop     ax
+        stc
+        ret
+raw_set_error endp
 
 raw_read_capacity proc near
         mov     al, SRB_DIR_IN

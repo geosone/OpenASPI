@@ -42,20 +42,32 @@ with (out/f"process-{mode}.log").open("wb") as log:
                     return reply.get("return")
 
             command("qmp_capabilities")
-            finished=False; saw_gui=False; deadline=time.monotonic()+300
+            finished=False; saw_gui=False; selected=False; confirmed=False; aborted=False
+            deadline=time.monotonic()+300
             serial=out/f"serial-{mode}.log"
             while proc.poll() is None and time.monotonic()<deadline:
                 text=serial.read_bytes().decode("cp437") if serial.exists() else ""
-                if mode=="gui" and not finished:
+                if mode!="cli" and not finished:
                     snapshot=out/"vram.bin"
                     command("pmemsave",{"val":0xB8000,"size":4000,"filename":str(snapshot)})
                     chars=snapshot.read_bytes()[::2].decode("cp437")
                     if "OpenASPI - ASPIDD" in chars:
                         saw_gui=True
                         (out/"gui-progress.txt").write_text("\n".join(chars[i:i+80] for i in range(0,2000,80)))
-                    if not finished and "ASPIDD rescue completed" in text:
+                    if mode=="select" and not selected and ("Choose source and target" in chars or "Quelle und Ziel waehlen" in chars):
+                        for key in ("d","tab","e","f2","ret"):
+                            command("human-monitor-command",{"command-line":f"sendkey {key}"})
+                            time.sleep(.15)
+                        selected=True
+                    if mode=="select" and not confirmed and ("overwrite target?" in chars or "Ziel loeschen?" in chars):
+                        key="j" if "Ziel loeschen?" in chars else "y"
+                        command("human-monitor-command",{"command-line":f"sendkey {key}"}); confirmed=True
+                    if mode=="cancel" and not aborted and ("Copy/verify" in chars or "Kopieren/pruefen" in chars):
+                        command("human-monitor-command",{"command-line":"sendkey esc"}); aborted=True
+                    result_ready="ASPIDD failed/incomplete." in text if mode=="cancel" else "ASPIDD rescue completed" in text
+                    if not finished and result_ready:
                         # Finish stays visible until the user acknowledges it.
-                        command("human-monitor-command",{"command-line":f"screendump {out/'gui-finish.ppm'}"})
+                        command("human-monitor-command",{"command-line":f"screendump {out/('gui-'+mode+'.ppm')}"})
                         command("human-monitor-command",{"command-line":"sendkey ret"})
                         finished=True
                 time.sleep(.1)
@@ -63,7 +75,9 @@ with (out/f"process-{mode}.log").open("wb") as log:
             text=serial.read_bytes().decode("cp437"); print(text)
             if proc.returncode!=1 or "RESCUE TEST PASSED" not in text or "TEST FAILED" in text:
                 raise RuntimeError(f"{mode} rescue integration failed")
-            if mode=="gui" and not (finished and saw_gui): raise RuntimeError("GUI not exercised")
+            if mode!="cli" and not (finished and saw_gui): raise RuntimeError("GUI not exercised")
+            if mode=="select" and not (selected and confirmed): raise RuntimeError("GUI selection not exercised")
+            if mode=="cancel" and not aborted: raise RuntimeError("GUI cancellation not exercised")
     finally:
         if proc.poll() is None: proc.terminate(); proc.wait(timeout=10)
         if sock.exists(): sock.unlink()

@@ -10,7 +10,8 @@ backup application.
 `ASPITAP.SYS` is an ASPITAPE-compatible tape driver.  `ASPICDA.SYS`
 (CD/DVD), `ASPIDSK.SYS` (disks) and `ASPIFDD.SYS` (LS-120, ZIP and similar)
 have a first version: CD/DVD reads (cooked and raw) for MSCDEX or SHSUCDX,
-FAT12/FAT16 volumes read and written.  See the
+FAT12/FAT16 volumes read and written, plus conditional FAT32 tested with
+FreeDOS 1.4. See the
 [driver suite](docs/driver-suite.md) for their responsibilities and
 differences.
 
@@ -35,6 +36,9 @@ make check
 Build products are written below `build/`. Requirements, tool overrides,
 emulator tests and distribution packaging are described in the
 [build guide](docs/building.md).
+`make disksets` produces separate English (`release/US`) and German
+(`release/GR`) installation floppy images, following Open386MAX's language
+layout. See [installation media](installer/README.md).
 
 ## Documentation
 
@@ -44,10 +48,13 @@ emulator tests and distribution packaging are described in the
 - [Architecture](docs/architecture.md) and [Windows 9x plans](docs/windows9x-storage.md).
 - Tools: [ASPISCAN](tools/aspiscan/README.md),
   [ASPIMGR DOS interface](tools/aspimgr/README.md),
-  [ASPICTL / EJECT / CLOSE](tools/aspictl/README.md),
+  [ASPICTL media controls](tools/aspictl/README.md),
+  [ASPIFMT formatting](tools/aspifmt/README.md),
+  [ASPIDD copying and DOS GUI](tools/aspidd/README.md),
   [TAPECTL](tools/tapectl/README.md), [WINCHECK](tools/wincheck/README.md).
 - [Reference material](docs/reference-material.md) and
   [mhVTL integration](docs/qemu-mhvtl.md).
+- [Remaining driver work](docs/driver-status.md).
 
 OpenTape is a separate sibling project for backup, restore and the user
 interface. OpenASPI owns the drivers and low-level ASPI/SCSI support;

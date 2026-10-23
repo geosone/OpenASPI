@@ -57,10 +57,11 @@ The no-manager variant checks both text and GUI failure reporting.
 
 ## Next functions
 
-Formatting and device actions belong in this common interface rather than
-in a separate oversized `ASPIFDDCTL` filename. FAT12/FAT16 creation,
-device-specific ZIP/LS-120 formatting, medium capacity and write-protection
-reporting still need implementation and qualification. Eject, lock/unlock
+Filesystem creation and copying are available through
+[ASPIFMT](../aspifmt/README.md) and [ASPIDD/ASPIDDG](../aspidd/README.md).
+Integration into this inventory interface, device-specific physical
+ZIP/LS-120 formatting and detailed live protection reporting remain open.
+Eject, lock/unlock
 and CD close are now implemented in the drivers and available through
 [ASPICTL](../aspictl/README.md); GUI integration remains to be done.
 These actions are not exposed as working menu entries yet.

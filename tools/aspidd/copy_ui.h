@@ -4,6 +4,10 @@
 int dd_ui_select(unsigned *,unsigned *,int *);
 int dd_ui_confirm(unsigned,unsigned);
 void dd_ui_start(void);
+void dd_ui_stop(void);
+void dd_ui_map(const char *);
+void dd_ui_file(const char *);
+void dd_ui_devices(unsigned,unsigned);
 void dd_ui_phase(const char *,unsigned,oa_u32);
 int dd_ui_progress(oa_u32,oa_u32);
 int dd_ui_exchange(unsigned);
