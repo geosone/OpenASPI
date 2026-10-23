@@ -24,6 +24,16 @@ quietly to preselect Tape, Disk, removable-media and CD/DVD components from
 the devices actually reported by the active ASPI manager. You can change every
 suggested selection before installation.
 
+ASPIMGR.EXE provides the shared Open386MAX-style DOS interface for all ASPI
+adapters and devices. Use Up/Down to select, R to scan again and Esc to exit.
+ASPIMGR /TEXT prints an inventory suitable for redirection. This first version
+shows device information; formatting and media actions are not implemented.
+
+ASPICTL EJECT|CLOSE|LOCK|UNLOCK|STATUS X: controls the installed driver.
+EJECT.EXE and CLOSE.EXE are copies of the same program: EJECT F: / CLOSE D:.
+EJECT /FORCE releases media locks before ejecting (EJECT F: /FORCE).
+Hardware errors still fail the operation. CLOSE applies only to CD drives.
+
 TAPECTL.COM opens NRMT0 in raw mode and reports the ASPITAPE-compatible status
 block. TAPECTL /READY additionally sends the non-destructive TEST UNIT READY
 command.

@@ -32,6 +32,16 @@ These are black-box compatibility fixtures.  Record hashes, command-line
 options and observed behavior in test logs; do not check the binaries into the
 OpenASPI repository.
 
+The [ZIP/LS-120 investigation](aspifdd-reference.md) records local static
+analysis of GUEST/MKELS120, companion-file roles, hashes, handler offsets and
+unverified functionality. Original binaries and decompiler output are not
+included in that document or the source tree.
+
+The [reproducible Adaptec analysis](reference-analysis.md) uses a hash-pinned
+Ghidra script for the original ASPIDISK and ASPICD binaries. Their respective
+compatibility documents track observed entry points, incomplete behavior and
+the implementation/test work needed in ASPIDSK/ASPICDA.
+
 The original 1992 `ASPITAPE.ZIP` distribution and its `ASPITAPE.4` manual are
 available from the [Pier Shareware 1 archive](https://cdrom.classicistranieri.com/Pier%20Shareware%201/017A/ASPITAPE.ZIP).
 They confirm that mandatory SCSI fixed-block operation is selected using

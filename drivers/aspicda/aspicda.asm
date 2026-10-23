@@ -14,12 +14,14 @@
 ; Options: /D:name  device name (default ASPICDA0)
 ;          /V       list the drives found
 
+ifndef ASPICDA_TEST
         .8086
         option casemap:none
 
         .model tiny
         .code
         org     0
+endif
 
         include common/aspi/dos_aspi.inc
         include common/dos/devreq.inc
@@ -28,9 +30,10 @@ MAX_UNITS       equ     8
 CHUNK_SECTORS   equ     16              ; 16 * 2352 bytes stay below 64 KB
 DEV_ATTR        equ     0C800h          ; character, IOCTL, open/close
 TOC_SIZE        equ     4 + 100 * 8
+AUDIO_MODE_SIZE equ     64
 
-; device status (IOCTL input 6): door unlocked, cooked and raw reads,
-; data read only, audio play, HSG and Red Book addressing
+; Baseline device status (IOCTL input 6). Playing, verified channel control
+; and committed lock/tray commands are added per unit; other bits remain baseline.
 CD_STATUS       equ     0216h
 
 OPT_VERBOSE     equ     01h
@@ -40,7 +43,15 @@ CAP_KNOWN       equ     80h             ; page 2Ah was read
 CAP_ANALOG      equ     01h             ; plays audio (analog output)
 CAP_CDDA        equ     02h             ; reads audio sectors (READ CD)
 CAP_ACCURATE    equ     04h             ; CD-DA stream is accurate
-UNIT_ENTRY      equ     4
+U_AUDIO_STATE   equ     4              ; 0 idle, 1 playing, 2 paused
+U_AUDIO_RANGE   equ     5              ; a successful PLAY supplied the range
+U_AUDIO_START   equ     6              ; packed binary MSF DWORD
+U_AUDIO_END     equ     10             ; exclusive end, packed binary MSF
+U_AUDIO_CONTROL equ     14             ; 0 unknown, 1 verified, 2 unavailable
+U_DOOR_STATE    equ     15             ; last successful driver command
+DOOR_LOCKED     equ     01h
+DOOR_OPEN       equ     02h
+UNIT_ENTRY      equ     16
 
 driver_start:
         dd      0FFFFFFFFh
@@ -54,8 +65,10 @@ unit_count      db      0
 
 request_ptr     dd      0
 
-; the drives: host adapter, target, LUN, capabilities
+; Per-drive address/capabilities and committed audio state/range.
 unit_table      db      MAX_UNITS * UNIT_ENTRY dup (0)
+current_unit    dw      0
+request_busy    dw      0
 
 strategy proc far
         mov     word ptr cs:[request_ptr], bx
@@ -76,6 +89,7 @@ interrupt proc far
         push    cs
         pop     ds
         cld
+        mov     word ptr [request_busy], 0
         ; DOS calls block drivers with a small stack, and the ASPI manager
         ; needs more: a stack of our own
         mov     word ptr [caller_ss], ss
@@ -107,7 +121,25 @@ found_command:
         jc      request_failed
 request_ok:
         les     bx, [request_ptr]
-        mov     word ptr es:[bx+RH_STATUS], ST_DONE
+        mov     ax, ST_DONE
+        mov     dl, byte ptr es:[bx+RH_COMMAND]
+        cmp     dl, CMD_IOCTL_IN
+        je      request_audio_busy
+        cmp     dl, CMD_IOCTL_OUT
+        je      request_audio_busy
+        cmp     dl, CMD_INPUT_FLUSH
+        je      request_audio_busy
+        cmp     dl, CMD_OPEN
+        je      request_audio_busy
+        cmp     dl, CMD_CLOSE
+        jne     request_store_status
+request_audio_busy:
+        mov     si, word ptr [current_unit]
+        cmp     byte ptr [si+U_AUDIO_STATE], 1
+        jne     request_store_status
+        or      ax, ST_BUSY
+request_store_status:
+        mov     word ptr es:[bx+RH_STATUS], ax
         jmp     short request_done
 unknown_command:
         mov     al, ERR_UNKNOWN_CMD
@@ -115,6 +147,7 @@ request_failed:
         les     bx, [request_ptr]
         xor     ah, ah
         or      ax, ST_ERROR or ST_DONE
+        or      ax, word ptr [request_busy]
         mov     word ptr es:[bx+RH_STATUS], ax
 request_done::
         cli
@@ -138,21 +171,21 @@ command_table:
         db      CMD_IOCTL_IN
         dw      ioctl_input
         db      CMD_INPUT_FLUSH
-        dw      do_nothing
+        dw      audio_poll
         db      CMD_OUTPUT_FLUSH
         dw      do_nothing
         db      CMD_IOCTL_OUT
         dw      ioctl_output
         db      CMD_OPEN
-        dw      do_nothing
+        dw      audio_poll
         db      CMD_CLOSE
-        dw      do_nothing
+        dw      audio_poll
         db      CMD_READ_LONG
         dw      read_long
         db      CMD_READ_PREFETCH
-        dw      do_nothing
+        dw      seek_request
         db      CMD_SEEK
-        dw      do_nothing
+        dw      seek_request
         db      CMD_PLAY_AUDIO
         dw      play_audio
         db      CMD_STOP_AUDIO
@@ -178,6 +211,8 @@ select_unit_ok:
         mov     ah, UNIT_ENTRY
         mul     ah
         mov     di, ax
+        add     ax, offset unit_table
+        mov     word ptr [current_unit], ax
         mov     al, byte ptr [unit_table+di]
         mov     byte ptr [unit_ha], al
         mov     al, byte ptr [unit_table+di+1]
@@ -190,13 +225,32 @@ select_unit endp
 
 ; CF set: AL = DOS error code of the failed SCSI command
 scsi_failed proc near
-        call    aspi_result
+        call    cd_aspi_result
         jnc     scsi_failed_ok
         call    sense_to_doserr
         stc
 scsi_failed_ok:
         ret
 scsi_failed endp
+
+; Keep the raw sense key for callers such as MEDIA CHANGED, but invalidate
+; stale resume data even when they intentionally don't return a DOS error.
+cd_aspi_result proc near
+        call    aspi_result
+        jnc     cd_result_done
+        cmp     al, 02h                         ; NOT READY
+        je      cd_result_lost_media
+        cmp     al, 06h                         ; UNIT ATTENTION
+        jne     cd_result_failed
+cd_result_lost_media:
+        push    ax
+        call    clear_audio                     ; any query may consume media change
+        pop     ax
+cd_result_failed:
+        stc
+cd_result_done:
+        ret
+cd_aspi_result endp
 
 ; Red Book (byte 0 frame, 1 second, 2 minute) in DX:AX -> LBA in DX:AX
 msf_to_lba proc near
@@ -242,16 +296,88 @@ lba_to_msf proc near
         ret
 lba_to_msf endp
 
-; the start address of a READ LONG / PLAY request -> LBA in DX:AX
+; READ LONG / SEEK / PREFETCH start -> LBA. PLAY uses a different offset.
 request_lba proc near
         mov     ax, word ptr es:[bx+RH_CD_START]
         mov     dx, word ptr es:[bx+RH_CD_START+2]
-        cmp     byte ptr es:[bx+RH_CD_ADDRMODE], 0
-        je      request_lba_done
-        call    msf_to_lba
-request_lba_done:
-        ret
+        ; Fall through to the common decoder, also used by PLAY AUDIO.
 request_lba endp
+
+decode_address proc near
+        cmp     byte ptr es:[bx+RH_CD_ADDRMODE], 0
+        je      address_ok
+        cmp     byte ptr es:[bx+RH_CD_ADDRMODE], 1
+        jne     address_bad
+        or      dh, dh
+        jnz     address_bad
+        cmp     dl, 98
+        ja      address_bad
+        cmp     ah, 59
+        ja      address_bad
+        cmp     al, 74
+        ja      address_bad
+        call    msf_to_lba
+        ; MSF before 00:02:00 is before logical sector zero.
+        test    dx, 8000h
+        jnz     address_bad
+address_ok:
+        clc
+        ret
+address_bad:
+        mov     al, 08h
+        stc
+        ret
+decode_address endp
+
+; Both requests are positioning hints: SEEK(10), without a data transfer.
+; Check against the current medium, not a cached capacity from another disc.
+seek_request proc near
+        cmp     byte ptr es:[bx+RH_LENGTH], 18h
+        jb      seek_bad_length
+        call    request_lba
+        jc      seek_done
+        push    dx
+        push    ax
+        call    read_capacity
+        jc      seek_capacity_failed
+        mov     cx, ax
+        mov     si, dx
+        pop     ax
+        pop     dx
+        cmp     dx, si
+        ja      seek_outside
+        jb      seek_in_range
+        cmp     ax, cx
+        ja      seek_outside
+seek_in_range:
+        push    dx
+        push    ax
+        mov     al, SRB_DIR_NONE
+        mov     cl, 10
+        call    aspi_prepare
+        pop     ax
+        pop     dx
+        mov     byte ptr [srb+SRB_CDB], 2Bh
+        mov     byte ptr [srb+SRB_CDB+2], dh
+        mov     byte ptr [srb+SRB_CDB+3], dl
+        mov     byte ptr [srb+SRB_CDB+4], ah
+        mov     byte ptr [srb+SRB_CDB+5], al
+        call    call_aspi
+        jmp     scsi_failed
+seek_bad_length:
+        mov     al, 05h
+        stc
+        ret
+seek_capacity_failed:
+        add     sp, 4
+        stc
+        ret
+seek_outside:
+        mov     al, 08h
+        stc
+seek_done:
+        ret
+seek_request endp
 
 ;-----------------------------------------------------------------------------
 ; READ LONG: cooked (2048 bytes, READ(10)) or raw (2352 bytes, READ CD)
@@ -267,6 +393,7 @@ read_long proc near
         mov     cx, word ptr es:[bx+RH_CD_COUNT]
         mov     word ptr [read_left], cx
         call    request_lba
+        jc      read_failed
         mov     word ptr [read_lba], ax
         mov     word ptr [read_lba+2], dx
         mov     ax, word ptr es:[bx+RH_CD_BUFFER]
@@ -367,9 +494,30 @@ read_sectors endp
 ; IOCTL input
 ;-----------------------------------------------------------------------------
 
-ioctl_input proc near
+; Shared input/output IOCTL envelope. ES:DI -> control block, AL -> code.
+ioctl_control_block proc near
+        cmp     byte ptr es:[bx+RH_LENGTH], 14h
+        jb      ioctl_bad_packet
+        cmp     word ptr es:[bx+RH_COUNT], 1
+        jb      ioctl_bad_packet
+        mov     ax, word ptr es:[bx+RH_BUFFER]
+        or      ax, word ptr es:[bx+RH_BUFFER+2]
+        jz      ioctl_bad_packet
         les     di, dword ptr es:[bx+RH_BUFFER]
         mov     al, byte ptr es:[di]
+        clc
+        ret
+ioctl_bad_packet:
+        mov     al, 05h
+        stc
+        ret
+ioctl_control_block endp
+
+ioctl_input proc near
+        call    ioctl_control_block
+        jnc     ioctl_input_valid
+        ret
+ioctl_input_valid:
         mov     si, offset ioctl_in_table
 ioctl_in_next:
         cmp     byte ptr [si], 0FFh
@@ -389,6 +537,10 @@ ioctl_input endp
 ioctl_in_table:
         db      0
         dw      ioctl_header_address
+        db      1
+        dw      ioctl_head_position
+        db      4
+        dw      ioctl_get_channels
         db      6
         dw      ioctl_device_status
         db      7
@@ -401,7 +553,399 @@ ioctl_in_table:
         dw      ioctl_disk_info
         db      11
         dw      ioctl_track_info
+        db      12
+        dw      ioctl_q_channel
+        db      14
+        dw      ioctl_upc
+        db      15
+        dw      ioctl_audio_status
         db      0FFh
+
+; AX = required control-block size. Check count and segment wrap before
+; reading/writing fields. ES:DI is retained, BX/CX/DX may change.
+check_ioctl_buffer proc near
+        push    es
+        les     bx, [request_ptr]
+        mov     cx, word ptr es:[bx+RH_COUNT]
+        pop     es
+        cmp     cx, ax
+        jb      ioctl_buffer_bad
+        mov     dx, di
+        dec     ax
+        add     dx, ax
+        jc      ioctl_buffer_bad
+        clc
+        ret
+ioctl_buffer_bad:
+        mov     al, 05h
+        stc
+        ret
+check_ioctl_buffer endp
+
+ioctl_head_position:
+        mov     ax, 6
+        call    check_ioctl_buffer
+        jc      head_position_done
+        mov     al, byte ptr es:[di+1]
+        cmp     al, 1
+        ja      head_position_mode_bad
+        shl     al, 1                          ; MMC MSF bit
+        call    read_sub_position
+        jc      head_position_done
+        cmp     byte ptr es:[di+1], 0
+        jne     head_position_msf
+        mov     dx, word ptr [sub_position+8]
+        xchg    dl, dh
+        mov     ax, word ptr [sub_position+10]
+        xchg    al, ah
+        jmp     short head_position_store
+head_position_msf:
+        mov     al, byte ptr [sub_position+11]  ; frame, second, minute, zero
+        mov     ah, byte ptr [sub_position+10]
+        mov     dl, byte ptr [sub_position+9]
+        xor     dh, dh
+head_position_store:
+        mov     word ptr es:[di+2], ax
+        mov     word ptr es:[di+4], dx
+        clc
+head_position_done:
+        ret
+head_position_mode_bad:
+        mov     al, ERR_UNKNOWN_CMD
+        stc
+        ret
+
+ioctl_q_channel:
+        mov     ax, 11
+        call    check_ioctl_buffer
+        jc      q_channel_done
+        mov     al, 2                          ; request binary MSF
+        call    read_sub_position
+        jc      q_channel_done
+        mov     al, byte ptr [sub_position+5]   ; SCSI ADR/CONTROL -> DOS
+        mov     cl, 4
+        rol     al, cl
+        mov     byte ptr es:[di+1], al
+        mov     al, byte ptr [sub_position+6]
+        cmp     al, 0AAh                       ; retain lead-out marker
+        je      q_channel_track
+        aam                                    ; binary track -> BCD
+        mov     cl, 4
+        shl     ah, cl
+        or      al, ah
+q_channel_track:
+        mov     byte ptr es:[di+2], al
+        mov     al, byte ptr [sub_position+7]   ; index remains binary
+        mov     byte ptr es:[di+3], al
+        mov     ax, word ptr [sub_position+13]  ; relative M, S
+        mov     word ptr es:[di+4], ax
+        mov     al, byte ptr [sub_position+15]
+        mov     byte ptr es:[di+6], al
+        mov     byte ptr es:[di+7], 0
+        mov     ax, word ptr [sub_position+9]   ; absolute M, S
+        mov     word ptr es:[di+8], ax
+        mov     al, byte ptr [sub_position+11]
+        mov     byte ptr es:[di+10], al
+        clc
+q_channel_done:
+        ret
+
+; DOS UPC/EAN is a mode-2 Q packet, not the MMC ASCII MCN response.
+; Stage everything: even a failed follow-up CONTROL query leaves output alone.
+ioctl_upc proc near
+        mov     ax, 11
+        call    check_ioctl_buffer
+        jnc     upc_buffer_ok
+        ret
+upc_buffer_ok:
+        mov     ax, 0200h                      ; format 2, MSF not applicable
+        mov     cx, 24
+        mov     si, offset mcn_data
+        call    read_sub_channel
+        jnc     upc_received
+        ret
+upc_received:
+        cmp     byte ptr [mcn_data], 0
+        jne     upc_bad
+        cmp     word ptr [mcn_data+2], 1400h    ; 20-byte format-2 payload
+        jne     upc_bad
+        cmp     byte ptr [mcn_data+4], 2
+        jne     upc_bad
+        cmp     word ptr [mcn_data+5], 0
+        jne     upc_bad
+        cmp     byte ptr [mcn_data+7], 0
+        jne     upc_bad
+        test    byte ptr [mcn_data+8], 7Fh      ; MCVAL's other bits reserved
+        jnz     upc_bad
+        test    byte ptr [mcn_data+8], 80h
+        jz      upc_missing
+        cmp     byte ptr [mcn_data+22], 0
+        jne     upc_bad
+        cmp     byte ptr [mcn_data+23], 74
+        ja      upc_bad
+        mov     si, offset mcn_data+9
+        mov     cx, 13
+        xor     dx, dx
+upc_validate_digit:
+        lodsb
+        sub     al, '0'
+        cmp     al, 9
+        ja      upc_bad
+        or      dl, al
+        loop    upc_validate_digit
+        or      dl, dl
+        jz      upc_missing                    ; all zeros means not supplied
+        jmp     short upc_pack
+upc_bad:
+        mov     al, ERR_GENERAL
+        stc
+        ret
+upc_missing:
+        mov     al, ERR_NOT_FOUND              ; matches reference MCVAL failure
+        stc
+        ret
+upc_pack:
+        mov     si, offset mcn_data+9
+        mov     bx, offset upc_result+1
+        mov     cx, 6
+upc_pack_pair:
+        lodsw
+        sub     ax, 3030h
+        push    cx
+        mov     cl, 4
+        shl     al, cl
+        pop     cx
+        or      al, ah
+        mov     byte ptr [bx], al
+        inc     bx
+        loop    upc_pack_pair
+        lodsb
+        sub     al, '0'
+        mov     cl, 4
+        shl     al, cl
+        mov     byte ptr [upc_result+7], al     ; low nibble explicitly zero
+        mov     byte ptr [upc_result+8], 0
+        mov     al, byte ptr [mcn_data+23]      ; MMC binary -> raw mode-2 BCD
+        aam
+        shl     ah, cl
+        or      al, ah
+        mov     byte ptr [upc_result+9], al
+        ; Format 2 has no CONTROL field. Obtain it from current Q data,
+        ; as the original's standard 42h path at 0857h does.
+        mov     al, 2
+        call    read_sub_position
+        jc      upc_done
+        mov     al, byte ptr [sub_position+5]
+        and     al, 0Fh
+        mov     cl, 4
+        shl     al, cl
+        or      al, 2                          ; ADR = MCN, not position
+        mov     byte ptr [upc_result], al
+        mov     si, offset upc_result
+        inc     di
+        mov     cx, 10
+        rep     movsb
+        clc
+upc_done:
+        ret
+ioctl_upc endp
+
+; AL = 0 (LBA) or 2 (MSF). A fresh format-1 READ SUB-CHANNEL response;
+; never copy incomplete/invalid data to the caller. No capability guessing
+; from MODE page 2Ah: unsupported commands fail through the ASPI result.
+read_sub_position proc near
+        call    submit_sub_position
+        jc      read_sub_done
+        call    validate_sub_position
+read_sub_done:
+        ret
+read_sub_position endp
+
+submit_sub_position proc near
+        mov     ah, 1
+        mov     cx, 16
+        mov     si, offset sub_position
+        jmp     short read_sub_channel
+submit_sub_position endp
+
+; AL = address mode, AH = format, CX = allocation, DS:SI = scratch buffer.
+; Shared transport for position and MCN. ES:DI (DOS output) is retained.
+read_sub_channel proc near
+        push    ax
+        push    cx
+        push    si
+        push    es
+        push    di
+        push    cs
+        pop     es
+        mov     di, si
+        mov     al, 0FFh                       ; poison unreturned bytes
+        rep     stosb
+        pop     di
+        pop     es
+        mov     al, SRB_DIR_IN
+        mov     cl, 10
+        call    aspi_prepare
+        pop     si
+        pop     cx
+        pop     ax
+        mov     byte ptr [srb+SRB_CDB], 42h
+        mov     byte ptr [srb+SRB_CDB+1], al
+        mov     byte ptr [srb+SRB_CDB+2], 40h    ; SUBQ
+        mov     byte ptr [srb+SRB_CDB+3], ah
+        mov     byte ptr [srb+SRB_CDB+8], cl
+        mov     word ptr [srb+SRB_BufLen], cx
+        mov     word ptr [srb+SRB_BufPointer], si
+        mov     word ptr [srb+SRB_BufPointer+2], cs
+        call    call_aspi
+        jmp     scsi_failed
+read_sub_channel endp
+
+validate_sub_position proc near
+        cmp     byte ptr [sub_position], 0     ; reserved header byte
+        jne     sub_position_bad
+        cmp     word ptr [sub_position+2], 0C00h ; 12-byte format-1 payload
+        jne     sub_position_bad
+        cmp     byte ptr [sub_position+4], 1
+        jne     sub_position_bad
+        mov     al, byte ptr [sub_position+6]
+        cmp     al, 0AAh
+        je      sub_track_ok
+        cmp     al, 1
+        jb      sub_position_bad
+        cmp     al, 99
+        ja      sub_position_bad
+sub_track_ok:
+        cmp     byte ptr [sub_position+7], 99
+        ja      sub_position_bad
+        cmp     byte ptr [srb+SRB_CDB+1], 0
+        je      sub_position_ok
+        cmp     byte ptr [sub_position+8], 0
+        jne     sub_position_bad
+        cmp     byte ptr [sub_position+12], 0
+        jne     sub_position_bad
+        mov     si, offset sub_position+9
+        call    check_sub_msf
+        jc      sub_position_bad
+        mov     si, offset sub_position+13
+        call    check_sub_msf
+        jc      sub_position_bad
+sub_position_ok:
+        clc
+sub_position_done:
+        ret
+sub_position_bad:
+        mov     al, ERR_GENERAL
+        stc
+        ret
+validate_sub_position endp
+
+; Only a driver-issued active PLAY needs polling. Terminal status can be
+; valid even when there is no current Q position (e.g. after completion).
+audio_poll proc near
+        mov     si, word ptr [current_unit]
+        cmp     byte ptr [si+U_AUDIO_STATE], 0
+        je      audio_poll_ok
+        mov     al, 2
+        call    submit_sub_position
+        jc      audio_poll_error
+        cmp     byte ptr [sub_position], 0
+        jne     audio_poll_malformed
+        cmp     word ptr [sub_position+2], 0
+        je      audio_poll_header_ok
+        cmp     word ptr [sub_position+2], 0C00h
+        jne     audio_poll_malformed
+audio_poll_header_ok:
+        mov     al, byte ptr [sub_position+1]
+        cmp     al, 11h
+        je      audio_poll_active
+        cmp     al, 12h
+        je      audio_poll_active
+        cmp     al, 13h
+        jb      audio_poll_unsupported
+        cmp     al, 15h
+        ja      audio_poll_malformed
+        mov     si, word ptr [current_unit]
+        mov     byte ptr [si+U_AUDIO_STATE], 0
+        jmp     short audio_poll_ok
+audio_poll_active:
+        call    validate_sub_position
+        jc      audio_poll_done
+        mov     al, byte ptr [sub_position+1]
+        sub     al, 10h
+        mov     si, word ptr [current_unit]
+        mov     byte ptr [si+U_AUDIO_STATE], al
+audio_poll_ok:
+        clc
+audio_poll_done:
+        ret
+audio_poll_unsupported:
+        or      al, al
+        jnz     audio_poll_malformed
+        mov     al, ERR_UNKNOWN_CMD
+        stc
+        ret
+audio_poll_malformed:
+        mov     al, ERR_GENERAL
+        stc
+        ret
+audio_poll_error:
+        ; Common SCSI error handling has already invalidated lost media.
+        stc
+        ret
+audio_poll endp
+
+clear_audio proc near
+        mov     si, word ptr [current_unit]
+        mov     byte ptr [si+U_AUDIO_STATE], 0
+        mov     byte ptr [si+U_AUDIO_RANGE], 0
+        mov     word ptr [si+U_AUDIO_START], 0
+        mov     word ptr [si+U_AUDIO_START+2], 0
+        mov     word ptr [si+U_AUDIO_END], 0
+        mov     word ptr [si+U_AUDIO_END+2], 0
+        clc
+        ret
+clear_audio endp
+
+ioctl_audio_status:
+        mov     ax, 11
+        call    check_ioctl_buffer
+        jc      audio_status_done
+        call    audio_poll
+        jc      audio_status_done
+        mov     si, word ptr [current_unit]
+        xor     ax, ax
+        cmp     byte ptr [si+U_AUDIO_STATE], 2
+        jne     audio_status_store
+        inc     ax
+audio_status_store:
+        mov     word ptr es:[di+1], ax
+        mov     ax, word ptr [si+U_AUDIO_START]
+        mov     word ptr es:[di+3], ax
+        mov     ax, word ptr [si+U_AUDIO_START+2]
+        mov     word ptr es:[di+5], ax
+        mov     ax, word ptr [si+U_AUDIO_END]
+        mov     word ptr es:[di+7], ax
+        mov     ax, word ptr [si+U_AUDIO_END+2]
+        mov     word ptr es:[di+9], ax
+        clc
+audio_status_done:
+        ret
+
+; Binary M/S/F response fields (relative time has no 150-frame bias).
+check_sub_msf proc near
+        cmp     byte ptr [si], 99
+        ja      sub_msf_bad
+        cmp     byte ptr [si+1], 59
+        ja      sub_msf_bad
+        cmp     byte ptr [si+2], 74
+        ja      sub_msf_bad
+        clc
+        ret
+sub_msf_bad:
+        stc
+        ret
+check_sub_msf endp
 
 ioctl_header_address:
         mov     word ptr es:[di+1], 0
@@ -410,9 +954,33 @@ ioctl_header_address:
         ret
 
 ioctl_device_status:
+        mov     ax, 5
+        call    check_ioctl_buffer
+        jc      device_status_done
+        call    audio_poll
+        jc      device_status_done
+        call    audio_control_capability
         mov     word ptr es:[di+1], CD_STATUS
         mov     word ptr es:[di+3], 0
+        mov     si, word ptr [current_unit]
+        test    byte ptr [si+U_DOOR_STATE], DOOR_LOCKED
+        jz      device_status_unlocked
+        and     word ptr es:[di+1], not 2
+device_status_unlocked:
+        test    byte ptr [si+U_DOOR_STATE], DOOR_OPEN
+        jz      device_status_closed
+        or      word ptr es:[di+1], 1
+device_status_closed:
+        cmp     byte ptr [si+U_AUDIO_CONTROL], 1
+        jne     device_status_audio
+        or      word ptr es:[di+1], 0100h
+device_status_audio:
+        cmp     byte ptr [si+U_AUDIO_STATE], 1
+        jne     device_status_ok
+        or      word ptr es:[di+1], 0400h
+device_status_ok:
         clc
+device_status_done:
         ret
 
 ioctl_sector_size:
@@ -426,6 +994,18 @@ sector_size_ready:
         ret
 
 ioctl_volume_size:
+        call    read_capacity
+        jc      volume_size_done
+        add     ax, 1
+        adc     dx, 0
+        mov     word ptr es:[di+1], ax
+        mov     word ptr es:[di+3], dx
+        clc
+volume_size_done:
+        ret
+
+; Current last logical block in DX:AX (not the block count).
+read_capacity proc near
         push    es
         push    di
         mov     al, SRB_DIR_IN
@@ -439,18 +1019,24 @@ ioctl_volume_size:
         pop     di
         pop     es
         call    scsi_failed
-        jc      volume_size_done
+        jc      capacity_done
         mov     ax, word ptr [capacity_data+2]   ; last LBA, big-endian
         xchg    al, ah
         mov     dx, word ptr [capacity_data]
         xchg    dl, dh
-        add     ax, 1
-        adc     dx, 0
-        mov     word ptr es:[di+1], ax
-        mov     word ptr es:[di+3], dx
-        clc
-volume_size_done:
+        ; FFFFFFFFh means READ CAPACITY(16) is required, not a zero-size CD.
+        cmp     dx, 0FFFFh
+        jne     capacity_ok
+        cmp     ax, 0FFFFh
+        jne     capacity_ok
+        mov     al, 08h
+        stc
         ret
+capacity_ok:
+        clc
+capacity_done:
+        ret
+read_capacity endp
 
 ; 1 unchanged, 0FFh changed (UNIT ATTENTION), 0 don't know
 ioctl_media_changed:
@@ -460,7 +1046,7 @@ ioctl_media_changed:
         mov     cl, 6
         call    aspi_prepare                    ; TEST UNIT READY: CDB zero
         call    call_aspi
-        call    aspi_result
+        call    cd_aspi_result
         pop     di
         pop     es
         mov     ah, 1
@@ -564,12 +1150,339 @@ store_toc_msf proc near
 store_toc_msf endp
 
 ;-----------------------------------------------------------------------------
-; IOCTL output: eject, lock/unlock, reset, close tray
+; Audio Control page 0Eh. Read current hardware state, not a software echo.
+; DOS input/output channel bytes are indexes; SCSI selectors are bitmasks.
+;-----------------------------------------------------------------------------
+
+ioctl_get_channels proc near
+        mov     ax, 9
+        call    check_ioctl_buffer
+        jc      get_channels_done
+        xor     al, al                         ; current values, PC=0
+        call    read_audio_page
+        jc      get_channels_done
+        mov     bx, word ptr [audio_page]
+        add     bx, 8                          ; first selector/volume pair
+        mov     si, offset audio_desired
+        xor     dx, dx                         ; output port number
+        mov     cx, 4
+get_channel_next:
+        mov     al, byte ptr [bx]
+        and     al, 0Fh
+        mov     ah, byte ptr [bx+1]
+        or      al, al
+        jnz     get_channel_routed
+        ; Muted port: the input is immaterial; report its own index and
+        ; zero amplitude rather than pretending an audible input is routed.
+        mov     al, dl
+        xor     ah, ah
+        jmp     short get_channel_store
+get_channel_routed:
+        call    selector_to_channel
+        jc      get_channels_done              ; mixed selectors not expressible
+get_channel_store:
+        mov     word ptr [si], ax
+        add     si, 2
+        add     bx, 2
+        inc     dx
+        loop    get_channel_next
+        mov     si, offset audio_desired
+        inc     di
+        mov     cx, 8
+        rep     movsb
+        clc
+get_channels_done:
+        ret
+ioctl_get_channels endp
+
+; AL = one-hot channel mask -> AL = DOS channel index, AH retained.
+selector_to_channel proc near
+        cmp     al, 1
+        je      selector_zero
+        cmp     al, 2
+        je      selector_one
+        cmp     al, 4
+        je      selector_two
+        cmp     al, 8
+        je      selector_three
+        mov     al, ERR_UNKNOWN_CMD
+        stc
+        ret
+selector_zero:
+        xor     al, al
+        ret
+selector_one:
+        mov     al, 1
+        clc
+        ret
+selector_two:
+        mov     al, 2
+        clc
+        ret
+selector_three:
+        mov     al, 3
+        clc
+        ret
+selector_to_channel endp
+
+ioctl_set_channels proc near
+        mov     ax, 9
+        call    check_ioctl_buffer
+        jnc     set_channels_buffer_ok
+        ret
+set_channels_buffer_ok:
+        ; Stage and validate all four pairs before any drive access.
+        xor     bx, bx
+set_channel_stage:
+        mov     al, byte ptr es:[di+bx+1]
+        cmp     al, 3
+        jbe     set_channel_valid
+        mov     al, ERR_UNKNOWN_CMD
+        stc
+        ret
+set_channel_valid:
+        mov     ah, byte ptr es:[di+bx+2]
+        mov     word ptr [audio_desired+bx], ax
+        add     bx, 2
+        cmp     bx, 8
+        jb      set_channel_stage
+        xor     al, al
+        call    read_audio_page
+        jnc     set_channels_current_ok
+        ret
+set_channels_current_ok:
+        ; Only page 0Eh goes to MODE SELECT: zero header, no descriptors,
+        ; no other pages. Retain all non-routing fields and any page tail.
+        push    es
+        push    di
+        push    cs
+        pop     es
+        mov     di, offset audio_select
+        xor     ax, ax
+        mov     cx, 4
+        rep     stosw
+        mov     si, word ptr [audio_page]
+        mov     cx, word ptr [audio_page_size]
+        mov     ax, cx
+        add     ax, 8
+        mov     word ptr [audio_select_size], ax
+        rep     movsb
+        and     byte ptr [audio_select+8], 7Fh  ; PS is not valid in SELECT
+        pop     di
+        pop     es
+        mov     al, 40h                        ; changeable values, PC=1
+        call    read_audio_page
+        jnc     set_channels_mask_ok
+        ret
+set_channels_mask_ok:
+        mov     ax, word ptr [audio_page_size]
+        add     ax, 8
+        cmp     ax, word ptr [audio_select_size]
+        je      set_channels_same_page
+        mov     al, ERR_GENERAL
+        stc
+        ret
+set_channels_same_page:
+        mov     byte ptr [audio_changeable], 0
+        mov     si, word ptr [audio_page]
+        add     si, 8
+        mov     bx, offset audio_select+16
+        xor     dx, dx                         ; pair offset 0,2,4,6
+set_channel_apply:
+        push    bx
+        mov     bx, dx
+        mov     cl, byte ptr [audio_desired+bx]
+        mov     ah, byte ptr [audio_desired+bx+1]
+        pop     bx
+        or      ah, ah
+        jnz     set_channel_encode
+        mov     al, byte ptr [bx]
+        and     al, 0Fh
+        jnz     set_channel_encode
+        ; GET maps a muted selector to volume zero. Its original amplitude
+        ; may be fixed and nonzero: retain the already-silent hardware pair
+        ; when that semantic zero-volume result is written back unchanged.
+        mov     ax, word ptr [bx]
+        jmp     short set_channel_encoded
+set_channel_encode:
+        mov     al, 1
+        shl     al, cl
+        mov     cl, byte ptr [bx]
+        and     cl, 0F0h                       ; preserve reserved selector bits
+        or      al, cl
+set_channel_encoded:
+        ; Reject requested changes to fixed bits; never silently clamp.
+        mov     cx, word ptr [bx]
+        xor     cx, ax
+        push    ax
+        mov     ax, word ptr [si]
+        test    ax, 0FF0Fh
+        jz      set_channel_fixed_mask
+        mov     byte ptr [audio_changeable], 1
+set_channel_fixed_mask:
+        not     ax
+        and     cx, ax
+        pop     ax
+        jcxz    set_channel_changeable
+        mov     al, ERR_UNKNOWN_CMD
+        stc
+        ret
+set_channel_changeable:
+        mov     word ptr [bx], ax
+        add     bx, 2
+        add     si, 2
+        add     dx, 2
+        cmp     dx, 8
+        jb      set_channel_apply
+        mov     al, SRB_DIR_OUT
+        mov     cl, 10
+        call    aspi_prepare
+        mov     byte ptr [srb+SRB_CDB], 55h     ; MODE SELECT(10)
+        mov     byte ptr [srb+SRB_CDB+1], 10h   ; PF=1, SP=0 (not persistent)
+        mov     ax, word ptr [audio_select_size]
+        mov     byte ptr [srb+SRB_CDB+8], al
+        mov     word ptr [srb+SRB_BufLen], ax
+        mov     word ptr [srb+SRB_BufPointer], offset audio_select
+        mov     word ptr [srb+SRB_BufPointer+2], cs
+        call    call_aspi
+        call    scsi_failed
+        jc      set_channels_done
+        cmp     byte ptr [audio_changeable], 0
+        je      set_channels_success
+        mov     si, word ptr [current_unit]
+        mov     byte ptr [si+U_AUDIO_CONTROL], 1
+set_channels_success:
+        clc
+set_channels_done:
+        ret
+ioctl_set_channels endp
+
+; Optional drive capability probe. A failed/unsupported page must not break
+; basic device-status queries. Only explicit ILLEGAL REQUEST or an entirely
+; fixed page is cached as unavailable; transient failures remain unknown.
+audio_control_capability proc near
+        mov     si, word ptr [current_unit]
+        cmp     byte ptr [si+U_AUDIO_CONTROL], 0
+        jne     audio_control_probe_done
+        xor     al, al
+        call    read_audio_page
+        jc      audio_control_probe_error
+        mov     ax, word ptr [audio_page_size]
+        mov     word ptr [audio_probe_size], ax
+        mov     al, 40h
+        call    read_audio_page
+        jc      audio_control_probe_error
+        mov     ax, word ptr [audio_page_size]
+        cmp     ax, word ptr [audio_probe_size]
+        jne     audio_control_probe_done
+        mov     bx, word ptr [audio_page]
+        add     bx, 8
+        mov     cx, 4
+audio_control_probe_pair:
+        mov     ax, word ptr [bx]
+        and     ax, 0FF0Fh
+        jnz     audio_control_probe_supported
+        add     bx, 2
+        loop    audio_control_probe_pair
+        jmp     short audio_control_probe_unavailable
+audio_control_probe_error:
+        cmp     al, ERR_NOT_FOUND              ; mapped ILLEGAL REQUEST
+        jne     audio_control_probe_done
+audio_control_probe_unavailable:
+        mov     si, word ptr [current_unit]
+        mov     byte ptr [si+U_AUDIO_CONTROL], 2
+        ret
+audio_control_probe_supported:
+        mov     si, word ptr [current_unit]
+        mov     byte ptr [si+U_AUDIO_CONTROL], 1
+audio_control_probe_done:
+        ret
+audio_control_capability endp
+
+; AL = PC bits 00h/40h. A bounded MODE SENSE(10) page, including a possible
+; block descriptor returned despite DBD. ES:DI is retained. No MODE(6) fallback.
+read_audio_page proc near
+        push    ax
+        push    es
+        push    di
+        push    cs
+        pop     es
+        mov     di, offset audio_mode
+        mov     cx, AUDIO_MODE_SIZE
+        mov     al, 0FFh
+        rep     stosb
+        pop     di
+        pop     es
+        mov     al, SRB_DIR_IN
+        mov     cl, 10
+        call    aspi_prepare
+        pop     ax
+        or      al, 0Eh
+        mov     byte ptr [srb+SRB_CDB], 5Ah
+        mov     byte ptr [srb+SRB_CDB+1], 08h   ; DBD
+        mov     byte ptr [srb+SRB_CDB+2], al
+        mov     byte ptr [srb+SRB_CDB+8], AUDIO_MODE_SIZE
+        mov     word ptr [srb+SRB_BufLen], AUDIO_MODE_SIZE
+        mov     word ptr [srb+SRB_BufPointer], offset audio_mode
+        mov     word ptr [srb+SRB_BufPointer+2], cs
+        call    call_aspi
+        call    scsi_failed
+        jc      audio_page_done
+        mov     dx, word ptr [audio_mode]
+        xchg    dl, dh
+        cmp     dx, AUDIO_MODE_SIZE-2
+        ja      audio_page_bad
+        add     dx, 2                          ; total response length
+        cmp     dx, 24
+        jb      audio_page_bad
+        mov     bx, word ptr [audio_mode+6]
+        xchg    bl, bh
+        cmp     bx, AUDIO_MODE_SIZE-24
+        ja      audio_page_bad
+        add     bx, 8
+        mov     ax, bx
+        add     ax, 16
+        cmp     ax, dx
+        ja      audio_page_bad
+        add     bx, offset audio_mode
+        mov     al, byte ptr [bx]
+        and     al, 7Fh                        ; PS allowed, SPF not allowed
+        cmp     al, 0Eh
+        jne     audio_page_bad
+        xor     ax, ax
+        mov     al, byte ptr [bx+1]
+        cmp     al, 14
+        jb      audio_page_bad
+        add     ax, 2
+        mov     cx, bx
+        sub     cx, offset audio_mode
+        add     cx, ax
+        cmp     cx, dx
+        ja      audio_page_bad
+        mov     word ptr [audio_page], bx
+        mov     word ptr [audio_page_size], ax
+        clc
+audio_page_done:
+        ret
+audio_page_bad:
+        mov     al, ERR_GENERAL
+        stc
+        ret
+read_audio_page endp
+
+;-----------------------------------------------------------------------------
+; IOCTL output: eject, lock/unlock, reset, audio channels, close tray
 ;-----------------------------------------------------------------------------
 
 ioctl_output proc near
-        les     di, dword ptr es:[bx+RH_BUFFER]
-        mov     al, byte ptr es:[di]
+        call    ioctl_control_block
+        jnc     ioctl_output_valid
+        ret
+ioctl_output_valid:
+        cmp     al, 3
+        jne     ioctl_output_other
+        jmp     ioctl_set_channels
+ioctl_output_other:
         cmp     al, 0
         je      eject_disk
         cmp     al, 1
@@ -582,32 +1495,56 @@ ioctl_output proc near
         stc
         ret
 eject_disk:
+        mov     si, word ptr [current_unit]
+        test    byte ptr [si+U_DOOR_STATE], DOOR_LOCKED
+        jnz     media_control_locked
         mov     ah, 02h                         ; LoEj, stop
         jmp     short start_stop
 close_tray:
         mov     ah, 03h                         ; LoEj, start
 start_stop:
+        mov     al, 1Bh
         push    ax
-        mov     al, SRB_DIR_NONE
-        mov     cl, 6
-        call    aspi_prepare
-        pop     ax
-        mov     byte ptr [srb+SRB_CDB], 1Bh     ; START STOP UNIT
-        mov     byte ptr [srb+SRB_CDB+4], ah
-        call    call_aspi
-        jmp     scsi_failed
+        call    aspi_media_control
+        call    scsi_failed
+        pop     dx                             ; DH = requested tray operation
+        jc      start_stop_done
+        mov     si, word ptr [current_unit]
+        and     byte ptr [si+U_DOOR_STATE], not DOOR_OPEN
+        test    dh, 1
+        jnz     start_stop_audio
+        or      byte ptr [si+U_DOOR_STATE], DOOR_OPEN
+start_stop_audio:
+        call    clear_audio
+start_stop_done:
+        ret
 lock_door:
+        mov     ax, 2
+        call    check_ioctl_buffer
+        jc      media_control_done
         mov     ah, byte ptr es:[di+1]          ; 1 lock, 0 unlock
-        and     ah, 1
+        cmp     ah, 1
+        ja      media_control_bad
+        mov     al, 1Eh
         push    ax
-        mov     al, SRB_DIR_NONE
-        mov     cl, 6
-        call    aspi_prepare
-        pop     ax
-        mov     byte ptr [srb+SRB_CDB], 1Eh     ; PREVENT ALLOW MEDIUM REMOVAL
-        mov     byte ptr [srb+SRB_CDB+4], ah
-        call    call_aspi
-        jmp     scsi_failed
+        call    aspi_media_control
+        call    scsi_failed
+        pop     dx
+        jc      media_control_done
+        mov     si, word ptr [current_unit]
+        and     byte ptr [si+U_DOOR_STATE], not DOOR_LOCKED
+        or      byte ptr [si+U_DOOR_STATE], dh
+        clc
+media_control_done:
+        ret
+media_control_bad:
+        mov     al, ERR_UNKNOWN_CMD
+        stc
+        ret
+media_control_locked:
+        mov     al, ERR_GENERAL
+        stc
+        ret
 reset_drive:
         clc
         ret
@@ -618,19 +1555,61 @@ ioctl_output endp
 ;-----------------------------------------------------------------------------
 
 play_audio proc near
+        cmp     byte ptr es:[bx+RH_LENGTH], 16h
+        jae     play_length_ok
+        mov     al, 05h
+        stc
+        ret
+play_length_ok:
         mov     cx, word ptr es:[bx+RH_CD_PLAYCOUNT]
         or      cx, word ptr es:[bx+RH_CD_PLAYCOUNT+2]
-        jz      play_done
-        call    request_lba
-        push    dx
-        push    ax
+        jnz     play_nonempty
+        clc
+        ret
+play_nonempty:
+        mov     si, word ptr [current_unit]
+        cmp     byte ptr [si+U_AUDIO_STATE], 1
+        jne     play_not_busy
+        call    audio_poll
+        jnc     play_poll_ok
+        ret
+play_poll_ok:
+        mov     si, word ptr [current_unit]
+        cmp     byte ptr [si+U_AUDIO_STATE], 1
+        jne     play_not_busy
+        mov     word ptr [request_busy], ST_BUSY
+        mov     al, ERR_NOT_READY
+        stc
+        ret
+play_not_busy:
+        mov     ax, word ptr es:[bx+RH_CD_PLAYSTART]
+        mov     dx, word ptr es:[bx+RH_CD_PLAYSTART+2]
+        call    decode_address
+        jnc     play_address_ok
+        ret
+play_address_ok:
+        mov     word ptr [play_start], ax
+        mov     word ptr [play_start+2], dx
         add     ax, word ptr es:[bx+RH_CD_PLAYCOUNT]
         adc     dx, word ptr es:[bx+RH_CD_PLAYCOUNT+2]
+        jc      play_outside
+        ; PLAY AUDIO MSF uses binary minutes. Limit to a representable CD
+        ; position before conversion (also prevents 8086 DIV overflow).
+        cmp     dx, 449849 shr 16
+        ja      play_outside
+        jb      play_range_ok
+        cmp     ax, 449849 and 0FFFFh
+        jbe     play_range_ok
+play_outside:
+        mov     al, 08h
+        stc
+        ret
+play_range_ok:
         call    lba_to_msf
         mov     word ptr [play_end], ax
         mov     byte ptr [play_end+2], dl
-        pop     ax
-        pop     dx
+        mov     ax, word ptr [play_start]
+        mov     dx, word ptr [play_start+2]
         call    lba_to_msf
         push    dx
         push    ax
@@ -650,19 +1629,56 @@ play_audio proc near
         mov     al, byte ptr [play_end]
         mov     byte ptr [srb+SRB_CDB+8], al
         call    call_aspi
-        jmp     scsi_failed
+        call    scsi_failed
+        jc      play_failed
+        mov     ax, word ptr [play_start]
+        mov     dx, word ptr [play_start+2]
+        call    lba_to_msf
+        mov     si, word ptr [current_unit]
+        mov     word ptr [si+U_AUDIO_START], ax
+        mov     word ptr [si+U_AUDIO_START+2], dx
+        mov     ax, word ptr [play_end]
+        mov     word ptr [si+U_AUDIO_END], ax
+        xor     ah, ah
+        mov     al, byte ptr [play_end+2]
+        mov     word ptr [si+U_AUDIO_END+2], ax
+        mov     byte ptr [si+U_AUDIO_RANGE], 1
+        mov     byte ptr [si+U_AUDIO_STATE], 1
 play_done:
         clc
+play_failed:
         ret
 play_audio endp
 
 stop_audio proc near
+        call    audio_poll
+        jc      stop_audio_done
+        mov     si, word ptr [current_unit]
+        cmp     byte ptr [si+U_AUDIO_STATE], 1
+        je      stop_audio_playing
+        jmp     clear_audio
+stop_audio_playing:
         xor     ah, ah                          ; pause
         jmp     short pause_resume
+stop_audio_done:
+        ret
 stop_audio endp
 
 resume_audio proc near
+        call    audio_poll
+        jc      resume_audio_done
+        mov     si, word ptr [current_unit]
+        cmp     byte ptr [si+U_AUDIO_STATE], 2
+        jne     resume_audio_invalid
+        cmp     byte ptr [si+U_AUDIO_RANGE], 1
+        jne     resume_audio_invalid
         mov     ah, 1
+        jmp     short pause_resume
+resume_audio_invalid:
+        mov     al, ERR_UNKNOWN_CMD
+        stc
+resume_audio_done:
+        ret
 resume_audio endp
 
 pause_resume proc near
@@ -674,13 +1690,43 @@ pause_resume proc near
         mov     byte ptr [srb+SRB_CDB], 4Bh     ; PAUSE/RESUME
         mov     byte ptr [srb+SRB_CDB+8], ah
         call    call_aspi
-        jmp     scsi_failed
+        call    scsi_failed
+        jc      pause_resume_done
+        mov     si, word ptr [current_unit]
+        mov     byte ptr [si+U_AUDIO_STATE], 1
+        cmp     byte ptr [srb+SRB_CDB+8], 1
+        je      pause_resume_ok
+        mov     byte ptr [si+U_AUDIO_STATE], 2
+        ; Pause reports the saved resume position, as in the reference.
+        mov     al, byte ptr [sub_position+11]
+        mov     ah, byte ptr [sub_position+10]
+        mov     word ptr [si+U_AUDIO_START], ax
+        xor     ah, ah
+        mov     al, byte ptr [sub_position+9]
+        mov     word ptr [si+U_AUDIO_START+2], ax
+pause_resume_ok:
+        clc
+pause_resume_done:
+        ret
 pause_resume endp
 
         include common/aspi/aspi_client.inc
+        include common/aspi/media_control.inc
 
 play_end        db      3 dup (0)
+play_start      dd      0
 capacity_data   db      8 dup (0)
+sub_position    db      16 dup (0)
+mcn_data        db      24 dup (0)
+upc_result      db      10 dup (0)
+audio_page      dw      0
+audio_page_size dw      0
+audio_select_size dw    0
+audio_probe_size dw     0
+audio_changeable db     0
+audio_desired   db      8 dup (0)
+audio_mode      db      AUDIO_MODE_SIZE dup (0)
+audio_select    db      AUDIO_MODE_SIZE dup (0)
 toc_data        db      TOC_SIZE dup (0)
 
 caller_ss       dw      0
@@ -980,4 +2026,7 @@ msg_digital_yes db      ', digital audio)$'
 msg_digital_inexact db  ', digital audio inexact)$'
 msg_digital_no  db      ', no digital audio)$'
 
-        end     driver_start
+ifndef ASPICDA_TEST
+DRIVER_ENTRY textequ <driver_start>
+endif
+        end     DRIVER_ENTRY

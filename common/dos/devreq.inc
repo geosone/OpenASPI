@@ -29,6 +29,11 @@ RH_START        equ     14h             ; word start sector, 0FFFFh: dword below
 RH_VOLUME       equ     16h             ; dword: volume label on error
 RH_START32      equ     1Ah             ; dword start sector (DOS 4+)
 
+; GENERIC IOCTL (13h) / IOCTL QUERY (19h)
+RH_IOCTL_CATEGORY equ   0Dh
+RH_IOCTL_MINOR  equ     0Eh
+RH_IOCTL_PARAM  equ     13h             ; far parameter-block pointer (13h)
+
 ; CD-ROM READ LONG (80h), PREFETCH (82h), SEEK (83h), PLAY (84h)
 RH_CD_ADDRMODE  equ     0Dh             ; 0 HSG (LBA), 1 Red Book (MSF)
 RH_CD_BUFFER    equ     0Eh             ; dword

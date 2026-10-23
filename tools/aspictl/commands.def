@@ -1,0 +1,6 @@
+/* One registry for subcommands and DOS filename aliases (max. 8 characters). */
+OA_COMMAND(EJECT)
+OA_COMMAND(CLOSE)
+OA_COMMAND(LOCK)
+OA_COMMAND(UNLOCK)
+OA_COMMAND(STATUS)

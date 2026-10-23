@@ -19,9 +19,25 @@ Version 0.1:
   so DOS reads the disk again when it may have changed.
 - Partitioned disks (ZIP) and superfloppies (LS-120); FAT12/FAT16.
 - READ, WRITE and WRITE WITH VERIFY as ASPIDSK.
+- Read-only generic IOCTL `08h/60h` returns installation-time defaults or
+  freshly read current-media parameters; `08h/66h` reads the current serial,
+  label and filesystem text. IOCTL query reports only these implemented
+  operations. Removable-media `08h/48h` adds checked, reference-counted
+  locking; `08h/49h` ejects only when unlocked. Hardware errors propagate.
 
-Not yet: eject/lock, formatting (generic IOCTL 42h with FORMAT UNIT), the
-LS-120 media types (720 KB, 1.44 MB, 1.25 MB, 120 MB), a runtime loader
+Not yet: formatting (generic IOCTL 42h with FORMAT UNIT), the
+LS-120-specific media sensing/format profiles, a runtime loader
 like Iomega GUEST.EXE; see
 [ASPIDISK and MKELS120 compatibility](../../docs/aspidisk-compat.md).
 Original drivers are compatibility fixtures only and are not distributed.
+
+See [media controls](../../docs/media-control.md) for lock/eject semantics,
+ASPICTL/EJECT usage, tests and hardware qualification limits.
+
+See [block IOCTL behavior and tests](../../docs/block-ioctl.md) for the
+supported parameter layout and limitations. ZIP and LS-120 device-function
+research is recorded separately in the
+[reference investigation](../../docs/aspifdd-reference.md).
+
+Native ATAPI LS-120 read/write testing and the local 86Box 6.0 emulator
+backport are documented in [86Box LS-120](../../docs/86box-ls120.md).

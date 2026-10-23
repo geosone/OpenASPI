@@ -10,3 +10,6 @@
 [submodule "deps/shsucd"]
 	path = deps/shsucd
 	url = https://github.com/geosone/shsucd.git
+[submodule "deps/Open386MAX"]
+	path = deps/Open386MAX
+	url = https://github.com/geosone/Open386MAX.git

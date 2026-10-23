@@ -18,6 +18,17 @@ make -C "$ROOT" all >/dev/null
 rm -rf "$OUT"
 mkdir -p "$OUT/cdroot/SUB"
 
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX \
+    -Fo="$OUT/CDACMD.COM" "$ROOT/tests/cda_commands.asm"
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX \
+    -Fo="$OUT/CDASUB.COM" "$ROOT/tests/cda_subchannel.asm"
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX \
+    -Fo="$OUT/CDASTATE.COM" "$ROOT/tests/cda_audio_state.asm"
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX \
+    -Fo="$OUT/CDACHAN.COM" "$ROOT/tests/cda_audio_channels.asm"
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX \
+    -Fo="$OUT/CDAUPC.COM" "$ROOT/tests/cda_upc.asm"
+
 nasm -f bin -w-reloc-abs-word -DE9LOG -I"$AHCIASPI_DIR/src/" \
     -o "$OUT/AHCIASPI.SYS" "$AHCIASPI_DIR/src/ahciaspi.asm"
 nasm -f bin -o "$OUT/QEXIT.COM" "$AHCIASPI_DIR/tools/qexit.asm"
@@ -39,6 +50,11 @@ printf '%s\r\n' \
 printf '%s\r\n' \
     '@ECHO OFF' \
     'SHSUCDX /D:ASPICDA0,R /A:AUTO > AUX' \
+    'CDACMD > AUX' \
+    'CDASUB > AUX' \
+    'CDASTATE > AUX' \
+    'CDACHAN > AUX' \
+    'CDAUPC > AUX' \
     'CDAUDIO > AUX' \
     'CDAUDIO ON > AUX' \
     'CDAUDIO OFF > AUX' \
@@ -53,13 +69,24 @@ mcopy -o -i "$OUT/boot.img" \
     "$OUT/CONFIG.SYS" "$OUT/AUTOEXEC.BAT" "$OUT/AHCIASPI.SYS" \
     "$ROOT/build/dos/ASPICDA.SYS" "$ROOT/build/dos/SHSUCDX.COM" \
     "$ROOT/build/dos/CDAUDIO.COM" \
+    "$OUT/CDACMD.COM" \
+    "$OUT/CDASUB.COM" \
+    "$OUT/CDASTATE.COM" \
+    "$OUT/CDACHAN.COM" \
+    "$OUT/CDAUPC.COM" \
     "$OUT/QEXIT.COM" ::/
 
 printf 'OpenASPI ASPICDA read test\r\n' > "$OUT/cdroot/README.TXT"
 head -c 100000 /dev/urandom > "$OUT/cdroot/SUB/BIG.BIN"
 printf 'ASPICDA TAIL PASSED\r\n' > "$OUT/cdroot/SUB/TAIL.TXT"
-xorriso -as mkisofs -quiet -V OPENASPI -o "$OUT/cd.iso" \
-    "$OUT/cdroot" 2>/dev/null
+# A real CD track must have at least 300 sectors (four seconds). Add enough
+# zero padding for catalog-aware CUE/TOC backends, not only raw ISO readers.
+xorriso -outdev "$OUT/cd.iso" -volid OPENASPI \
+    -map "$OUT/cdroot" / -padding 1m -end 2>/dev/null
+
+# Preserve the catalog alongside the ISO for a CUE-capable CD backend.
+# Native QEMU ide-cd reads only cd.iso, NOT this CUE or its subchannel data.
+cp "$ROOT/tests/fixtures/cd-catalog.cue" "$OUT/cd.cue"
 
 if [ "$BUS" = ide ]; then
     cd_args=(-drive "id=cd,if=none,format=raw,media=cdrom,file=$OUT/cd.iso"
@@ -94,6 +121,13 @@ cmp "$OUT/BIG.BIN" "$OUT/cdroot/SUB/BIG.BIN"
 tr -d '\r' < "$OUT/serial.log"
 grep -q 'OpenASPI ASPICDA read test' "$OUT/serial.log"
 grep -q 'ASPICDA TAIL PASSED' "$OUT/serial.log"
+grep -q 'ASPICDA seek/prefetch/address/play tests passed' "$OUT/serial.log"
+grep -q 'ASPICDA installed seek/prefetch boundary tests passed' "$OUT/serial.log"
+grep -q 'ASPICDA head/Q-channel packet/error/guard tests passed' "$OUT/serial.log"
+grep -q 'ASPICDA per-unit audio state/busy/failure tests passed' "$OUT/serial.log"
+grep -q 'ASPICDA audio channels/masks/preservation/error tests passed' "$OUT/serial.log"
+grep -q 'ASPICDA UPC/MCVAL/BCD/error/guard tests passed' "$OUT/serial.log"
+grep -q 'SHSUCDX UPC forwarding in analog/digital modes passed' "$OUT/serial.log"
 ! grep -q 'BIG MISSING' "$OUT/serial.log"
 
 # QEMU's drive reports Audio Play but no CD-DA in MODE SENSE page 2Ah

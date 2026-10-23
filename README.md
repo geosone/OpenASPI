@@ -43,6 +43,8 @@ emulator tests and distribution packaging are described in the
 - [Installation](installer/README.md): shared GDI installer and package probes.
 - [Architecture](docs/architecture.md) and [Windows 9x plans](docs/windows9x-storage.md).
 - Tools: [ASPISCAN](tools/aspiscan/README.md),
+  [ASPIMGR DOS interface](tools/aspimgr/README.md),
+  [ASPICTL / EJECT / CLOSE](tools/aspictl/README.md),
   [TAPECTL](tools/tapectl/README.md), [WINCHECK](tools/wincheck/README.md).
 - [Reference material](docs/reference-material.md) and
   [mhVTL integration](docs/qemu-mhvtl.md).

@@ -18,6 +18,17 @@ build/tools/jwasm/jwasm
 build/tools/jwlink/jwlink
 ```
 
+The DOS `ASPIMGR.EXE` interface also links the pinned Open386MAX QUILIB
+submodule. Its library and compatible assembler are built locally below
+`build/tools/quilib-US` (or `quilib-GR`) and `build/tools/qui-jwasm`.
+Use `make MAXLANG=US` or `make MAXLANG=GR` for English or German. See
+[ASPIMGR](../tools/aspimgr/README.md) for the native DOS GUI test.
+`ASPICTL.EXE`, `EJECT.EXE` and `CLOSE.EXE` provide drive-letter media
+controls. `bash tests/dos_media_control.sh` tests the resident block/CD
+handlers and the complete CD command-line path in QEMU; `make dos-disk-smoke`
+also checks removable-media locks and forced eject. See
+[media controls](media-control.md).
+
 Override `JWASM`, `JWLINK` or `CC` on the make command line when required.
 All build products are written below `build/`.
 
@@ -30,11 +41,19 @@ make check
 ```
 
 `make dos-disk-smoke` also runs a memory-only test of the real block request
-core: rejected WRITE AND VERIFY must fall back with the original 32-bit LBA,
-buffer and chunk count; other failures preserve their error and never retry.
+core: rejected WRITE AND VERIFY must fall back to WRITE plus separate VERIFY
+with the original 32-bit LBA, buffer and chunk count. VERIFY has no data
+payload; WRITE/VERIFY failures preserve their error and stop before the next
+chunk. A failed verification cannot be reported as a successful verified write.
 It checks the shared removable-model policy, then boots a removable generic
 USB stick alone to require `/DISK` success and `/FDD` absence. Disk writes in
 these tests target disposable QEMU image files, never host block devices.
+
+It also runs `tests/block_ioctl.asm` against both block-driver variants:
+the actual strategy/interrupt handlers use a memory-only ASPI callback to
+check parameter/query behavior, media changes, errors and buffer boundaries.
+`tests/block_ioctl_dos.asm` checks the DOS INT 21h parameter/query calls on
+all three installed image-backed drives. See [block IOCTL behavior](block-ioctl.md).
 
 `make dist` includes SHSUCDX.COM, CDAUDIO.COM and the upstream SHSUCD license
 and readme, and validates the payload with `tests/dist_layout.sh`. To check
@@ -62,10 +81,37 @@ boundary tests and an optional sanitizer run.
   AHCIASPI manager, verifies clean rejection when no tape is present and runs
   the scanner and installer probes against an emulated ATAPI CD-ROM.
 - `make dos-cda-smoke` boots SvarDOS with AHCIASPI, ASPICDA and SHSUCDX
-  (from `deps/shsucd`) and reads files from a CD on AHCI and on IDE.
+  (from `deps/shsucd`) and reads files from a CD on AHCI and on IDE. It also
+  runs `tests/cda_commands.asm`: the actual driver against memory-only ASPI
+  for seek/prefetch/address/play packet and failure checks, then installed
+  driver positioning at sector zero, the last sector and one past capacity.
+  `tests/cda_subchannel.asm` adds memory-only head-position/Q-channel tests:
+  exact HSG/MSF and binary/BCD fields, aliased far buffers, guards, malformed
+  replies and no-medium/unsupported-command failures.
+  `tests/cda_audio_state.asm` uses a two-unit memory manager to test audio
+  play/pause/resume state, saved ranges, completion, busy/error status,
+  guarded outputs, failed transitions and media-loss/replacement handling.
+  `tests/cda_audio_channels.asm` adds two-unit Audio Control page tests:
+  four-port readback/set, change masks, mute round trips, descriptor layouts,
+  opaque field preservation, failures, guarded buffers and capability flags.
+  `tests/cda_upc.asm` checks MCN/BCD/CONTROL conversion and guarded failures
+  with memory ASPI, then tests installed SHSUCDX UPC error forwarding in
+  analog and digital modes on the catalog-less QEMU fixture, restoring its
+  original mode. Positive catalog data is not yet a physical-disc test.
+  A catalog-bearing CUE manifest is also generated alongside the ISO; see
+  [CD catalog image and native QEMU limits](qemu-cd-catalog.md). Native QEMU
+  10.2.3 lacks READ SUB-CHANNEL: those forwarding checks specifically verify
+  an unsupported-command error, not a positive image-backed catalog read.
+  A separate patched-86Box positive test is available through
+  `bash tests/dos_86box_upc.sh` and `HIGH=1 bash tests/dos_86box_upc.sh`.
+  See the same guide for the local binary, required ROMs/JEMMEX and the
+  version-specific Portage backport. No system package is remerged by tests.
 - `make dos-disk-smoke` boots SvarDOS with EUSBASPI, ASPIDSK and ASPIFDD and
   three USB devices (a stick, a ZIP, an LS-120 superfloppy) and reads and
   writes each of them; the images are checked afterwards (`fsck.fat`).
+  `bash tests/dos_86box_ls120.sh` separately tests a native ATAPI LS-120
+  through AHCIASPI and ASPIFDD, including host file comparisons. See
+  [86Box LS-120](86box-ls120.md) for the 6.0 backport and test prerequisites.
 - `make dos-tape-smoke` boots a test-only ASPI manager exposing an emulated
   tape. Driver scenarios and focused runs are documented in
   [ASPITAP testing](../drivers/aspitap/TESTING.md).

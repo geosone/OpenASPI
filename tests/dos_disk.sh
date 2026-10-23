@@ -24,6 +24,10 @@ make -C "$ROOT" all >/dev/null
 rm -rf "$OUT"
 mkdir -p "$OUT"
 "$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -Fo="$OUT/BLKFALL.COM" "$ROOT/tests/block_fallback.asm"
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -Fo="$OUT/BLKIO.COM" "$ROOT/tests/block_ioctl.asm"
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -DTEST_FDD -Fo="$OUT/FDDIO.COM" "$ROOT/tests/block_ioctl.asm"
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -Fo="$OUT/DOSIO.COM" "$ROOT/tests/block_ioctl_dos.asm"
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -Fo="$OUT/FDDGONE.COM" "$ROOT/tests/block_eject_dos.asm"
 
 nasm -f bin -w-reloc-abs-word -I"$EUSBASPI_DIR/src/" \
     -o "$OUT/EUSBASPI.SYS" "$EUSBASPI_DIR/src/eusbaspi.asm"
@@ -47,6 +51,9 @@ printf '%s\r\n' \
 printf '%s\r\n' \
     '@ECHO OFF' \
     'BLKFALL > AUX' \
+    'BLKIO > AUX' \
+    'FDDIO > AUX' \
+    'DOSIO > AUX' \
     'TYPE E:\DSKTEST.TXT > AUX' \
     'TYPE F:\ZIPTEST.TXT > AUX' \
     'TYPE G:\SFTEST.TXT > AUX' \
@@ -59,9 +66,23 @@ printf '%s\r\n' \
     'VERIFY OFF' \
     'MD E:\NEWDIR' \
     'ECHO written by ASPIDSK > E:\NEWDIR\W.TXT' \
+    'CALL CTLTEST.BAT' \
     'QEXIT' > "$OUT/AUTOEXEC.BAT"
+printf '%s\r\n' '@ECHO OFF' \
+    'ASPICTL LOCK F: > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
+    'ASPICTL LOCK F: > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
+    'ASPICTL STATUS F: > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
+    'EJECT F: > AUX' 'IF NOT ERRORLEVEL 1 GOTO FAILED' \
+    'ASPICTL UNLOCK F: > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
+    'EJECT F: > AUX' 'IF NOT ERRORLEVEL 1 GOTO FAILED' \
+    'CLOSE F: > AUX' 'IF NOT ERRORLEVEL 2 GOTO FAILED' \
+    'EJECT F: /FORCE > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
+    'ASPICTL STATUS F: > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
+    'FDDGONE > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
+    'ECHO FDD ASPICTL locks/force/eject passed > AUX' 'GOTO DONE' \
+    ':FAILED' 'ECHO FDD ASPICTL FAILED > AUX' ':DONE' > "$OUT/CTLTEST.BAT"
 if test "$DETECT_ONLY" = 1; then
-    printf '%s\r\n' '@ECHO OFF' 'BLKFALL > AUX' \
+    printf '%s\r\n' '@ECHO OFF' 'BLKFALL > AUX' 'BLKIO > AUX' 'FDDIO > AUX' \
         'ASPISCAN /Q /DISK' 'IF ERRORLEVEL 1 GOTO failed' \
         'ASPISCAN /Q /FDD' 'IF ERRORLEVEL 2 GOTO failed' \
         'IF NOT ERRORLEVEL 1 GOTO failed' \
@@ -70,25 +91,28 @@ if test "$DETECT_ONLY" = 1; then
 fi
 mcopy -o -i "$OUT/boot.img" "$OUT/CONFIG.SYS" "$OUT/AUTOEXEC.BAT" \
     "$OUT/EUSBASPI.SYS" "$ROOT/build/dos/ASPIDSK.SYS" \
-    "$ROOT/build/dos/ASPIFDD.SYS" "$ROOT/build/dos/ASPISCAN.COM" "$OUT/BLKFALL.COM" "$OUT/QEXIT.COM" ::/
+    "$ROOT/build/dos/ASPIFDD.SYS" "$ROOT/build/dos/ASPISCAN.COM" "$OUT/BLKFALL.COM" \
+    "$OUT/BLKIO.COM" "$OUT/FDDIO.COM" "$OUT/DOSIO.COM" "$OUT/QEXIT.COM" ::/
+mcopy -o -i "$OUT/boot.img" "$OUT/CTLTEST.BAT" "$OUT/FDDGONE.COM" \
+    "$ROOT/build/dos/ASPICTL.EXE" "$ROOT/build/dos/EJECT.EXE" "$ROOT/build/dos/CLOSE.EXE" ::/
 
 # partitioned stick (FAT16, partition at 63) with a file larger than one
 # 64-sector READ(10)
 truncate -s 64M "$OUT/stick.img"
 echo 'start=63, type=6' | sfdisk -q "$OUT/stick.img"
-mkfs.fat -F16 -n STICK --offset 63 "$OUT/stick.img" $(( (64*2048 - 63) / 2 )) >/dev/null
+mkfs.fat -F16 -i 11112222 -n STICK --offset 63 "$OUT/stick.img" $(( (64*2048 - 63) / 2 )) >/dev/null
 printf 'ASPIDSK STICK PASSED\r\n' > "$OUT/DSKTEST.TXT"
 head -c 100000 /dev/urandom > "$OUT/BIG.BIN"
 mcopy -i "$OUT/stick.img@@32256" "$OUT/DSKTEST.TXT" "$OUT/BIG.BIN" ::/
 # ZIP: partitioned (partition at 32, as Iomega formats it)
 truncate -s 96M "$OUT/zip.img"
 echo 'start=32, type=6' | sfdisk -q "$OUT/zip.img"
-mkfs.fat -F16 -n ZIPDISK --offset 32 "$OUT/zip.img" $(( (96*2048 - 32) / 2 )) >/dev/null
+mkfs.fat -F16 -i 33334444 -n ZIPDISK --offset 32 "$OUT/zip.img" $(( (96*2048 - 32) / 2 )) >/dev/null
 printf 'ASPIFDD ZIP PASSED\r\n' > "$OUT/ZIPTEST.TXT"
 mcopy -i "$OUT/zip.img@@16384" "$OUT/ZIPTEST.TXT" ::/
 # LS-120: superfloppy (no partition table)
 truncate -s 120M "$OUT/ls120.img"
-mkfs.fat -F16 -n SUPERDISK "$OUT/ls120.img" >/dev/null
+mkfs.fat -F16 -i 55556666 -n SUPERDISK "$OUT/ls120.img" >/dev/null
 printf 'ASPIFDD LS-120 PASSED\r\n' > "$OUT/SFTEST.TXT"
 mcopy -i "$OUT/ls120.img" "$OUT/SFTEST.TXT" ::/
 
@@ -121,6 +145,8 @@ if [ "$rc" -eq 124 ]; then
 fi
 test "$rc" -eq 1 || { echo "Unexpected QEMU exit: $rc" >&2; exit 1; }
 grep -q 'Block fallback LBA/buffer/count and hard-error tests passed' "$OUT/serial.log"
+test "$(grep -c 'Block IOCTL parameters/query tests passed' "$OUT/serial.log")" -eq 2
+! grep -q 'Block IOCTL regression FAILED' "$OUT/serial.log"
 if test "$DETECT_ONLY" = 1; then
     grep -q 'Removable stick detection passed' "$OUT/serial.log"
     ! grep -q 'FAILED' "$OUT/serial.log"
@@ -128,6 +154,12 @@ if test "$DETECT_ONLY" = 1; then
     exit 0
 fi
 
+grep -q 'DOS block IOCTL end-to-end tests passed' "$OUT/serial.log"
+grep -q 'FDD ASPICTL locks/force/eject passed' "$OUT/serial.log"
+grep -q 'locks=2' "$OUT/serial.log"
+grep -q 'locks=0' "$OUT/serial.log"
+! grep -q 'FAILED' "$OUT/serial.log"
+! grep -q 'DOS block IOCTL end-to-end FAILED' "$OUT/serial.log"
 mcopy -o -i "$OUT/boot.img" ::/BIG.BIN "$OUT/BIG.OUT"
 cmp "$OUT/BIG.OUT" "$OUT/BIG.BIN"
 # the files written through the drivers, read back from the images

@@ -12,7 +12,7 @@ read_hex()
 }
 
 test "$(read_hex "$driver" 0 4)" = "ffffffff"
-test "$(read_hex "$driver" 4 2)" = "0208"
+test "$(read_hex "$driver" 4 2)" = "c208"
 test "$(read_hex "$driver" 10 1)" = "00"
 
 echo "OpenASPI $(basename "$driver") device-header layout tests passed"
