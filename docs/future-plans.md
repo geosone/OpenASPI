@@ -125,7 +125,50 @@ volume v" and "has the medium changed".
   specification (2019).  Check the exFAT patent situation for a DOS driver
   before a release.
 
+Release: EXFAT.SYS, EXFMT and EXCHK are part of the OpenASPI release, and
+the release files also get a separate `exfat-<version>.zip` with only these
+three (and their documentation), for systems without ASPI.
+
 Tests: QEMU with an exFAT disk image made by `mkfs.exfat` (MBR, GPT and
 superfloppy) as IDE disk and USB stick through the BIOS, without ASPI; then
 with EUSBASPI and ASPIDSK, stick changes FAT <-> exFAT on the same letter;
 MS-DOS 7.1, FreeDOS and EDR-DOS.
+
+## ASPICHK and DEFRAG for all FAT variants
+
+DOS 7.1 has CHKDSK and SCANDISK but no DEFRAG any more (the DEFRAG of
+Windows 98 runs in Windows only), and the DOS tools stop at the limits of
+their DOS version.  OpenASPI gets its own two tools, even though DOS has a
+checker:
+
+- **ASPICHK**: checks FAT12, FAT16 and FAT32: boot sector and BPB, both FAT
+  copies against each other, cluster chains (lost, cross linked, loops),
+  directory entries and VFAT long name entries (checksums, orphans), file
+  sizes against chains, FAT32 FSInfo free counts.  Reports first, repairs
+  with `/F`.  Works on every DOS drive (absolute disk read/write, INT 25h/
+  26h and INT 21h 7305h for FAT32), and on ASPIDSK/ASPIFDD media through
+  their raw-media service, also when DOS has not mounted them.
+- **DEFRAG**: defragments FAT12, FAT16 and FAT32 (and exFAT through the
+  sector interface of EXFAT.SYS once that can write): files contiguous,
+  directories first, free space at the end, optionally sorted directories.
+  Safe against power loss: data is copied first, the FAT and the directory
+  entry are changed after, both FAT copies, a journal of the current move.
+  Text UI like MS DEFRAG (cluster map).
+
+Both are adapted from existing free code instead of written new:
+
+| Source | License | Use |
+|---|---|---|
+| FreeDOS DEFRAG 1.3.1 (Imre Leber), with its FAT transformation engine | GPL | DEFRAG; the engine is shared with FreeDOS CHKDSK and RECOVER |
+| FreeDOS CHKDSK (Imre Leber) | GPL | ASPICHK, same engine |
+| dosfsck 2.11 (FreeDOS port, Eric Auer) / fsck.fat of dosfstools 4.x | GPL v2 / GPL v3 or later | ASPICHK checks and repairs, FAT32 |
+| exfatprogs (mkfs.exfat, fsck.exfat) | GPL v2 or later | EXFMT and EXCHK |
+
+OpenASPI is GPL version 3: code under "GPL v2 only" cannot be taken over,
+"v2 or later" can.  The license text in each source archive has to be
+checked before anything is copied (the project pages are not enough).
+
+Tests: QEMU disk images made by `mkfs.fat` with fragmented files (written
+and deleted in turns), checked by `fsck.fat` on the host after DEFRAG and
+after ASPICHK `/F`; power loss in the middle of a DEFRAG (QEMU stopped) and
+ASPICHK afterwards.
