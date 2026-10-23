@@ -58,7 +58,7 @@ start:
         mov word ptr [aspi_entry], offset fake_aspi
         mov word ptr [aspi_entry+2], cs
         mov byte ptr [unit_count], 1
-        mov byte ptr [unit_table+U_FLAGS], UF_REMOVABLE
+        mov byte ptr [unit_table+U_FLAGS], UF_REMOVABLE or UF_NOACCESS
         mov byte ptr [packet+RH_LENGTH], 32
         mov byte ptr [packet+RH_COMMAND], CMD_GEN_IOCTL
         mov byte ptr [packet+RH_IOCTL_CATEGORY], 80h
@@ -79,6 +79,31 @@ start:
         jmp failed
 have_token:
         mov word ptr [token], ax
+        ; Raw administrative sessions work while normal DOS data access is
+        ; disabled, but no competing client may change policy mid-session.
+        mov byte ptr [packet+RH_IOCTL_CATEGORY], 8
+        mov byte ptr [packet+RH_IOCTL_MINOR], 67h
+        SEND ST_DONE or ST_ERROR or ERR_NOT_READY,0
+        mov byte ptr [packet+RH_IOCTL_MINOR], 47h
+        SEND ST_DONE or ST_ERROR or ERR_NOT_READY,0
+        mov byte ptr [packet+RH_IOCTL_MINOR], 46h
+        SEND ST_DONE or ST_ERROR or ERR_NOT_READY,0
+        mov byte ptr [packet+RH_IOCTL_MINOR], 40h
+        SEND ST_DONE or ST_ERROR or ERR_NOT_READY,0
+        mov byte ptr [packet+RH_IOCTL_MINOR], 41h
+        SEND ST_DONE or ST_ERROR or ERR_NOT_READY,0
+        mov byte ptr [packet+RH_IOCTL_MINOR], 61h
+        SEND ST_DONE or ST_ERROR or ERR_NOT_READY,0
+        mov byte ptr [packet+RH_IOCTL_MINOR], 62h
+        SEND ST_DONE or ST_ERROR or ERR_NOT_READY,0
+        mov byte ptr [packet+RH_COMMAND], CMD_IOCTL_QUERY
+        SEND ST_DONE,0
+        mov byte ptr [packet+RH_COMMAND], CMD_GEN_IOCTL
+        mov byte ptr [packet+RH_IOCTL_MINOR], 47h
+        mov byte ptr [packet+RH_COMMAND], CMD_IOCTL_QUERY
+        SEND ST_DONE,0
+        mov byte ptr [packet+RH_COMMAND], CMD_GEN_IOCTL
+        mov byte ptr [packet+RH_IOCTL_CATEGORY], 80h
         ; A live session blocks all normal DOS data/control calls.
         mov byte ptr [packet+RH_COMMAND], CMD_WRITE
         SEND ST_DONE or ST_ERROR or ERR_NOT_READY,0
@@ -138,6 +163,7 @@ have_token:
         cmp byte ptr [unit_table+U_LOCKS], 1
         CHECK_EQUAL
         mov byte ptr [packet+RH_IOCTL_MINOR], 1
+        mov word ptr [param+14],1          ; BEGIN flags replace returned sense
         SEND ST_DONE or ST_ERROR or ERR_NOT_READY,0
         mov byte ptr [fault], 0
         mov byte ptr [packet+RH_IOCTL_CATEGORY], 8
@@ -149,6 +175,10 @@ have_token:
         mov byte ptr [packet+RH_IOCTL_CATEGORY], 80h
         mov byte ptr [packet+RH_IOCTL_MINOR], 0
         mov byte ptr [param], 'R'
+        mov al, byte ptr [unit_table+U_FLAGS]
+        and al, UF_NOACCESS
+        cmp al, UF_NOACCESS
+        CHECK_EQUAL
         mov byte ptr [unit_table+U_FLAGS], 0
         SEND ST_DONE or ST_ERROR or ERR_UNKNOWN_CMD,0
         mov dx, offset okmsg
@@ -209,6 +239,8 @@ fake_fail:
         mov byte ptr cs:[srb+SRB_TargStat], 2
         xor bx, bx
         mov bl, byte ptr cs:[srb+SRB_CDBLen]
+        mov byte ptr cs:[srb+SRB_CDB+bx],70h
+        mov byte ptr cs:[srb+SRB_CDB+bx+7],6
         mov byte ptr cs:[srb+SRB_CDB+bx+2], al
         ret
 fake_aspi endp

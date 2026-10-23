@@ -1,3 +1,13 @@
+/* Physical 512-byte sector imaging/copying through the checked RAW1 service.
+ * READ/WRITE image modes and two-drive copies share bounded chunk helpers;
+ * single-drive copying captures a complete temporary image before a media swap.
+ * Every target chunk is read back and compared. /RESCUE applies to source reads
+ * only: classified unreadable sectors become zeroes plus a flushed error map,
+ * with a distinct final exit code (3), not an unqualified successful backup.
+ * SIGINT/UI cancellation is observed between operations; acquired sessions and
+ * files still need cleanup. Failed/rescued single-drive copies retain the image.
+ */
+
 /* Sector images and DISKCOPY-style removable-media copying. GPL-3.0. */
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,6 +37,9 @@ static unsigned read_sectors(void *ctx,oa_u32 lba,unsigned n,void *buf)
     if(cancelled) return 995;
     return oa_raw_read_source(m,lba,n,buf);
 }
+/* Record the physical LBA before allowing rescue to continue. Flush the
+ * map immediately; failure to preserve a gap report makes the copy fail.
+ */
 static int mark_bad(void *ctx,oa_u32 lba,unsigned error)
 {
     struct oa_raw_media *m=(struct oa_raw_media *)ctx;
@@ -59,11 +72,19 @@ static int progress(oa_u32 done,oa_u32 total)
 #endif
     return cancelled ? -1 : 0;
 }
+/* One write plus read-back comparison. Never use source rescue policy to
+ * suppress target errors or retry a possibly completed write.
+ */
 static int write_chunk(struct oa_raw_media *m, oa_u32 lba, unsigned n)
 {
     return oa_raw_io(m,1,lba,n,data) || oa_raw_io(m,0,lba,n,verify) ||
            memcmp(data,verify,n*512U) ? -1 : 0;
 }
+/* A whole physical image starts at LBA zero and includes partition metadata.
+ * Read/write in CHUNK sectors, shortening only the final chunk. The file cursor
+ * and physical LBA advance together; output/read-back failure stops the stream.
+ * Rescue gaps are tracked separately from this function's I/O completion result.
+ */
 static int stream(struct oa_raw_media *m, FILE *file, int write)
 {
     oa_u32 lba;
@@ -88,12 +109,21 @@ static FILE *new_image(const char *name)
     if (!f) close(fd);
     return f;
 }
+/* Resolve relative paths before comparing drive letters. Failure to resolve
+ * is treated as a conflict: staging images/maps on the medium being copied or
+ * replaced can invalidate the source or overwrite the diagnostic record.
+ */
 static int same_file_drive(const char *path,unsigned drive)
 {
     char full[260];
     if (!_fullpath(full,path,sizeof(full))) return 1;
     return ((full[0]>='a' && full[0]<='z' ? full[0]-'a' : full[0]-'A') == (int)drive);
 }
+/* Create a new map outside both source and destination drives before rescue
+ * I/O begins. Explicit paths and derived image .MAP names use exclusive creation;
+ * TEMP/TMP candidates skip existing names. A created map whose header cannot be
+ * flushed is still owned by the caller and must be closed on the failure path.
+ */
 static int open_map(unsigned source,unsigned target,const char *image_path)
 {
     const char *dir;
@@ -131,6 +161,11 @@ static int sane_size(struct oa_raw_media *m)
 {
     return m->sectors && m->sectors<=4194303UL;
 }
+/* Image output is exclusively created; image input is opened read-only. A
+ * write requires an exact device-sized file before the first target transfer.
+ * The cleanup labels encode ownership: acquired raw session ends before file
+ * close, and either cleanup failure changes the final result to failure.
+ */
 static int image(unsigned drive,const char *path,int write)
 {
     struct oa_raw_media m;
@@ -160,6 +195,9 @@ file_done:
     if (fclose(f)) rc=1;
     return rc;
 }
+/* Acquire source then destination, reject equal ASPI addresses even when
+ * drive letters differ, and unwind both sessions on every acquired path.
+ */
 static int copy_drives(unsigned source,unsigned target)
 {
     struct oa_raw_media s,d;
@@ -184,6 +222,10 @@ source_done:
     if (oa_raw_close(&s)) rc=1;
     return rc;
 }
+/* Stage on another drive with exclusive file creation. Release the source
+ * session before prompting for replacement, then open/recheck the target.
+ * Capture failures must never reach the target-write phase.
+ */
 static int one_drive(unsigned drive,const char *temp)
 {
     struct oa_raw_media m;

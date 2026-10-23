@@ -1,3 +1,13 @@
+; Interface boundary: DOS/MSCDEX requests are translated to ASPI MMC CDBs.
+; DS=CS in resident handlers; select_unit loads the addressed drive's state
+; before use of the shared SRB and scratch buffers. Reply parsers must check
+; lengths/descriptor bounds before exposing TOC, subchannel or audio settings.
+; LBA is the transport address; Red Book MSF includes the 150-frame offset.
+; Cache audio/media state only after checked device completion, and invalidate
+; it when media state changes. Resident code ends at resident_end; enumeration
+; and command-line parsing after that point may be reclaimed by DOS.
+; MSCDEX/SHSUCDX provide drive letters and filesystem access, not this module.
+
 ; ASPICDA.SYS: OpenASPI CD/DVD driver.
 ;
 ; A DOS CD-ROM device driver (the MSCDEX driver interface) for SCSI
@@ -76,6 +86,10 @@ strategy proc far
         ret
 strategy endp
 
+; Common DOS request boundary: use the resident stack, select the addressed
+; unit, dispatch, then publish DONE/ERROR and any audio BUSY state. BUSY describes
+; playback state for the relevant requests; it does not mean an SRB remains live.
+; Per-unit playback data must not leak from the previously addressed CD drive.
 interrupt proc far
         push    ax
         push    bx
@@ -235,6 +249,10 @@ scsi_failed endp
 
 ; Keep the raw sense key for callers such as MEDIA CHANGED, but invalidate
 ; stale resume data even when they intentionally don't return a DOS error.
+; Every checked NOT READY/UNIT ATTENTION can invalidate a resumable audio
+; range, including an informational query that consumes the notification.
+; Keep the original sense key/carry for callers that apply their own DOS policy;
+; clearing stale playback state is separate from reporting that command's error.
 cd_aspi_result proc near
         call    aspi_result
         jnc     cd_result_done
@@ -276,6 +294,9 @@ msf_to_lba proc near
 msf_to_lba endp
 
 ; LBA in DX:AX -> Red Book in DX:AX (AL frame, AH second, DL minute)
+; Inverse address conversion: add the 150-frame lead-in, then divide by 75
+; frames/second and 60 seconds/minute. Callers must bound input before conversion
+; so the 16-bit DIV quotient and binary MSF fields remain representable.
 lba_to_msf proc near
         push    bx
         push    cx
@@ -303,6 +324,9 @@ request_lba proc near
         ; Fall through to the common decoder, also used by PLAY AUDIO.
 request_lba endp
 
+; Address-format boundary: DOS may supply HSG LBA or Red Book MSF. Convert
+; once here before constructing CDBs; MSF includes the lead-in offset, while
+; ordinary LBA zero already denotes the first data sector.
 decode_address proc near
         cmp     byte ptr es:[bx+RH_CD_ADDRMODE], 0
         je      address_ok
@@ -389,6 +413,9 @@ read_buffer     dw      0, 0
 read_raw        db      0
 read_flags      db      0               ; READ CD byte 9
 
+; Cooked/raw sector sizes differ in both transfer bytes and pointer advance.
+; A checked unsupported raw request may try the narrower audio-data selection;
+; other failures return without treating unread bytes as completed sectors.
 read_long proc near
         mov     cx, word ptr es:[bx+RH_CD_COUNT]
         mov     word ptr [read_left], cx
@@ -513,6 +540,9 @@ ioctl_bad_packet:
         ret
 ioctl_control_block endp
 
+; Input IOCTLs share a control-code dispatcher, but each reply has a different
+; minimum length. Select a handler first, validate its complete control payload,
+; and only then fill caller fields. The device name/header is not this payload.
 ioctl_input proc near
         call    ioctl_control_block
         jnc     ioctl_input_valid
@@ -563,6 +593,9 @@ ioctl_in_table:
 
 ; AX = required control-block size. Check count and segment wrap before
 ; reading/writing fields. ES:DI is retained, BX/CX/DX may change.
+; Validate the command-specific minimum before touching caller fields.
+; An IOCTL control block is not the DOS request header itself; both the supplied
+; count and segment-offset wrap must permit the complete control payload.
 check_ioctl_buffer proc near
         push    es
         les     bx, [request_ptr]
@@ -761,6 +794,9 @@ read_sub_done:
         ret
 read_sub_position endp
 
+; Prepare format-1 allocation parameters and tail-call shared subchannel I/O.
+; This submits only; read_sub_position additionally validates the position, while
+; audio_poll can accept a terminal status that no longer includes a position.
 submit_sub_position proc near
         mov     ah, 1
         mov     cx, 16
@@ -801,6 +837,9 @@ read_sub_channel proc near
         jmp     scsi_failed
 read_sub_channel endp
 
+; Transport success is insufficient for Q-channel data: require the expected
+; format/length and bounded track/index/MSF fields before copying a position to
+; DOS. Scratch bytes were poisoned so untouched data cannot look like success.
 validate_sub_position proc near
         cmp     byte ptr [sub_position], 0     ; reserved header byte
         jne     sub_position_bad
@@ -842,6 +881,10 @@ validate_sub_position endp
 
 ; Only a driver-issued active PLAY needs polling. Terminal status can be
 ; valid even when there is no current Q position (e.g. after completion).
+; Reconcile cached playback with READ SUB-CHANNEL. Inactive state avoids an
+; unneeded command; active/paused reports require a valid position. Terminal
+; statuses may legitimately omit Q-position data, so validate their header/status
+; without demanding a still-current track. Publish only a qualified new state.
 audio_poll proc near
         mov     si, word ptr [current_unit]
         cmp     byte ptr [si+U_AUDIO_STATE], 0
@@ -895,6 +938,9 @@ audio_poll_error:
         ret
 audio_poll endp
 
+; Invalidate both playback state AND the saved resume range. Clearing only
+; the playing flag would allow RESUME to reuse positions from a removed disc.
+; This changes software state only; it is not a STOP/PAUSE hardware command.
 clear_audio proc near
         mov     si, word ptr [current_unit]
         mov     byte ptr [si+U_AUDIO_STATE], 0
@@ -993,6 +1039,9 @@ sector_size_ready:
         clc
         ret
 
+; DOS asks for a sector count, whereas READ CAPACITY returns the last LBA.
+; Add one exactly once here. read_capacity rejects FFFFFFFFh (the CAPACITY(16)
+; sentinel), so it must not wrap into an apparently empty volume.
 ioctl_volume_size:
         call    read_capacity
         jc      volume_size_done
@@ -1039,6 +1088,9 @@ capacity_done:
 read_capacity endp
 
 ; 1 unchanged, 0FFh changed (UNIT ATTENTION), 0 don't know
+; Return a media-change hint, not the TUR error as a failed IOCTL: READY=1,
+; checked UNIT ATTENTION=FFh, other failure=0 unknown. cd_aspi_result separately
+; invalidates stale playback state. A change hint does not establish disc type.
 ioctl_media_changed:
         push    es
         push    di
@@ -1079,6 +1131,9 @@ disk_info_done:
         ret
 
 ; track start (Red Book) and control/ADR of track es:[di+1]
+; MMC packs ADR in the high nibble and CONTROL in the low nibble. DOS uses
+; the opposite nibble order, so rotate by four rather than treating the byte as
+; a channel or sense mask. Position bytes are copied in DOS Red Book order.
 ioctl_track_info:
         call    read_toc
         jc      track_info_done
@@ -1117,6 +1172,10 @@ read_toc proc near
 read_toc endp
 
 ; AL = track -> SI = offset of its descriptor in toc_data; CF if missing
+; Search eight-byte format-0 descriptors for the requested track (AAh is
+; lead-out). The TOC length is big-endian and excludes its own two bytes; after
+; removing first/last-track bytes, traverse descriptors within TOC_SIZE. This
+; routine searches the transport buffer; it does not perform another device read.
 find_toc_track proc near
         mov     cx, word ptr [toc_data]         ; data length, big-endian
         xchg    cl, ch
@@ -1225,6 +1284,9 @@ selector_three:
         ret
 selector_to_channel endp
 
+; Translate four DOS channel/volume pairs to MMC audio page 0Eh. Stage all
+; requested pairs before drive access; preserve unrelated page fields and check
+; changeability instead of overwriting the whole device mode configuration.
 ioctl_set_channels proc near
         mov     ax, 9
         call    check_ioctl_buffer
@@ -1310,6 +1372,10 @@ set_channel_encode:
         mov     cl, byte ptr [bx]
         and     cl, 0F0h                       ; preserve reserved selector bits
         or      al, cl
+; AX contains the requested encoded pair; [BX] is the current pair. XOR gives
+; the bits that would change. AND with the inverted changeable mask rejects any
+; change to fixed bits; this accepts a no-op even when a field is not changeable.
+; It must not silently clamp an unsupported channel or volume to another value.
 set_channel_encoded:
         ; Reject requested changes to fixed bits; never silently clamp.
         mov     cx, word ptr [bx]
@@ -1401,6 +1467,10 @@ audio_control_capability endp
 
 ; AL = PC bits 00h/40h. A bounded MODE SENSE(10) page, including a possible
 ; block descriptor returned despite DBD. ES:DI is retained. No MODE(6) fallback.
+; MODE SENSE(10) header length and block-descriptor length determine where
+; page 0Eh starts, even when DBD requested no descriptors. Poison the allocation,
+; bound the complete page before returning its pointer, and reject subpage or
+; wrong-page layouts. A successful SRB alone cannot validate returned mode data.
 read_audio_page proc near
         push    ax
         push    es
@@ -1545,6 +1615,9 @@ media_control_locked:
         mov     al, ERR_GENERAL
         stc
         ret
+; Compatibility no-op: this handler returns success but issues no reset CDB
+; or ASPI reset. Keep that limitation explicit; callers cannot use this request
+; as proof that the hardware, media state or outstanding audio was reset.
 reset_drive:
         clc
         ret
@@ -1554,6 +1627,10 @@ ioctl_output endp
 ; analog audio: PLAY AUDIO MSF, PAUSE/RESUME
 ;-----------------------------------------------------------------------------
 
+; PLAY uses a start plus frame count, while MMC PLAY AUDIO MSF takes start/end.
+; Reject addition overflow and unrepresentable endpoints before CDB construction.
+; A successful command publishes the saved range and playing state; a rejected
+; second PLAY must not overwrite the currently active range.
 play_audio proc near
         cmp     byte ptr es:[bx+RH_LENGTH], 16h
         jae     play_length_ok
@@ -1650,6 +1727,9 @@ play_failed:
         ret
 play_audio endp
 
+; DOS STOP preserves resume semantics: poll current state, then pause a playing
+; range. If playback has already ended, discard saved range instead. This is not
+; a generic drive reset or tray operation.
 stop_audio proc near
         call    audio_poll
         jc      stop_audio_done
@@ -1664,6 +1744,9 @@ stop_audio_done:
         ret
 stop_audio endp
 
+; RESUME requires both a qualified paused state and a saved range from this
+; unit. Poll first, since cached PAUSED can be stale after a media notification.
+; Do not invent a PLAY range when the device reports no resumable operation.
 resume_audio proc near
         call    audio_poll
         jc      resume_audio_done
@@ -1681,6 +1764,9 @@ resume_audio_done:
         ret
 resume_audio endp
 
+; AH selects PAUSE=0/RESUME=1. Preserve it across SRB preparation, send one
+; MMC command, and update the selected unit's audio state only after checked
+; completion. A failure must not publish the requested state as if it occurred.
 pause_resume proc near
         push    ax
         mov     al, SRB_DIR_NONE
@@ -1744,6 +1830,10 @@ resident_end label byte
 
 options         db      0
 
+; Register type-05h devices independently of whether media are inserted.
+; Page-2Ah capability discovery is optional: an unknown capability byte must
+; not suppress the DOS CD unit. Unit addresses/capability summaries remain
+; resident; option parsing and verbose reports below this boundary are INIT-only.
 init_request:
         call    parse_options
         mov     dx, offset msg_banner
@@ -1881,6 +1971,10 @@ print_unit endp
 
 ; MODE SENSE(10) page 2Ah of the scan_* drive -> AL = CAP_* (0 if the
 ; drive has no such page: pre-MMC, the capabilities are unknown)
+; Optional INIT summary for analog audio, digital audio and accuracy. Start
+; with AL=0 unknown and set CAP_KNOWN only after finding the expected page.
+; Do not use a missing/pre-MMC page as proof that basic READ/IOCTLs are absent;
+; command-specific runtime checks remain responsible for actual operations.
 cd_capabilities proc near
         mov     al, byte ptr [scan_ha]
         mov     byte ptr [unit_ha], al
@@ -1942,6 +2036,10 @@ print_digit_one:
 print_digit endp
 
 ; /D:name and /V from the CONFIG.SYS line (after the driver path)
+; Parse the CONFIG.SYS initialization string, not a PSP command tail.
+; /D supplies the device name shared with MSCDEX/SHSUCDX, not a DOS drive letter.
+; Preserve the resident default when no name is supplied. Parsing is transient;
+; request-time handlers consume the resulting header/options, not this string.
 parse_options proc near
         push    ds
         les     bx, [request_ptr]

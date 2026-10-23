@@ -1,102 +1,74 @@
 # Driver suite
 
-All four drivers consume the same ASPI-manager layer and SCSI helpers
-(`common/aspi/aspi_client.inc`, `aspi_init.inc`) and the DOS request
-definitions (`common/dos/devreq.inc`).  Two OpenASPI drivers never attach to
-the same host/target/LUN: each takes a device class that the others skip.
+All four drivers use an installed DOS ASPI manager. ASPIDSK, ASPIFDD and
+ASPICDA share resident transport and transient discovery helpers from
+[`common/aspi`](../common/aspi/README.md); ASPITAP retains its own submission
+and discovery implementation plus shared tape includes. DOS request layouts
+are defined in [`devreq.inc`](../common/dos/devreq.inc).
 
-## DSK, FDD, CDA: the differences
+## Device responsibilities
 
-| | ASPIDSK | ASPIFDD | ASPICDA |
-|---|---|---|---|
-| devices | type 00h: disks, SSDs, USB sticks, card readers | type 00h with the removable bit and a known model: LS-120/240, ZIP, Clik!, Jaz | type 05h: CD/DVD |
-| DOS driver kind | block device | block device | character device with the CD-ROM extension |
-| drive letters | from DOS at boot, one per volume | from DOS at boot, one per drive, also without a disk | from MSCDEX/SHSUCDX (`/D:name`) |
-| file system | FAT, read by DOS | FAT, read by DOS | ISO 9660/High Sierra, read by the redirector |
-| sector | 512 bytes | 512 bytes | 2048 cooked, 2352 raw |
-| medium | partitioned, or a whole-disk volume | superfloppy (LS-120) or partitioned (ZIP) | a disc with data and audio tracks |
-| media change | sticks and card readers: UNIT ATTENTION | always "don't know": DOS reads the disk again | IOCTL "media changed" for the redirector |
-| special | many partitions, FAT32, large disks | eject/lock, format (FORMAT UNIT), media types | audio play, TOC, raw/digital audio, tray |
-| shared core | `common/dos/blkdrv.inc` | `common/dos/blkdrv.inc` (`FDD_DRIVER`) | own |
+| | ASPIDSK | ASPIFDD | ASPICDA | ASPITAP |
+| --- | --- | --- | --- | --- |
+| Device type | 00h direct access | 00h, removable bit and recognized model | 05h multimedia | 01h sequential access |
+| Examples | Disk, SSD, ordinary USB stick/card reader | LS-120/240, ZIP, Clik!, Jaz | CD/DVD | Tape drive |
+| DOS interface | Block device | Block device | CD-ROM character device | Tape character device |
+| Selection exposed to applications | One letter per accepted device/first supported volume | One letter per accepted drive, including empty drives | MSCDEX/SHSUCDX letters via `/D:name` | Raw rewind/no-rewind aliases; optional buffered aliases |
+| Data unit | 512-byte sectors | 512-byte sectors | 2048-byte cooked or 2352-byte raw sectors | Variable records or qualified fixed blocks |
+| Filesystem/archive owner | DOS FAT support | DOS FAT support | MSCDEX/SHSUCDX | Backup application |
+| Implementation | Shared `blkdrv.inc` | Shared `blkdrv.inc`, `FDD_DRIVER` policy | Own request handlers | Own legacy handlers and native OTAP binding |
 
-ASPIDSK and ASPIFDD share one block driver core; ASPIFDD only changes the
-device selection and the removable-media policy. Selection uses the same
-`common/aspi/removable.inc` policy in both drivers and ASPISCAN, so installer
-preselection agrees with device ownership. Ordinary removable USB sticks
-belong to ASPIDSK, not ASPIFDD. Model matching stays within the 24 INQUIRY
-vendor/product bytes and cannot match a suffix in the revision field.
+ASPIDSK and ASPIFDD use the same
+[`removable.inc`](../common/aspi/removable.inc) classification as ASPISCAN.
+A generic removable USB stick belongs to ASPIDSK unless its checked INQUIRY
+vendor/product identifies a recognized ASPIFDD model. Matching excludes the
+revision field. The two block drivers therefore make complementary selections;
+CD and tape use separate peripheral types.
 
-## Functional compatibility target
+Classification does not establish hardware command support or exclusive access
+through every BIOS/Windows alias. Manager-reported DOS ownership is checked
+separately for block devices; see [block-ownership.md](block-ownership.md).
 
-The target is functional coverage of Adaptec ASPIDISK in ASPIDSK, Adaptec
-ASPICD in ASPICDA, and **both MKELS120 and GUEST's ZIP device functions in
-ASPIFDD**. GUEST is a reference for the ZIP-specific functions, not a separate
-replacement driver project. Those functions belong inside ASPIFDD, with common
-block transport reused from `blkdrv.inc`. Its EXE versus SYS packaging does
-not remove ZIP functionality from ASPIFDD's scope. Runtime-loading mechanics
-are a separate concern, not a substitute for implementing device functions.
+## Current behavior and limits
 
-ASPIFDD is the combined removable-device service for ZIP and LS-120: expose
-common capability/media/control operations through the driver, with validated
-device-specific sequences behind that interface. Dedicated formatting or other
-drive utilities consume this interface rather than embedding a second ASPI/
-controller/ZIP/LS-120 driver. Unsupported operations must report failure, not
-pretend success. Destructive utility actions require explicit confirmation,
-media identification and write-protection checks. These utilities and the
-remaining special operations are requirements, not implemented 0.1 features.
+- [ASPIDSK](../drivers/aspidsk/README.md) exposes a superfloppy or the first
+  supported primary FAT partition. It implements block I/O, checked parameter
+  and track IOCTLs, software access control and verified Media-ID updates.
+  FAT32 is conditional on DOS support, with a tested FreeDOS path. Multiple
+  partition units, extended/GPT traversal and broad Windows qualification
+  remain open.
+- [ASPIFDD](../drivers/aspifdd/README.md) shares those block operations and adds
+  removable-media policy, checked lock/eject and RAW1 sessions.
+  [ASPIFMT](../tools/aspifmt/README.md) creates FAT filesystems and marks bad
+  clusters; [ASPIDD](../tools/aspidd/README.md) copies/images media and supports
+  rescue. Physical FORMAT UNIT profiles, vendor protection commands and
+  GUEST-style runtime attachment remain open.
+- [ASPICDA](../drivers/aspicda/README.md) implements data/raw reads, checked
+  positioning, media/tray controls, TOC/subchannel/catalog queries and audio
+  playback/routing. Reset is still a success-only no-op. Physical audio and
+  device-specific behavior need further qualification.
+- [ASPITAP](../drivers/aspitap/README.md) exposes the first tape through the
+  legacy ASPITAPE ABI and the separate native OTAP query/control/record API.
+  Legacy final close can add marks/rewind; native writing uses explicit
+  ownership and finalization. Multiple tape units, changers, remaining native
+  operations and production hardware recovery qualification remain open.
 
-Version 0.1 is not full compatibility. Follow the linked command matrices:
-media sensing/change, formatting, eject/lock and verified device-specific
-behavior still need implementation and tests. Unsupported functions and no-op
-handlers must not be counted as completed reference-driver functionality.
+## Compatibility targets
 
-## ASPIDSK.SYS
+The targets are functional coverage of Adaptec ASPIDISK, Adaptec ASPICD and
+both MKELS120 and Iomega GUEST's ZIP device functions. ZIP/LS-120 special
+functions belong behind ASPIFDD's common service; tools reuse that service
+rather than implementing another controller driver. Runtime EXE/SYS loading
+mechanics are a separate requirement from device functionality.
 
-`ASPIDSK.SYS` is the general DOS block driver for SCSI direct-access devices.
-Its baseline scope is fixed disks, SSDs, USB sticks, memory-card readers, and
-removable devices that are intentionally used with hard-disk-style partition
-and drive-letter semantics.
+Source comments describe implemented checks, not complete compatibility.
+The [remaining-work ledger](driver-status.md) separates tested paths from open
+work. Detailed comparisons are in [ASPICD compatibility](aspicd-compat.md),
+[ASPIDISK/MKELS120/GUEST compatibility](aspidisk-compat.md),
+[removable-device research](aspifdd-reference.md) and
+[ASPITAPE compatibility](aspitape-compat.md).
 
-The driver must support media-change detection, READ CAPACITY, 512-byte DOS
-logical sectors, partition discovery, and safe residual/error reporting.  It
-must not silently claim a device selected for `ASPIFDD.SYS`.
-
-## ASPIFDD.SYS
-
-`ASPIFDD.SYS` owns removable-media behavior requiring more than generic disk
-I/O: LS-120/240, ZIP, Clik!, and compatible devices.  These devices often
-report as SCSI direct-access devices, so INQUIRY peripheral type alone cannot
-select this driver.
-
-Selection will use the removable-media bit plus an explicit device table or
-configuration override.  Planned extensions include eject/lock, geometry and
-capacity changes, media-change reporting, and device-specific formatting.
-Formatting is never inferred merely from a model name; each command sequence
-requires a verified implementation and test device.
-
-## ASPICDA.SYS
-
-`ASPICDA.SYS` owns SCSI multimedia devices (peripheral type `05h`).  It exposes
-the DOS CD-ROM device-driver interface consumed by MSCDEX or SHSUCDX and adds
-digital CD-audio access where supported.  Initial work covers data reads,
-media change, TOC access, tray control, and the configured `/D:` device name.
-
-## ASPITAP.SYS
-
-`ASPITAP.SYS` owns sequential-access devices (peripheral type `01h`).  It is a
-DOS character driver compatible with the documented ASPITAPE interface and
-provides rewind/no-rewind names.  See `aspitape-compat.md`.
-
-Compatibility notes on the historical drivers (command coverage, options,
-what is still missing): [ASPICD.SYS](aspicd-compat.md),
-[ASPIDISK.SYS, MKELS120.SYS and Iomega GUEST.EXE](aspidisk-compat.md).
-
-## Development order
-
-1. shared ASPI-manager discovery, enumeration, SRB submission and sense data;
-2. ASPITAP read-only discovery/status path and `TAPECTL`;
-3. ASPIDSK baseline block I/O;
-4. ASPICDA data-disc path and redirector integration;
-5. ASPIFDD removable-media policy and verified device extensions;
-6. write paths and destructive operations only after emulator and hardware
-   tests cover timeout, write protection, media change and partial transfer.
+For implementation flow, state ownership and corresponding tests, start with
+the [source guide](source-guide.md). Windows 3.x/9x providers and integration
+are separate from these DOS drivers; see [native tape architecture](native-tape-api.md)
+and [Windows storage plans](windows9x-storage.md).

@@ -283,7 +283,16 @@ ifdef READ_BAD_RESIDUAL
         fail_if_not_equal failed_close
         cmp     word ptr [status+0Ch], 16
 else
+ifdef NO_RESIDUAL
+ifdef READ_STREAM_TRANSPORT
+        ; An invalid completion cannot supply a trusted legacy sense count.
+        cmp     word ptr [status+0Ch], 16
+else
         cmp     word ptr [status+0Ch], 4
+endif
+else
+        cmp     word ptr [status+0Ch], 4
+endif
 endif
 endif
         fail_if_not_equal failed_close

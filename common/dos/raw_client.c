@@ -1,3 +1,12 @@
+/* DOS large-model client for RAW1 generic block IOCTLs (INT 21h/440Dh).
+ * Drives are zero-based here (A=0), one-based in DOS BX. Each instance owns
+ * its request packet and BEGIN token; successful open must be paired with
+ * close. Addresses/counts use physical 512-byte sectors, not partition LBAs.
+ * Return 0/-1 and retain DOS plus driver/sense diagnostics in the instance.
+ * The packet's integer/far-pointer stores intentionally target 16-bit DOS;
+ * this file is not a portable host-side serialization implementation.
+ */
+
 /* Shared DOS wrapper for the checked ASPIFDD raw-media session API. GPL-3.0. */
 #include <string.h>
 #include <ctype.h>
@@ -47,6 +56,9 @@ int oa_raw_info(struct oa_raw_media *m, unsigned drive)
     if (request(m, 0)) return -1;
     result(m); return 0;
 }
+/* Flush DOS's filesystem buffers before acquiring exclusive raw access.
+ * active is set only after BEGIN succeeds; no cleanup END is due on failure.
+ */
 int oa_raw_open(struct oa_raw_media *m, unsigned drive, int write)
 {
     oa_disk_reset();
@@ -71,6 +83,10 @@ int oa_raw_io(struct oa_raw_media *m, int write, oa_u32 lba, unsigned count, voi
     rc=request(m, write ? 3 : 2);
     return rc;
 }
+/* Release once and reset DOS's filesystem view. Successful cleanup keeps
+ * the preceding I/O diagnostics; failed cleanup exposes its own failure.
+ * Never hide END failure behind a successful data copy or format report.
+ */
 int oa_raw_close(struct oa_raw_media *m)
 {
     int rc;
@@ -84,6 +100,10 @@ int oa_raw_close(struct oa_raw_media *m)
     oa_disk_reset();
     return rc;
 }
+/* Rescue callback: qualify device read faults using sense before tagging.
+ * An unrelated ILLEGAL REQUEST must not become thousands of fake bad sectors;
+ * ordinary DOS errors remain available to the shared conservative policy.
+ */
 unsigned oa_raw_read_source(void *ctx,oa_u32 lba,unsigned count,void *buf)
 {
     struct oa_raw_media *m=(struct oa_raw_media *)ctx;

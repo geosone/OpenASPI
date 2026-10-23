@@ -30,6 +30,9 @@ case $actual_hash in
         exit 2 ;;
 esac
 
+# Offsets below refer to the DOS load image, not file byte zero: this pinned
+# MZ reference has a 0200h-byte header. Guard expected instruction/table bytes
+# before disassembly; a known filename alone is never a version check.
 check_bytes()
 {
     local image_offset=$1 byte_count=$2 expected=$3 actual
@@ -41,6 +44,9 @@ check_bytes()
     fi
 }
 
+# Report half-open image ranges [first,end). dd extracts file bytes after
+# the MZ header; ndisasm -o preserves image-relative addresses in the report.
+# This is textual static inspection and does not load a DOS executable.
 disassemble_range()
 {
     local title=$1 first=$2 end=$3

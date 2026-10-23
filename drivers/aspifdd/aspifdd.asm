@@ -9,7 +9,11 @@
 ;   DEVICE=AHCIASPI.SYS
 ;   DEVICE=ASPIFDD.SYS
 ;
-; Eject, lock and formatting follow.
+; Shared block IOCTLs provide media lock/eject and exclusive raw sessions.
+; ASPIFMT/ASPIDD perform filesystem formatting/copying through that service;
+; the driver itself does not invent a vendor-specific low-level format.
+; FDD_DRIVER selects ownership policy in the common block implementation,
+; keeping ZIP and LS-120 handling consistent with ASPIDSK and ASPISCAN.
 
         .8086
         option casemap:none

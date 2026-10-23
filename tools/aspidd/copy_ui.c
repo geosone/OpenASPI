@@ -1,3 +1,10 @@
+/* Presentation adapter for ASPIDD using the existing shared DOS QUILIB.
+ * This module owns screen lifecycle, prompts and progress display, not media
+ * sessions or copying. Progress/selection return user intent to aspidd.c;
+ * the caller performs I/O and cleanup. Sector totals and damage counts remain
+ * separate so a completed rescue cannot appear as an error-free copy.
+ */
+
 /* Same QUILIB and colors as ASPIMGR/OpenTape/Open386MAX. */
 #include <stdio.h>
 #include <string.h>
@@ -78,6 +85,11 @@ void dd_ui_phase(const char *s,unsigned d,oa_u32 n)
 #endif
     dd_ui_start(); phase=s; drive=d; total=n; done=0; painted=0xFFFFFFFFUL; draw();
 }
+/* n is completed sectors, bad is the accumulated rescued-sector count.
+ * Throttle painting to 256-sector steps while still polling Escape on every call;
+ * a changed error count or final update forces repaint. Returning -1 asks the
+ * copy engine to cancel at its next boundary; this function closes no media.
+ */
 int dd_ui_progress(oa_u32 n,oa_u32 bad)
 {
     INPUTEVENT event;
@@ -100,6 +112,11 @@ int dd_ui_exchange(unsigned d)
     do { key=wait_key(); } while(key!=KEY_ENTER && key!=KEY_ESCAPE);
     return key==KEY_ENTER ? 13 : 27;
 }
+/* phase borrows a stack-local prompt only during the synchronous draw/wait.
+ * Clear it before returning so later rendering cannot dereference expired text.
+ * Confirmation accepts the selected language's affirmative key; it grants no
+ * raw session and performs no target write.
+ */
 int dd_ui_confirm(unsigned s,unsigned d)
 {
     char text[80]; int key;

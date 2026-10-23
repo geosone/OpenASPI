@@ -28,6 +28,15 @@ mkdir -p "$OUT"
 "$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -DTEST_FDD -Fo="$OUT/FDDIO.COM" "$ROOT/tests/block_ioctl.asm"
 "$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -Fo="$OUT/DOSIO.COM" "$ROOT/tests/block_ioctl_dos.asm"
 "$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -Fo="$OUT/FDDGONE.COM" "$ROOT/tests/block_eject_dos.asm"
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -Fo="$OUT/BLKACC.COM" "$ROOT/tests/block_access.asm"
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -DTEST_FDD -Fo="$OUT/FDDACC.COM" "$ROOT/tests/block_access.asm"
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -Fo="$OUT/MIDDSK.COM" "$ROOT/tests/media_id_write.asm"
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -DTEST_FDD -Fo="$OUT/MIDFDD.COM" "$ROOT/tests/media_id_write.asm"
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -Fo="$OUT/MIDLIVE.COM" "$ROOT/tests/media_id_dos.asm"
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -Fo="$OUT/PARAMDSK.COM" "$ROOT/tests/block_params.asm"
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -DTEST_FDD -Fo="$OUT/PARAMFDD.COM" "$ROOT/tests/block_params.asm"
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -Fo="$OUT/TRACKDSK.COM" "$ROOT/tests/block_track.asm"
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -DTEST_FDD -Fo="$OUT/TRACKFDD.COM" "$ROOT/tests/block_track.asm"
 
 nasm -f bin -w-reloc-abs-word -I"$EUSBASPI_DIR/src/" \
     -o "$OUT/EUSBASPI.SYS" "$EUSBASPI_DIR/src/eusbaspi.asm"
@@ -53,7 +62,18 @@ printf '%s\r\n' \
     'BLKFALL > AUX' \
     'BLKIO > AUX' \
     'FDDIO > AUX' \
+    'BLKACC > AUX' \
+    'FDDACC > AUX' \
+    'MIDDSK > AUX' \
+    'MIDFDD > AUX' \
+    'PARAMDSK > AUX' \
+    'PARAMFDD > AUX' \
+    'TRACKDSK > AUX' \
+    'TRACKFDD > AUX' \
     'DOSIO > AUX' \
+    'MIDLIVE E: > AUX' \
+    'MIDLIVE F: > AUX' \
+    'MIDLIVE G: > AUX' \
     'TYPE E:\DSKTEST.TXT > AUX' \
     'TYPE F:\ZIPTEST.TXT > AUX' \
     'TYPE G:\SFTEST.TXT > AUX' \
@@ -95,6 +115,10 @@ mcopy -o -i "$OUT/boot.img" "$OUT/CONFIG.SYS" "$OUT/AUTOEXEC.BAT" \
     "$OUT/BLKIO.COM" "$OUT/FDDIO.COM" "$OUT/DOSIO.COM" "$OUT/QEXIT.COM" ::/
 mcopy -o -i "$OUT/boot.img" "$OUT/CTLTEST.BAT" "$OUT/FDDGONE.COM" \
     "$ROOT/build/dos/ASPICTL.EXE" "$ROOT/build/dos/EJECT.EXE" "$ROOT/build/dos/CLOSE.EXE" ::/
+mcopy -o -i "$OUT/boot.img" "$OUT/BLKACC.COM" "$OUT/FDDACC.COM" ::/
+mcopy -o -i "$OUT/boot.img" "$OUT/MIDDSK.COM" "$OUT/MIDFDD.COM" "$OUT/MIDLIVE.COM" ::/
+mcopy -o -i "$OUT/boot.img" "$OUT/PARAMDSK.COM" "$OUT/PARAMFDD.COM" ::/
+mcopy -o -i "$OUT/boot.img" "$OUT/TRACKDSK.COM" "$OUT/TRACKFDD.COM" ::/
 
 # partitioned stick (FAT16, partition at 63) with a file larger than one
 # 64-sector READ(10)
@@ -155,6 +179,12 @@ if test "$DETECT_ONLY" = 1; then
 fi
 
 grep -q 'DOS block IOCTL end-to-end tests passed' "$OUT/serial.log"
+test "$(grep -Fc 'Block access policy/logical mapping tests passed' "$OUT/serial.log")" = 2
+test "$(grep -Fc 'Media-ID write, backup, extent and failure tests passed' "$OUT/serial.log")" = 2
+test "$(grep -Fc 'Block SET parameters, capacity, override and media-change tests passed' "$OUT/serial.log")" = 2
+test "$(grep -Fc 'Block track CHS/buffer/chunk/verify/error tests passed' "$OUT/serial.log")" = 2
+test "$(grep -Fc 'DOS Media-ID set/get/restore passed' "$OUT/serial.log")" = 3
+test "$(grep -Fc 'DOS physical track read/write/verify passed' "$OUT/serial.log")" = 3
 grep -q 'FDD ASPICTL locks/force/eject passed' "$OUT/serial.log"
 grep -q 'locks=2' "$OUT/serial.log"
 grep -q 'locks=0' "$OUT/serial.log"

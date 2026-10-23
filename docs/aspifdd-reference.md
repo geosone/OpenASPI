@@ -352,8 +352,11 @@ tests; see [media controls](media-control.md). [ASPIFMT](../tools/aspifmt/README
 now creates FAT filesystems with bad-cluster marking through a checked raw
 session; [ASPIDD](../tools/aspidd/README.md) supplies copying and Rescue.
 Conditional FAT32 uses extended parameter/Media-ID reads, tested on FreeDOS.
-Media-ID writes, standard track/physical formatting and vendor protection
-remain missing work.
+Media-ID writes now preserve boot-sector contents, verify written data and
+update a validated FAT32 backup; failures propagate. See [block IOCTLs](block-ioctl.md).
+Basic track read/write/verify is now implemented and tested; see
+[addressing and scope](block-track.md). Physical formatting, variable track
+tables and vendor protection remain missing work.
 Still open: complete private GUEST packet semantics/caller compatibility,
 original Iomega Tools payloads, ZIP vendor commands, detailed VxD handover,
 and hardware behavior. Static analysis cannot replace those compatibility

@@ -1,3 +1,9 @@
+/* Fixed-width scalar vocabulary for host tests and 16-bit DOS builds.
+ * Widths are part of the packet ABI; native int/pointer sizes are not. These
+ * typedefs alone provide neither packing nor byte-order conversion: each public
+ * wire structure and serializer must specify those separately.
+ */
+
 #ifndef OPENASPI_TYPES_H
 #define OPENASPI_TYPES_H
 

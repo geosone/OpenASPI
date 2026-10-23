@@ -1,3 +1,10 @@
+/* DOS ASPI SRB wire definitions, mirrored by common/aspi/dos_aspi.inc.
+ * These packed structures are DOS layouts, not Win32 SRBs. Direction flags,
+ * manager completion, host status and target status describe different layers.
+ * Autosense for an execute request follows its actual CDB length. Callers own
+ * the SRB and transfer storage until the manager reports completion.
+ */
+
 #ifndef OPENASPI_ASPI_H
 #define OPENASPI_ASPI_H
 
@@ -54,6 +61,9 @@
 #pragma pack(push, 1)
 #endif
 
+/* DOS real-mode address, offset WORD then segment WORD; not a C pointer or
+ * an address valid in host tests. Keep storage alive through manager completion.
+ */
 struct oa_aspi_far_pointer {
     oa_u16 offset;
     oa_u16 segment;
@@ -75,6 +85,10 @@ __attribute__((packed))
 #endif
 ;
 
+/* Manager/adapter metadata, not SCSI INQUIRY device identity. unique bytes
+ * and extension_flags are manager-reported facilities, not universal hardware
+ * capabilities; clients qualify supported extensions before relying on them.
+ */
 struct oa_aspi_ha_inquiry {
     struct oa_aspi_header header;
     oa_u8 adapter_count;
@@ -100,6 +114,11 @@ __attribute__((packed))
 #endif
 ;
 
+/* One execute-SCSI SRB with maximum CDB/autosense backing storage. Initialize
+ * reserved/workspace fields before submission, set direction and actual CDB
+ * length, then retain SRB and buffer until status is no longer PENDING. Returned
+ * buffer_length is a residual only under the negotiated residual contract.
+ */
 struct oa_aspi_exec_scsi {
     struct oa_aspi_header header;
     oa_u8 target;

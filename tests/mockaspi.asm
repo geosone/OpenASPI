@@ -120,6 +120,39 @@ aspi_entry proc far
 
         les     bx, dword ptr [bp+6]
         mov     al, byte ptr es:[bx+SRB_Cmd]
+ifdef NATIVE_PROBE_TEST
+        cmp     al, 0F0h
+        jne     native_not_stats
+        mov     ax, word ptr cs:[native_calls]
+        mov     word ptr es:[bx+4], ax
+        mov     ax, word ptr cs:[native_bad]
+        mov     word ptr es:[bx+6], ax
+        mov     ax, word ptr cs:[native_writes]
+        mov     word ptr es:[bx+8], ax
+        mov     ax, word ptr cs:[native_marks]
+        mov     word ptr es:[bx+10], ax
+        mov     ax, word ptr cs:[native_flushes]
+        mov     word ptr es:[bx+12], ax
+        mov     byte ptr es:[bx+SRB_Status], SS_COMP
+        jmp     aspi_done
+native_not_stats:
+        cmp     al, 0F1h
+        jne     native_not_reset
+        mov     word ptr cs:[native_calls], 0
+        mov     word ptr cs:[native_bad], 0
+ifdef NATIVE_SPACE_TEST
+        mov     word ptr cs:[native_space_calls], 0
+endif
+ifdef NATIVE_MEDIA_TEST
+        mov     word ptr cs:[native_media_calls], 0
+endif
+        mov     word ptr cs:[native_writes], 0
+        mov     word ptr cs:[native_marks], 0
+        mov     word ptr cs:[native_flushes], 0
+        mov     byte ptr es:[bx+SRB_Status], SS_COMP
+        jmp     aspi_done
+native_not_reset:
+endif
         cmp     al, SC_HA_INQUIRY
         je      host_inquiry
         cmp     al, SC_GET_DEV_TYPE
@@ -175,6 +208,10 @@ no_device:
         jmp     aspi_done
 
 execute_scsi:
+ifdef NATIVE_PROBE_TEST
+        call    native_test_command
+        jmp     aspi_done
+endif
         cmp     byte ptr es:[bx+SRB_CDB], 05h
         jne     execute_data
         call    execute_read_block_limits
@@ -758,17 +795,25 @@ ifdef REWIND_DEFERRED
 rewind_deferred_first:
 if REWIND_DEFERRED eq 1
         mov byte ptr es:[bx+TAPE_SENSE+0], 71h
+        mov byte ptr es:[bx+TAPE_SENSE+7], 6
         mov byte ptr es:[bx+TAPE_SENSE+2], 2
         mov byte ptr es:[bx+TAPE_SENSE+12], 4
         mov byte ptr es:[bx+TAPE_SENSE+13], 1
-else
+elseif REWIND_DEFERRED eq 2
         mov byte ptr es:[bx+TAPE_SENSE+0], 73h
         mov byte ptr es:[bx+TAPE_SENSE+1], 2
         mov byte ptr es:[bx+TAPE_SENSE+2], 4
         mov byte ptr es:[bx+TAPE_SENSE+3], 1
+else
+        mov byte ptr es:[bx+TAPE_SENSE+0], 70h
+        mov byte ptr es:[bx+TAPE_SENSE+2], 2
+        mov byte ptr es:[bx+TAPE_SENSE+7], 0 ; ASC bytes not declared
+        mov byte ptr es:[bx+TAPE_SENSE+12], 4
+        mov byte ptr es:[bx+TAPE_SENSE+13], 1
 endif
 else
         mov byte ptr es:[bx+TAPE_SENSE+0], 70h
+        mov byte ptr es:[bx+TAPE_SENSE+7], 6
         mov byte ptr es:[bx+TAPE_SENSE+2], 2
         mov byte ptr es:[bx+TAPE_SENSE+12], 3Ah ; no media: do not retry
 endif
@@ -793,6 +838,7 @@ rewind_test_sense:
         cmp byte ptr cs:[rewind_polls], 2
         jne rewind_test_descriptor
         mov byte ptr es:[bx+TAPE_SENSE+0], 70h
+        mov byte ptr es:[bx+TAPE_SENSE+7], 6
         mov byte ptr es:[bx+TAPE_SENSE+2], 2
         mov byte ptr es:[bx+TAPE_SENSE+12], 4
         mov byte ptr es:[bx+TAPE_SENSE+13], 1 ; becoming ready
@@ -811,6 +857,7 @@ rewind_test_progress:
         jmp rewind_test_good
 rewind_test_report_progress:
         mov byte ptr es:[bx+TAPE_SENSE+0], 70h
+        mov byte ptr es:[bx+TAPE_SENSE+7], 6
         mov byte ptr es:[bx+TAPE_SENSE+13], 1Ah ; no-sense rewind progress
 endif
 rewind_test_condition:
@@ -1126,8 +1173,19 @@ elseif READ_STREAM_TRANSPORT eq 2
         mov     byte ptr es:[bx+SRB_Status], 2 ; aborted
 elseif READ_STREAM_TRANSPORT eq 3
         mov     byte ptr es:[bx+SRB_TargStat], 0 ; not CHECK CONDITION
-else
+elseif READ_STREAM_TRANSPORT eq 4
         mov     byte ptr es:[bx+SRB_TargStat], 8 ; BUSY
+elseif READ_STREAM_TRANSPORT eq 5
+        mov     byte ptr es:[bx+SRB_SenseLen], 7
+elseif READ_STREAM_TRANSPORT eq 6
+        mov     byte ptr es:[bx+TAPE_SENSE], 0F2h
+elseif READ_STREAM_TRANSPORT eq 7
+        mov     byte ptr es:[bx+SRB_Status], SS_COMP
+        mov     byte ptr es:[bx+SRB_HaStat], 11h
+elseif READ_STREAM_TRANSPORT eq 8
+        mov     byte ptr es:[bx+SRB_Status], SS_COMP ; target still CHECK
+else
+        mov     byte ptr es:[bx+SRB_SenseLen], 33
 endif
         ret
 corrupt_stream_completion endp
@@ -1263,6 +1321,9 @@ endif
 
 ifdef BUFFERED_TEST
         include tests/mockbuffered.inc
+endif
+ifdef NATIVE_PROBE_TEST
+        include tests/mocknative.inc
 endif
 resident_end label byte
 

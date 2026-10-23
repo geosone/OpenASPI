@@ -11,6 +11,11 @@ import ghidra.program.model.mem.MemoryBlock;
 import java.io.PrintWriter;
 import java.math.BigInteger;
 
+// Analysis adapter, not a driver implementation. Hash-specific table offsets
+// seed functions that ordinary linear analysis can miss behind indirect DOS
+// dispatch. Setting DS=0 matches this raw import convention, not a reconstructed
+// runtime proof. Review register/far-pointer behavior in disassembly before
+// deriving an interface requirement from decompiled C.
 public class InspectAspiDriver extends GhidraScript {
     public void run() throws Exception {
         if (getScriptArgs().length != 1) {
@@ -79,6 +84,9 @@ public class InspectAspiDriver extends GhidraScript {
         }
     }
 
+    // An entry may already lie within an inferred function. Disassemble it, but
+    // create a new function only when neither an entry nor enclosing function exists;
+    // blind creation would split existing analysis and distort the report.
     private void seed(Address base, int offset) throws Exception {
         Address entry = base.add(offset);
         disassemble(entry);

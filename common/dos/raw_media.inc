@@ -1,3 +1,11 @@
+; Exclusive physical-media service for tools, not a filesystem entry point.
+; A BEGIN-issued token identifies the owner until END; normal block requests
+; must not bypass a conflicting raw session. LBAs are physical, not relative
+; to the selected partition. Write sessions invalidate cached filesystem data.
+; The packet retains driver/sense diagnostics for rescue policy even when DOS
+; maps the final error. Category 80h here uses block IOCTL 440Dh and RAW1;
+; it is distinct from the character-device OTAP protocol on IOCTL 440Ch.
+
 ; OpenASPI removable-media session API, category 80h, minors 0..4.
 ; 32-byte versioned packet: "RAW1", size WORD=32, token WORD,
 ; physical LBA DWORD, count WORD, mode WORD (BEGIN: 0 read / 1 write),
@@ -5,7 +13,6 @@
 ; INFO=0 BEGIN=1 READ=2 WRITE=3 END=4. No filesystem is required.
 raw_sequence dw 0
 raw_minor db 0
-raw_capacity_data db 8 dup (0)
 
 raw_ioctl proc near
         mov     al, byte ptr es:[bx+RH_IOCTL_MINOR]
@@ -43,7 +50,7 @@ raw_not_active:
         je      raw_info
         jmp     raw_busy
 raw_info:
-        call    raw_read_capacity
+        call    block_read_capacity
         jnc     raw_capacity_ready
         call    raw_set_error
         ret
@@ -63,6 +70,9 @@ raw_volume_ready:
         jnc     raw_prevented
         call    raw_set_error
         ret
+; Publish the claim only after hardware PREVENT succeeds. Token zero means
+; no owner, so skip it when the 16-bit sequence wraps. The token associates
+; subsequent operations with this unit's session; it is not authentication.
 raw_prevented:
         mov     byte ptr [di+U_LOCKS], 1
         inc     word ptr [raw_sequence]
@@ -123,6 +133,9 @@ raw_busy:
         mov     al, ERR_NOT_READY
         stc
         ret
+; READ/WRITE/END require both active state and the matching token. Packet
+; bytes 8..15 change meaning between INFO output and data input: address and
+; capability information must be cached by the client before filling LBA/count.
 raw_session:
         test    byte ptr [di+U_FLAGS], UF_RAW_ACTIVE
         jz      raw_busy
@@ -152,6 +165,9 @@ raw_read:
         jb      raw_range_ok
         cmp     ax, word ptr [di+U_CAPACITY]
         ja      raw_bad_packet
+; Bound the complete count*512 buffer before submission. Reject offset wrap
+; and a physical address past real-mode memory; checking only the FAR pointer's
+; starting offset would miss a buffer whose final sector crosses the limit.
 raw_range_ok:
         mov     ax, word ptr es:[bp+16]
         mov     dx, word ptr es:[bp+18]
@@ -189,6 +205,10 @@ raw_transfer:
         ret
 raw_transfer_done:
         ret
+; END attempts hardware ALLOW once. Even on failure, retire token/raw state
+; and invalidate filesystem caches; do not leave an apparently usable session.
+; On failed ALLOW the lock count remains, so later code cannot claim a physical
+; unlock occurred. Preserve carry/AL while clearing only software session state.
 raw_end:
         mov     ax, 001Eh
         call    medium_control_result
@@ -199,7 +219,7 @@ raw_end_unlocked:
         mov     byte ptr [di+U_LOCKS], 0
 raw_end_failed:
         pushf
-        and     byte ptr [di+U_FLAGS], not (UF_RAW_ACTIVE or UF_RAW_WRITE or UF_MEDIA)
+        and     byte ptr [di+U_FLAGS], not (UF_RAW_ACTIVE or UF_RAW_WRITE or UF_MEDIA or UF_BPB_OVERRIDE)
         mov     word ptr [di+U_RAW_TOKEN], 0
         popf
         ret
@@ -210,75 +230,9 @@ raw_ioctl endp
 raw_set_error proc near
         mov     byte ptr es:[bp+13], al
         push    ax
-        push    si
-        xor     ax, ax
-        cmp     byte ptr [srb+SRB_Status], SS_ERR
-        jne     raw_transfer_error_info
-        cmp     byte ptr [srb+SRB_HaStat], 0
-        jne     raw_transfer_error_info
-        cmp     byte ptr [srb+SRB_TargStat], 2
-        jne     raw_transfer_error_info
-        xor     ah, ah
-        mov     al, byte ptr [srb+SRB_CDBLen]
-        mov     si, ax
-        mov     al, byte ptr [srb+si+SRB_CDB]
-        and     al, 7Fh
-        cmp     al, 70h
-        je      raw_transfer_sense
-        cmp     al, 71h
-        jne     raw_transfer_no_sense
-raw_transfer_sense:
-        mov     al, byte ptr [srb+si+SRB_CDB+2]
-        and     al, 0Fh
-        mov     ah, byte ptr [srb+si+SRB_CDB+12]
-        jmp     short raw_transfer_error_info
-raw_transfer_no_sense:
-        xor     ax, ax
-raw_transfer_error_info:
+        call    aspi_sense
         mov     word ptr es:[bp+14], ax
-        pop     si
         pop     ax
         stc
         ret
 raw_set_error endp
-
-raw_read_capacity proc near
-        mov     al, SRB_DIR_IN
-        mov     cl, 10
-        call    aspi_prepare
-        mov     byte ptr [srb+SRB_CDB], 25h
-        mov     word ptr [srb+SRB_BufLen], 8
-        mov     word ptr [srb+SRB_BufPointer], offset raw_capacity_data
-        mov     word ptr [srb+SRB_BufPointer+2], cs
-        ; Poison so a short or untouched response cannot look like capacity.
-        mov     word ptr [raw_capacity_data], 0FFFFh
-        mov     word ptr [raw_capacity_data+2], 0FFFFh
-        mov     word ptr [raw_capacity_data+4], 0FFFFh
-        mov     word ptr [raw_capacity_data+6], 0FFFFh
-        call    call_aspi
-        call    aspi_result
-        jnc     raw_capacity_validate
-        call    sense_to_doserr
-        stc
-        ret
-raw_capacity_validate:
-        cmp     word ptr [raw_capacity_data+4], 0
-        jne     raw_capacity_bad
-        cmp     word ptr [raw_capacity_data+6], 2
-        jne     raw_capacity_bad
-        mov     ax, word ptr [raw_capacity_data+2]
-        xchg    al, ah
-        mov     dx, word ptr [raw_capacity_data]
-        xchg    dl, dh
-        add     ax, 1
-        adc     dx, 0
-        jc      raw_capacity_bad
-        mov     word ptr [di+U_CAPACITY], ax
-        mov     word ptr [di+U_CAPACITY+2], dx
-        clc
-        ret
-raw_capacity_bad:
-        mov     al, ERR_UNKNOWN_MEDIA
-        stc
-        ret
-raw_read_capacity endp

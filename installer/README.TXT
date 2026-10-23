@@ -52,6 +52,13 @@ Warning fields describe the saved failure; the tool does not perform recovery.
 For renamed drivers, use TAPECTL /DEVICE:NRST0$ (or the configured non-rewinding
 name). Rewinding aliases and paths are rejected; the default remains NRMT0.
 
+OTAPINFO.EXE queries the new native tape API. Without options it sends no
+SCSI command; /REFRESH requests identity, record limits and optional mode
+pages without moving or writing the tape. Missing capabilities remain unknown.
+Exit 0 means query completed, 1 means usage/DOS/API failure, and 2 means a
+partial/busy query or a retained write failure. See docs/native-tape-query.md
+in the source tree.
+
 WINCHECK.COM distinguishes DOS, a Windows 3.x DOS box and Windows 9x/ME for
 conditional setup choices. WINCHECK.EXE is the companion 16-bit Windows probe
 for Windows-specific installation choices.

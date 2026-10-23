@@ -229,3 +229,23 @@ Native Windows and ASPI frontends submit requests through that owner.  An ASPI
 component must never bypass an active miniport and touch the same controller
 directly.
 
+## Additional ASPI implementation references
+
+[Brian Sawert, The Programmer's Guide to SCSI](https://vtda.org/books/Computing/Hardware/SCSI/The_Programmers_Guide_To_SCSI.pdf),
+chapter 10, printed pp. 161–165 (PDF pp. 181–185), reinforces this boundary.
+Win32 SRBs use fixed 16-byte CDB storage and separate sense storage; the DOS
+layout cannot be reused. It describes event-based completion and contrasts
+Win16 page-locking with Win32-managed buffers. Windows 95 uses APIX; NT uses
+ASPI32.SYS/pass-through. NT examples are not a 9x backend. Our implementation
+must test each ABI and pending-request lifetime separately. The book does
+not establish Windows 98/ME binary compatibility.
+
+IBM's [OS/2 ASPI specification, reprinted by EDM2](https://www.edm2.com/index.php/Advanced_SCSI_Programming_Interface_%28ASPI%29_OS/2_Specification)
+is a comparison reference, not a DOS/9x transport contract. Its execute SRB
+reuses header bytes 4–5 for scatter/gather length, has OS/2 posting fields,
+and assigns flag bit 5 to scatter/gather; bit 2 is reserved there. Its table
+reserves command 06h, whereas DOS GET DISK INFO uses 06h. AttachDD/DevHelp,
+initialization IOCTLs and target allocation belong to OS/2. Shared status
+values, transfer directions and pending completion rules are useful cross-checks;
+copying the whole structure or calling convention would break compatibility.
+

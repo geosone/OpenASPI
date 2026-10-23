@@ -1,3 +1,9 @@
+/* Pure six-byte sequential-access CDB builders: no submission or device state.
+ * Clear reserved bits and encode multi-byte fields in SCSI big-endian order.
+ * Checked builders return -1 without changing the CDB on an unencodable input.
+ * A representable command does not imply that a particular drive supports it.
+ */
+
 #include <string.h>
 
 #include "openaspi/scsi_tape.h"
@@ -27,6 +33,10 @@ void oa_scsi_cdb_rewind(oa_u8 cdb[OA_SCSI_CDB6_SIZE], int immediate)
     cdb[1] = immediate ? 0x01u : 0x00u;
 }
 
+/* FIXED changes transfer_length units: whole blocks when set, bytes for
+ * one variable record otherwise. The caller supplies the correctly converted
+ * count; this builder does not know the current device block size.
+ */
 int oa_scsi_cdb_read_write(oa_u8 cdb[OA_SCSI_CDB6_SIZE], int write,
                            int fixed_blocks, oa_u32 transfer_length)
 {
@@ -55,6 +65,10 @@ int oa_scsi_cdb_write_filemarks(oa_u8 cdb[OA_SCSI_CDB6_SIZE],
     return 0;
 }
 
+/* SPACE uses a signed 24-bit count. Keep its two's-complement low 24 bits
+ * after checking range; do not encode a negative count as an unsigned size.
+ * The code selects blocks/filemarks/etc.; it is an enum, not a bitmask.
+ */
 int oa_scsi_cdb_space(oa_u8 cdb[OA_SCSI_CDB6_SIZE], oa_u8 code,
                       oa_s32 count)
 {

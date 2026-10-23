@@ -1,4 +1,13 @@
-; ASPITAP.SYS bootstrap driver for OpenASPI.
+; Two interfaces share this resident driver but have different session rules.
+; Legacy RMT/NRMT character I/O and category 07h preserve ASPITAPE behavior,
+; including buffered aliases, EOF handling and final-close filemarks/rewind.
+; Native category 80h uses explicit packets, counts and writer ownership;
+; its implementation is included from common/aspi/native_tape*.inc and must
+; not trigger those legacy close effects. Completion/sense qualification is
+; shared, but each interface decides how to report stream boundaries/errors.
+; Keep all request-time code and buffers below the resident-end boundary.
+
+; ASPITAP.SYS legacy and native tape driver for OpenASPI.
 ;
 ; The driver locates SCSIMGR$, claims the first ASPI sequential-access device,
 ; and exposes the historical RMT0/NRMT0 names. The non-destructive generic
@@ -121,6 +130,10 @@ request_ptr     dd      0
 request_rewind  db      0
 request_buffered db     0
 
+; The four DOS device headers share one implementation. Strategy captures
+; both the request pointer and alias policy (buffered/raw, rewind/no-rewind);
+; interrupt must use these captured flags rather than infer policy from a name.
+; Changing alias does not select a second physical tape or independent session.
 strategy_rmt proc far
         mov     byte ptr cs:[request_buffered], 0
         mov     byte ptr cs:[request_rewind], MT_STATE_REWIND
@@ -152,6 +165,10 @@ strategy_nmt proc far
         ret
 strategy_nmt endp
 
+; All aliases converge here after strategy captured request/alias policy.
+; Save caller registers, establish DS=CS and dispatch the DOS command. Native
+; ownership gates legacy reads/writes/mutators before their normal handlers;
+; status delivery remains distinct from an operation's reported tape result.
 interrupt proc far
         push    ax
         push    bx
@@ -189,6 +206,11 @@ dispatch_read:
         jmp     unsupported
 
 read_request_dispatch:
+        cmp     byte ptr [native_write_state], 0
+        je      native_legacy_read_allowed
+        mov     word ptr es:[bx+REQ_COUNT], 0
+        jmp     native_legacy_denied
+native_legacy_read_allowed:
         cmp     byte ptr [request_buffered], 0
         je      dispatch_raw_read
         call    buffered_read
@@ -202,6 +224,11 @@ read_request_success:
         jmp     request_success
 
 write_request_dispatch:
+        cmp     byte ptr [native_write_state], 0
+        je      native_legacy_write_allowed
+        mov     word ptr es:[bx+REQ_COUNT], 0
+        jmp     native_legacy_denied
+native_legacy_write_allowed:
         cmp     byte ptr [request_buffered], 0
         je      dispatch_raw_write
         call    buffered_write
@@ -270,7 +297,21 @@ unsupported:
         mov     word ptr es:[bx+REQ_STATUS], 8103h
         jmp     request_done
 
+native_legacy_denied:
+        mov     byte ptr [driver_error], 17
+        jmp     request_error
+
+; Track every accepted/opened alias in the common handle count. Only the
+; first open resets per-session buffering state. A new handle during a native
+; claim poisons that claim because DOS may ignore OPEN errors; exclusive native
+; mutators must then fail rather than trust the attempted rejection.
 open_request:
+        test    byte ptr [native_write_state], 1
+        jz      native_open_not_owned
+        ; DOS may ignore OPEN errors. Count every handle, poison the claim,
+        ; and block mutators rather than relying on an unsuccessful OPEN.
+        or      byte ptr [native_write_state], 4
+native_open_not_owned:
         cmp     byte ptr [tape_open_count], 0FFh
         jne     open_count_available
         jmp     request_error
@@ -298,9 +339,21 @@ close_decrement:
         dec     byte ptr [tape_open_count]
         je      close_last_handle
         jmp     request_success
+; Only final close finalizes a legacy written session. A still-active native
+; claim instead loses ownership and reports failure, with no implicit flush,
+; marks or rewind. Native callers must explicitly END or ABORT before close.
 close_last_handle:
+        test    byte ptr [native_write_state], 1
+        jz      native_close_not_owned
+        and     byte ptr [native_write_state], not 1
+        or      byte ptr [native_write_state], 4
+        mov     byte ptr [driver_error], 19
+        jmp     request_error            ; no implicit flush or marks
+native_close_not_owned:
         call    flush_tape_buffer
-        jc      request_error
+        jnc     close_buffer_flushed
+        jmp     request_error
+close_buffer_flushed:
         call    finish_written_tape
         jc      close_write_error
         cmp     byte ptr [request_rewind], 0
@@ -317,7 +370,21 @@ close_complete:
         and     byte ptr [device_state], MT_STATE_EOM_EOF
         jmp     request_success
 
+; Delivery status and operation status differ for OTAP: a well-formed native
+; reply returns DOS success even if its result says BUSY/ERROR. Legacy category
+; 07h keeps its historical request/error contract. Consumers must inspect the
+; packet for native operation completion instead of relying on DOS carry alone.
 generic_ioctl:
+        cmp     byte ptr es:[bx+REQ_CATEGORY], 80h
+        jne     ioctl_legacy_category
+        call    native_tape_dispatch
+        jnc     native_ioctl_ok
+        les     bx, [request_ptr]
+        mov     word ptr es:[bx+REQ_STATUS], 8103h
+        jmp     request_done
+native_ioctl_ok:
+        jmp     request_success
+ioctl_legacy_category:
         cmp     byte ptr es:[bx+REQ_CATEGORY], IOCTL_TAPE
         je      ioctl_category_valid
         jmp     unsupported
@@ -335,6 +402,10 @@ ioctl_category_valid:
         je      ioctl_function_valid
         jmp     unsupported
 ioctl_function_valid:
+        cmp     byte ptr [native_write_state], 0
+        je      native_legacy_mtop_allowed
+        jmp     native_legacy_denied
+native_legacy_mtop_allowed:
         call    ioctl_mtop
         jc      request_error
         les     bx, [request_ptr]
@@ -406,7 +477,10 @@ record_error_done:
         ret
 record_driver_error endp
 
-; Fill the byte-exact fourteen-byte ASPITAPE mtget structure.
+; Serialize the legacy 14-byte status contract from driver state. When a
+; write/finalization diagnostic is saved, report that snapshot instead of letting
+; a later harmless command hide it. This is status construction, not a readiness
+; probe, and it does not establish that the most recent backup succeeded.
 fill_mtget proc near
         les     bx, [request_ptr]
         les     di, dword ptr es:[bx+REQ_PARAMETER]
@@ -462,6 +536,10 @@ fill_mtget endp
 ; IOCTL.H / MTIO.H shipped in the 1992 archive describe a different ABI
 ; from its manual. Reuse the legacy snapshot, then expand backwards so no
 ; caller-owned bytes beyond the sixteen-byte destination are touched.
+; Build the explicit 16-byte layout by translating the common status fields.
+; Its physical-unit/error/state positions differ from the 14-byte layout; do not
+; interpret a longer buffer as sufficient evidence of which layout was returned.
+; The extra state bits also expose pending rewind and a saved write diagnostic.
 fill_mtget16 proc near
         call    fill_mtget
         mov     ax, word ptr es:[di+12]
@@ -617,8 +695,8 @@ read_length_ready:
         mov     al, byte ptr [srb+SRB_TargStat]
         mov     byte ptr [last_scsi_status], al
         mov     byte ptr [last_sense_key], 0
-        cmp     byte ptr [srb+SRB_Status], SS_COMP
-        jne     read_scsi_failed
+        call    check_tape_completion
+        jc      read_scsi_failed
         call    finish_transfer_count
         jc      read_bad_residual
         or      byte ptr [device_state], MT_STATE_READ
@@ -766,15 +844,15 @@ write_length_ready:
         mov     al, byte ptr [srb+SRB_TargStat]
         mov     byte ptr [last_scsi_status], al
         mov     byte ptr [last_sense_key], 0
-        cmp     byte ptr [srb+SRB_Status], SS_COMP
-        jne     write_scsi_failed
+        call    check_tape_completion
+        jc      write_scsi_failed
         call    finish_transfer_count
         jc      write_bad_residual
 write_success:
         ; Buffered acceptance, short transfers and ignored CHECK CONDITION
         ; are not proof that a later physical record was fully written.
-        cmp     byte ptr [srb+SRB_Status], SS_COMP
-        jne     write_incomplete
+        call    check_tape_completion
+        jc      write_incomplete
         cmp     word ptr [residual_bytes], 0
         jne     write_incomplete
         mov     byte ptr [write_error_valid], 0
@@ -849,6 +927,10 @@ save_raw_write_error endp
 
 ; The buffered aliases reuse the raw request handlers with a resident private
 ; request packet. Cache state belongs to the single physical tape session.
+; Logical DOS reads may consume part of a cached physical record or span
+; records. Deliver bytes already cached before surfacing a queued filemark; a
+; zero-byte boundary must not appear before the data that precedes it. buffer_count
+; and buffer_cursor belong to the physical session, not to an individual handle.
 buffered_read proc near
         call    begin_buffer_request
         cmp     word ptr [buffer_left], 0
@@ -914,6 +996,10 @@ buffered_read_chunk_ready:
         jmp     buffer_success
 buffered_read endp
 
+; Accept logical bytes into fixed-size resident records. A full buffer is sent
+; once; successful buffering alone does not prove physical write completion.
+; Switching from a read buffer discards that cached remainder. Any latched physical
+; write error blocks further acceptance rather than replaying an uncertain record.
 buffered_write proc near
         call    begin_buffer_request
         call    check_buffer_access
@@ -969,6 +1055,10 @@ buffered_write_accepted:
         jmp     buffer_success
 buffered_write endp
 
+; Capture requested length/user pointer before clearing the returned count.
+; Normalize the FAR pointer to offset 0..15 and move whole paragraphs into the
+; segment; subsequent copies can advance in bounded chunks without treating a
+; 16-bit offset wrap as the next part of the same logical buffer.
 begin_buffer_request proc near
         les     bx, [request_ptr]
         mov     ax, word ptr es:[bx+REQ_COUNT]
@@ -987,6 +1077,10 @@ begin_buffer_request proc near
         ret
 begin_buffer_request endp
 
+; Apply session guards before copying bytes or polling media: retain a
+; latched physical-write failure, enforce the first-open buffered/raw choice,
+; then check handle and single-byte policy. Fixed-mode buffer size must divide
+; into complete blocks. CF is the access result, not a hardware completion.
 check_buffer_access proc near
         cmp     byte ptr [buffer_write_failed], 0
         je      buffer_access_not_latched
@@ -1026,6 +1120,9 @@ buffer_access_error:
         ret
 check_buffer_access endp
 
+; Only acknowledged/copy-completed bytes advance buffer_done and user pointer.
+; Re-normalize segment:offset after each chunk; buffer_left is the remaining DOS
+; request, whereas buffer_count/cursor describe the cached physical tape record.
 advance_buffer_request proc near
         mov     ax, word ptr [buffer_chunk]
         sub     word ptr [buffer_left], ax
@@ -1053,6 +1150,9 @@ buffer_error:
         stc
         ret
 
+; Invalidate software cache counters/kind only. No positioning, write or
+; filemark CDB is sent, and saved write diagnostics remain intact. Discarding
+; cached read bytes cannot rewind the physical tape to retrieve them again.
 discard_tape_buffer proc near
         mov     byte ptr [buffer_kind], 0
         mov     word ptr [buffer_count], 0
@@ -1060,6 +1160,10 @@ discard_tape_buffer proc near
         ret
 discard_tape_buffer endp
 
+; Temporarily substitute the resident private request packet, then call the
+; same raw READ/WRITE implementation. Restore the outer request pointer and carry
+; before returning. buffer_internal_io marks this deliberate reuse, not a nested
+; DOS call; outer accounting remains in buffer_done until buffer_success/error.
 buffer_physical_io proc near
         push    word ptr [request_ptr+2]
         push    word ptr [request_ptr]
@@ -1122,6 +1226,10 @@ save_write_error proc near
         ret
 save_write_error endp
 
+; Buffered finalization writes a complete physical buffer, zero-padding its
+; unused tail. This changes record framing and must not be applied to the native
+; record API. A prior failed physical write remains failed; flushing must not
+; replay it merely because bytes still occupy the resident buffer.
 flush_tape_buffer proc near
         cmp     byte ptr [session_buffered], 0
         je      flush_buffer_done
@@ -1150,6 +1258,9 @@ flush_buffer_failed:
         ret
 flush_tape_buffer endp
 
+; Report no proven DOS progress and retain the original requested byte count
+; as residual. Do not infer that the device did not consume a failed record from
+; this conservative application count. Native COUNT_VALID has a separate contract.
 zero_transfer_count proc near
         les     bx, [request_ptr]
         mov     word ptr es:[bx+REQ_COUNT], 0
@@ -1161,6 +1272,10 @@ zero_transfer_count endp
 ; Convert ASPI's returned residual count to the DOS request's transferred
 ; byte count. Reject a manager result that cannot fit this 16-bit DOS request
 ; or that exceeds the original buffer length.
+; Negotiated ASPI residuals are bytes NOT transferred, not bytes completed.
+; Validate their width/range and fixed-block alignment before subtraction. Without
+; the extension this legacy helper assumes exact completion where the caller's
+; completion policy permits it; it is not the native API's COUNT_VALID contract.
 finish_transfer_count proc near
         test    byte ptr [srb+SRB_Flags], SRB_RESIDUAL
         jnz     finish_read_residual
@@ -1196,9 +1311,10 @@ finish_read_invalid:
         ret
 finish_transfer_count endp
 
-; Fixed-format tape sense reports the requested-minus-actual byte count in its
-; signed information field. A positive 16-bit value therefore recovers short
-; variable records for managers without ASPI residual support.
+; Information is a residual in bytes for variable mode and blocks for fixed
+; mode. Convert fixed blocks with checked multiplication before subtracting from
+; requested_bytes. Negative, oversized or unavailable information cannot produce
+; a plausible short count; callers retain the error/unknown-count path.
 finish_read_sense_count proc near
         cmp     byte ptr [sense_info_valid], 0
         je      finish_sense_invalid
@@ -1302,6 +1418,10 @@ read_sense_error:
         ret
 classify_read_sense endp
 
+; With WAIT_REWIND, submit synchronous REWIND; otherwise set IMMED and mark
+; rewind_pending only after command acceptance. Accepted immediate rewind does
+; not establish BOT. Subsequent media operations use wait_for_rewind's readiness
+; barrier, while reopening or reading cached status does not wait.
 rewind_on_close proc near
         call    wait_for_rewind
         jc      rewind_close_done
@@ -1368,12 +1488,12 @@ rewind_status_valid:
         je      rewind_check_sense
         jmp     rewind_wait_error
 rewind_check_sense:
-        mov     al, byte ptr [srb+TAPE_SENSE+0]
-        and     al, 7Fh
-        mov     si, offset srb+TAPE_SENSE+12 ; fixed sense ASC/ASCQ
+        cmp     byte ptr [sense_asc_valid], 0
+        je      rewind_wait_error
+        mov     al, byte ptr [sense_response]
+        mov     si, offset sense_asc
         cmp     al, 70h
         je      rewind_check_progress
-        mov     si, offset srb+TAPE_SENSE+2 ; descriptor sense ASC/ASCQ
         cmp     al, 72h
         jne     rewind_wait_error
 rewind_check_progress:
@@ -1407,6 +1527,10 @@ rewind_tick_changed:
         jnc     rewind_elapsed_ready
         add     ax, 00B0h               ; BIOS resets at 001800B0h midnight
         adc     dx, 0018h
+; Elapsed time uses BIOS ticks, whose counter resets at midnight rather than
+; at 32-bit overflow. The preceding borrow correction adds one BIOS day. This
+; limits readiness polling between completed commands, not the lifetime of a
+; still-pending ASPI SRB; the manager continues to own command timeouts.
 rewind_elapsed_ready:
         or      dx, dx
         jnz     rewind_wait_timeout
@@ -1462,6 +1586,9 @@ install_break_done:
         ret
 install_break_hook endp
 
+; Unhook only if INT 1Bh still points directly at our handler. If another TSR
+; chained above it, preserve the resident link rather than cut that chain or free
+; a handler still reachable through it. Preserve caller flags around IVT access.
 restore_break_hook proc near
         cmp     byte ptr [break_hook_installed], 0
         je      restore_break_done
@@ -1491,6 +1618,9 @@ restore_break_done:
         ret
 restore_break_hook endp
 
+; Interrupt-time action is only a resident flag plus chaining to the previous
+; handler. The polling loop observes the flag between completed commands; this
+; is not cancellation of an in-flight ASPI request and performs no nested DOS I/O.
 tape_break_handler proc far
         mov     byte ptr cs:[break_requested], 1
         jmp     dword ptr cs:[old_break_vector]
@@ -1514,6 +1644,10 @@ read_bios_ticks endp
 ; Match the historical close contract after a write: terminate the tape file
 ; with two filemarks. A no-rewind close then spaces backward over one filemark
 ; so the next writer can append at the expected position.
+; Legacy close finalization writes the historical end markers and positions
+; relative to them. Only run for a written legacy session after buffer flush.
+; Native writer state is separate precisely so explicit END/ABORT never acquires
+; this extra record/position policy by accident.
 finish_written_tape proc near
         test    byte ptr [device_state], MT_STATE_WRITTEN
         jnz     finish_tape_write_marks
@@ -1673,6 +1807,10 @@ mtop_unsupported:
         ret
 ioctl_mtop endp
 
+; Submit a prepared no-data command and capture its diagnostics. TUR retains
+; cached data/queued EOF; other controls discard the software buffer before I/O
+; and clear queued EOF only after success. A failed motion may still have affected
+; media, so this helper makes no rollback or automatic-repeat promise.
 execute_control_srb proc near
         cmp     byte ptr [srb+SRB_CDB], SCSI_TUR
         je      control_buffer_ready
@@ -1692,8 +1830,8 @@ control_buffer_ready:
         mov     al, byte ptr [srb+SRB_TargStat]
         mov     byte ptr [last_scsi_status], al
         mov     byte ptr [last_sense_key], 0
-        cmp     byte ptr [srb+SRB_Status], SS_COMP
-        je      control_complete
+        call    check_tape_completion
+        jnc     control_complete
         call    remember_sense_key
         stc
         ret
@@ -1706,6 +1844,9 @@ control_success:
         ret
 execute_control_srb endp
 
+; Build a zeroed six-byte execute-SCSI/no-data envelope for the selected tape,
+; with 32-byte autosense allocation. CDB zero defaults to TEST UNIT READY; callers
+; explicitly replace opcode/count/IMMED bits. Preparation performs no device I/O.
 prepare_control_srb proc near
         call    clear_srb
         mov     byte ptr [srb+SRB_Cmd], SC_EXEC_SCSI_CMD
@@ -1749,6 +1890,11 @@ forward_count_invalid:
 encode_forward_count endp
 
 ; Encode -mtop.count as a signed 24-bit SPACE count.
+; Unsigned legacy count becomes signed 24-bit SPACE magnitude. Permit
+; 00800000h only with zero low word (the negative endpoint -8388608). NEG low,
+; ADC carry, NEG high forms the full two's-complement negative before storing
+; its low three bytes in big-endian CDB order; truncation before checking loses
+; that endpoint/range distinction.
 encode_backward_count proc near
         mov     ax, word ptr es:[di+2]
         mov     dx, word ptr es:[di+4]
@@ -1771,109 +1917,15 @@ backward_count_invalid:
         ret
 encode_backward_count endp
 
-remember_sense_key proc near
-        mov     byte ptr [sense_flags], 0
-        mov     byte ptr [sense_info_valid], 0
-        mov     word ptr [sense_info_high], 0
-        mov     word ptr [sense_info_low], 0
-        mov     al, byte ptr [srb+TAPE_SENSE+0]
-        and     al, 7Fh
-        mov     byte ptr [sense_response], al
-        cmp     al, 70h
-        jne     sense_not_fixed_current
-        jmp     fixed_sense
-sense_not_fixed_current:
-        cmp     al, 71h
-        jne     sense_not_fixed_deferred
-        jmp     fixed_sense
-sense_not_fixed_deferred:
-        cmp     al, 72h
-        je      descriptor_sense
-        cmp     al, 73h
-        je      descriptor_sense
-        jmp     sense_done
-descriptor_sense:
-        mov     al, byte ptr [srb+TAPE_SENSE+1]
-        and     al, 0Fh
-        mov     byte ptr [last_sense_key], al
-        xor     cx, cx
-        mov     cl, byte ptr [srb+TAPE_SENSE+7]
-        cmp     cx, 24
-        jbe     descriptor_length_ready
-        mov     cx, 24
-descriptor_length_ready:
-        mov     si, offset srb+TAPE_SENSE+8
-descriptor_loop:
-        cmp     cx, 2
-        jae     descriptor_header_ready
-        jmp     sense_done
-descriptor_header_ready:
-        xor     bx, bx
-        mov     bl, byte ptr [si+1]
-        add     bx, 2
-        cmp     bx, cx
-        jbe     descriptor_size_ready
-        jmp     sense_done
-descriptor_size_ready:
-        cmp     byte ptr [si], 0
-        je      descriptor_information
-        cmp     byte ptr [si], 4
-        je      descriptor_stream
-        jmp     short descriptor_next
-
-descriptor_information:
-        cmp     byte ptr [si+1], 0Ah
-        jb      descriptor_next
-        test    byte ptr [si+2], 80h
-        jz      descriptor_next
-        cmp     word ptr [si+4], 0
-        jne     descriptor_next
-        cmp     word ptr [si+6], 0
-        jne     descriptor_next
-        mov     ah, byte ptr [si+8]
-        mov     al, byte ptr [si+9]
-        mov     word ptr [sense_info_high], ax
-        mov     ah, byte ptr [si+10]
-        mov     al, byte ptr [si+11]
-        mov     word ptr [sense_info_low], ax
-        mov     byte ptr [sense_info_valid], 1
-        jmp     short descriptor_next
-
-descriptor_stream:
-        cmp     byte ptr [si+1], 2
-        jb      descriptor_next
-        mov     al, byte ptr [si+3]
-        and     al, SENSE_FILEMARK or SENSE_EOM or SENSE_ILI
-        or      byte ptr [sense_flags], al
-
-descriptor_next:
-        add     si, bx
-        sub     cx, bx
-        jmp     descriptor_loop
-fixed_sense:
-        mov     al, byte ptr [srb+TAPE_SENSE+0]
-        test    al, 80h
-        jz      fixed_sense_flags
-        mov     byte ptr [sense_info_valid], 1
-        mov     ah, byte ptr [srb+TAPE_SENSE+3]
-        mov     al, byte ptr [srb+TAPE_SENSE+4]
-        mov     word ptr [sense_info_high], ax
-        mov     ah, byte ptr [srb+TAPE_SENSE+5]
-        mov     al, byte ptr [srb+TAPE_SENSE+6]
-        mov     word ptr [sense_info_low], ax
-fixed_sense_flags:
-        mov     al, byte ptr [srb+TAPE_SENSE+2]
-        mov     ah, al
-        and     ah, SENSE_FILEMARK or SENSE_EOM or SENSE_ILI
-        mov     byte ptr [sense_flags], ah
-        and     al, 0Fh
-        mov     byte ptr [last_sense_key], al
-sense_done:
-        ret
-remember_sense_key endp
+        include common/aspi/tape_sense.inc
+        include common/aspi/native_tape.inc
 
 ; Locate SCSIMGR$, query each adapter and find the first peripheral type 01h.
 ; CF is clear with tape_ha:tape_target:tape_lun filled in.
+; Find one physical device: select the first type-01h address across adapter,
+; target and eight-LUN loops, skipping each initiator ID. Preserve the selected
+; adapter's extension flags for later residual negotiation. Exposing several
+; DOS aliases does not mean enumeration registers multiple tape units.
 discover_tape proc near
         mov     word ptr [discovery_reason], offset msg_no_manager
         mov     ax, 3D00h
@@ -2061,6 +2113,10 @@ init_options_path_done:
 init_options_whitespace:
         inc     si
         jmp     short init_options_scan
+; A prefix must introduce an option character; clustered options continue
+; until a separator/end. -t consumes the following A..Z letter, so that byte must
+; not be reinterpreted as another switch. Unknown characters reject INIT instead
+; of silently weakening the historical safety guards.
 init_options_prefix:
         inc     si
         mov     al, byte ptr es:[si]
@@ -2165,6 +2221,10 @@ parse_init_options endp
 
 ; Apply the historical -tX base-letter replacement and -$ collision suffix
 ; before DOS links the resident character-device headers into its name table.
+; Device headers are fixed eight-byte, space-padded DOS names. Apply letter
+; and optional dollar suffix at their distinct raw/buffered offsets. -b links
+; the additional buffered headers before DOS registers the chain; it does not
+; create a second physical drive or permit mixed raw/buffered session semantics.
 apply_device_names proc near
         mov     al, byte ptr [config_name_letter]
         mov     byte ptr [rmt_device_name+1], al
@@ -2187,9 +2247,12 @@ device_names_done:
         ret
 apply_device_names endp
 
-; READ BLOCK LIMITS distinguishes drives which require a single fixed block
-; size from variable-block drives. Version 1 of the ASPITAPE status ABI can
-; report only a 16-bit size, so larger or ambiguous limits remain variable.
+; Legacy status stores only a 16-bit fixed size; larger or ambiguous limits
+; leave this compatibility hint zero. Zero here is not a MODE SENSE result.
+; Compatibility heuristic: a clean limits reply with equal nonzero min/max
+; fitting a WORD records tape_fixed_block. This is not a MODE SENSE query and
+; does not prove the current selected mode. Do not replace a native capability
+; refresh or mode-compatibility check with this initialization hint.
 detect_block_limits proc near
         mov     word ptr [tape_fixed_block], 0
         call    clear_srb
@@ -2213,8 +2276,8 @@ block_limits_flags_ready:
         mov     byte ptr [srb+SRB_CDBLen], 6
         mov     byte ptr [srb+SRB_CDB], SCSI_READ_BLOCK_LIMITS
         call    call_aspi
-        cmp     byte ptr [srb+SRB_Status], SS_COMP
-        jne     block_limits_done
+        call    check_tape_completion
+        jc      block_limits_done
         cmp     byte ptr [block_limits+1], 0
         jne     block_limits_done
         mov     ah, byte ptr [block_limits+2]
@@ -2526,12 +2589,19 @@ residual_bytes      dw  0
 requested_bytes     dw  0
 sense_flags         db  0
 sense_response      db  0
+sense_asc_valid     db  0
+sense_asc           db  0
+sense_ascq          db  0
 sense_info_valid    db  0
 sense_info_high     dw  0
 sense_info_low      dw  0
 block_limits        db  6 dup (0)
+if (block_limits-last_scsi_status) GT 64
+        .err <Native diagnostic save area is too small>
+endif
 srb                  db  ASPI_SRB_SIZE dup (0)
 
+native_write_state  db  0               ; active=1 dirty=2 failed=4
 session_buffered    db  0
 buffer_internal_io  db  0
 buffer_write_failed db  0

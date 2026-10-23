@@ -6,6 +6,8 @@ OUT=${OUT:-$ROOT/build/fat32-dos}
 BOOT=${FREEDOS_IMG:-$HOME/Iso/Dos/freedos/FD14LITE.img}
 make -C "$ROOT" all >/dev/null
 mkdir -p "$OUT"
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -DUSE_FAT32 \
+    -Fo="$OUT/MID32.COM" "$ROOT/tests/media_id_dos.asm"
 cp "$BOOT" "$OUT/boot.img"
 truncate -s $((196608*512)) "$OUT/zip.img"
 image="$OUT/zip.img"
@@ -25,13 +27,14 @@ nasm -f bin -w-reloc-abs-word -I"$ROOT/../eusbaspi/src/" \
 printf '%s\r\n' 'DEVICE=C:\EUSBASPI.SYS' 'DEVICE=C:\ASPIFDD.SYS /V' \
     'LASTDRIVE=Z' 'SHELL=C:\COMMAND.COM C:\ /P=C:\FDAUTO.BAT' > "$OUT/FDCONFIG.SYS"
 printf '%s\r\n' '@ECHO OFF' 'ASPIFMT D: /YES /FAT:32 > AUX' \
-    'IF ERRORLEVEL 1 GOTO FAILED' 'ECHO FAT32 DOS file access passed>D:\FAT32.TXT' \
+    'IF ERRORLEVEL 1 GOTO FAILED' 'MID32 D: > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
+    'ECHO FAT32 DOS file access passed>D:\FAT32.TXT' \
     'TYPE D:\FAT32.TXT > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
     'ECHO FAT32 TEST PASSED > AUX' 'GOTO DONE' ':FAILED' \
     'ECHO FAT32 TEST FAILED > AUX' ':DONE' 'QEXIT' > "$OUT/FDAUTO.BAT"
 mcopy -o -i "$OUT/boot.img@@32256" "$OUT/FDCONFIG.SYS" "$OUT/FDAUTO.BAT" \
     "$OUT/EUSBASPI.SYS" "$ROOT/build/dos/ASPIFDD.SYS" \
-    "$ROOT/build/dos/ASPIFMT.EXE" "$ROOT/build/dos-cda/QEXIT.COM" ::/
+    "$ROOT/build/dos/ASPIFMT.EXE" "$ROOT/build/dos-cda/QEXIT.COM" "$OUT/MID32.COM" ::/
 printf '\xf8\x02' > "$OUT/sercon-port"
 set +e
 timeout "${TIMEOUT:-180}" qemu-system-i386 -machine pc -m 32 -display none \
@@ -55,7 +58,8 @@ echo 'FAT32 format, mount and DOS file read/write passed'
 # Mount the same FAT32 media through the generic ASPIDSK owner as well.
 printf '%s\r\n' 'DEVICE=C:\EUSBASPI.SYS' 'DEVICE=C:\ASPIDSK.SYS' \
     'LASTDRIVE=Z' 'SHELL=C:\COMMAND.COM C:\ /P=C:\FDAUTO.BAT' > "$OUT/FDCONFIG.SYS"
-printf '%s\r\n' '@ECHO OFF' 'TYPE D:\FAT32.TXT > AUX' \
+printf '%s\r\n' '@ECHO OFF' 'MID32 D: > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
+    'TYPE D:\FAT32.TXT > AUX' \
     'IF ERRORLEVEL 1 GOTO FAILED' 'ECHO ASPIDSK FAT32 write passed>D:\DSK32.TXT' \
     'TYPE D:\DSK32.TXT > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
     'ECHO ASPIDSK FAT32 TEST PASSED > AUX' 'GOTO DONE' ':FAILED' \

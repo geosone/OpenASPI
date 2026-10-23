@@ -2,8 +2,8 @@
 
 ASPI removable-media driver: a DOS block device driver for LS-120/240, ZIP,
 Clik!, Jaz, SuperDisk and similar drives behind an ASPI manager.  It is
-separate from ASPIDSK so media change, eject/lock, format and device quirks
-do not complicate the generic disk path.
+selected separately from ASPIDSK while reusing its block core; removable
+policy and the raw tool service remain within that common implementation.
 
     DEVICE=C:\OPENASPI\AHCIASPI.SYS
     DEVICE=C:\OPENASPI\ASPIFDD.SYS
@@ -12,7 +12,7 @@ A device is taken when it is a direct-access device with the removable bit
 and its INQUIRY vendor/product contains `ZIP`, `LS-120`, `LS-240`, `CLIK`,
 `SUPERDISK` or `JAZ`; ASPIDSK skips exactly these devices.
 
-Version 0.1:
+Implemented behavior:
 
 - Every drive gets its letter, also without a disk (until the first BUILD
   BPB DOS sees a 1.44 MB placeholder).  Media check returns "don't know",
@@ -20,12 +20,19 @@ Version 0.1:
 - Partitioned disks (ZIP) and superfloppies (LS-120); FAT12/FAT16 and
   conditional FAT32 with extended BPBs, qualified on FreeDOS 1.4.
 - READ, WRITE and WRITE WITH VERIFY as ASPIDSK.
+- Verified Media-ID writes (`46h`), including a validated FAT32 backup.
+- Checked default/current logical BPBs (`40h`); see
+  [parameter behavior](../../docs/block-parameters.md) for supported modes.
+- Logical track read/write/verify; see [track behavior](../../docs/block-track.md).
+- Per-unit DOS access control and independent logical mapping queries;
+  [software policy](../../docs/block-access.md) is separate from media locks
+  and hardware write protection.
 - INIT checks manager-reported BIOS/DOS ownership before allocating a letter;
   see [ownership behavior and limits](../../docs/block-ownership.md).
 - Read-only generic IOCTL `08h/60h` returns installation-time defaults or
   freshly read current-media parameters; `08h/66h` reads the current serial,
-  label and filesystem text. IOCTL query reports only these implemented
-  operations, plus extended `48h/60h` and `48h/66h` when FAT32 is enabled.
+  label and filesystem text. Capability queries cover the implemented block
+  functions; category `48h` additionally requires FAT32-capable DOS.
   Removable-media `08h/48h` adds checked, reference-counted
   locking; `08h/49h` ejects only when unlocked. Hardware errors propagate.
 

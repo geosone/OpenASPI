@@ -1,3 +1,8 @@
+; This is device ownership classification, not firmware-quirk detection.
+; ASPIDSK and ASPIFDD must make the same choice to avoid claiming one device
+; twice. Match only the checked vendor/product bytes and the removable bit;
+; a product-name match does not imply support for optional media commands.
+
 ; Shared ASPIDSK/ASPIFDD/ASPISCAN ownership policy. Caller has already checked
 ; peripheral type 00h and a successful 36-byte INQUIRY in inquiry_data.
 ; CF clear: removable bit plus known vendor/product substring -> ASPIFDD.

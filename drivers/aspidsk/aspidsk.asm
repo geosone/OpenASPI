@@ -8,7 +8,11 @@
 ;   DEVICE=EUSBASPI.SYS
 ;   DEVICE=ASPIDSK.SYS
 ;
-; Version 0.1: the first FAT12/FAT16 partition of each device.
+; The shared block core exposes the first supported FAT volume, including
+; FAT32 only on a qualified DOS kernel. Normal requests are volume-relative;
+; shared IOCTL helpers implement checked access, media control and parameters.
+; Code and state live in common/dos/blkdrv.inc; changes there affect both
+; ASPIDSK and ASPIFDD, so device classification remains a separate policy.
 
         .8086
         option casemap:none

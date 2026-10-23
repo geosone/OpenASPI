@@ -43,6 +43,8 @@ Analysis and implementation ledgers:
 - [ASPIDISK / ASPIDSK](aspidisk-compat.md).
 - [ASPICD / ASPICDA](aspicd-compat.md).
 - [GUEST / MKELS120 and ASPIFDD](aspifdd-reference.md).
+- [NT tape drivers and common device cases](nt-tape-analysis.md).
+- [DOS tape APIs and the Colorado Win3.x VxD](dos-tape-api-analysis.md).
 
 Driver-replacement acceptance requires tests of the actual OpenASPI code,
 not compilation of vendor decompiler output. Hardware-specific destructive

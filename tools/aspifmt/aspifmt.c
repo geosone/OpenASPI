@@ -1,3 +1,12 @@
+/* Filesystem formatting policy around pure common/dos/fat_format.c builders.
+ * Preview is read-only; /YES acquires an exclusive write session and revalidates
+ * capacity/partition bounds before modifying media. Write and read back metadata,
+ * scan data sectors, and mark proven defective clusters in both FAT copies.
+ * The primary boot sector is written last. This orders publication, but is not
+ * an atomic transaction: a stopped/failed format leaves an incomplete medium.
+ * FAT32 additionally requires DOS support; no vendor low-level format is issued.
+ */
+
 /* FAT filesystem format and surface check through ASPIFDD's raw service. */
 #include <stdio.h>
 #include <string.h>
@@ -11,6 +20,9 @@ static unsigned char data[512], verify[512], boot[512];
 static unsigned char scan_buffer[16*512],fat_sector[512],fat_next[512];
 static volatile sig_atomic_t cancelled;
 static void cancel(int sig) { (void)sig; cancelled = 1; }
+/* Metadata writes are accepted only after a matching 512-byte read-back.
+ * A transport success alone does not prove the intended bytes reached media.
+ */
 static int put(struct oa_raw_media *m, oa_u32 sector, unsigned char *buf)
 {
     if (cancelled || oa_raw_io(m, 1, sector, 1, buf) ||
@@ -27,6 +39,11 @@ static unsigned scan_read(void *ctx,oa_u32 lba,unsigned n,void *buffer)
     struct surface_scan *s=(struct surface_scan *)ctx;
     return cancelled ? 995 : oa_raw_read_source(s->media,lba,n,buffer);
 }
+/* Convert a physical failed LBA into a data-cluster number (first=2).
+ * Required metadata/root storage cannot be rescued by marking it bad. Read
+ * FAT entries across sector boundaries, preserve neighboring packed bits,
+ * then update/verify both copies. Count a cluster only when newly marked.
+ */
 static int bad_cluster(void *ctx,oa_u32 lba,unsigned error)
 {
     struct surface_scan *s=(struct surface_scan *)ctx;

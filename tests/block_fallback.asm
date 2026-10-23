@@ -221,9 +221,13 @@ fake_tail:
         add ax, 0800h
 fake_buffer:
         cmp word ptr cs:[calls], 3
-        je fake_verify
+        jne fake_not_verify3
+        jmp fake_verify
+fake_not_verify3:
         cmp word ptr cs:[calls], 5
-        je fake_verify
+        jne fake_not_verify5
+        jmp fake_verify
+fake_not_verify5:
         cmp word ptr cs:[srb+SRB_BufPointer], 0123h
         BAD_IF_NOT_EQUAL
         cmp word ptr cs:[srb+SRB_BufPointer+2], ax
@@ -234,9 +238,15 @@ fake_buffer:
         BAD_IF_NOT_EQUAL
         mov byte ptr cs:[srb+SRB_Status], SS_ERR
         mov byte ptr cs:[srb+SRB_TargStat], 2
+        mov byte ptr cs:[srb+SRB_CDB+10],70h
+        mov byte ptr cs:[srb+SRB_CDB+10+7],6
         mov byte ptr cs:[srb+SRB_CDB+10+2], 5
         cmp byte ptr cs:[hard_error], 1
-        jne fake_done
+        je fake_medium_error
+        jmp fake_done
+fake_medium_error:
+        mov byte ptr cs:[srb+SRB_CDB+10],70h
+        mov byte ptr cs:[srb+SRB_CDB+10+7],6
         mov byte ptr cs:[srb+SRB_CDB+10+2], 3
         jmp short fake_done
 fake_write:
@@ -246,6 +256,8 @@ fake_write:
         jne fake_success
         mov byte ptr cs:[srb+SRB_Status], SS_ERR
         mov byte ptr cs:[srb+SRB_TargStat], 2
+        mov byte ptr cs:[srb+SRB_CDB+10],70h
+        mov byte ptr cs:[srb+SRB_CDB+10+7],6
         mov byte ptr cs:[srb+SRB_CDB+10+2], 7
         jmp short fake_done
 fake_verify:
@@ -270,12 +282,16 @@ fake_done:
 fake_bad_verify:
         mov byte ptr cs:[srb+SRB_Status], SS_ERR
         mov byte ptr cs:[srb+SRB_TargStat], 2
+        mov byte ptr cs:[srb+SRB_CDB+10],70h
+        mov byte ptr cs:[srb+SRB_CDB+10+7],6
         mov byte ptr cs:[srb+SRB_CDB+10+2], 3
         ret
 fake_bad:
         mov byte ptr cs:[bad], 1
         mov byte ptr cs:[srb+SRB_Status], SS_ERR
         mov byte ptr cs:[srb+SRB_TargStat], 2
+        mov byte ptr cs:[srb+SRB_CDB+10],70h
+        mov byte ptr cs:[srb+SRB_CDB+10+7],6
         mov byte ptr cs:[srb+SRB_CDB+10+2], 3
         ret
 fake_aspi endp

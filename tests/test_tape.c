@@ -191,6 +191,11 @@ static void test_truncated_descriptor_sense(void)
         free(prefix);
     }
     data[7] = 0u;                    /* no descriptors declared */
+    data[0] = 0xF2u;                 /* descriptor byte 0 has no VALID bit */
+    assert(oa_scsi_decode_sense(data, sizeof(data), &sense) == -1);
+    data[0] = 0xF3u;
+    assert(oa_scsi_decode_sense(data, sizeof(data), &sense) == -1);
+    data[0] = 0x72u;
     assert(oa_scsi_decode_sense(data, sizeof(data), &sense) == 0);
     assert(sense.information_valid == 0u);
     assert(sense.filemark == 0u);

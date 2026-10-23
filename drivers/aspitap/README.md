@@ -77,6 +77,27 @@ accepts a magnitude up to `800000h`. Larger counts fail before any readiness
 poll or tape command, so forward requests cannot wrap into backward movement.
 `MTWEOF` uses an unsigned field and still accepts up to `FFFFFFh` filemarks.
 
+## Native OpenTape interface
+
+Category `80h` is independent of the legacy category `07h` behavior described
+above. It provides versioned QUERY, CONTROL, READ and WRITE packets, validated
+capability snapshots/probes, explicit count/stream results and writer ownership.
+Variable-record and aligned fixed-block transfers are supported by this binding;
+the native interface does not inherit legacy final-close marks or padding.
+
+BEGIN claims a writer; FLUSH, FILEMARK and END make finalization explicit.
+ABORT releases ownership without flush or rollback. Closing an active claim
+reports failure rather than silently completing a backup. A successful DOS
+IOCTL can still carry a native ERROR/BUSY result, so clients inspect the packet.
+
+See the [native API overview](../../docs/native-tape-api.md),
+[query](../../docs/native-tape-query.md), [controls](../../docs/native-tape-control.md),
+[read](../../docs/native-tape-read.md), [write](../../docs/native-tape-write.md) and
+[fixed-block extension](../../docs/native-tape-fixed.md). [OTAPINFO](../../tools/otapinfo/README.md)
+inspects native state/capabilities; TAPECTL remains the legacy status client.
+The DOS binding is implemented; Windows providers and broader optional tape
+operations remain planned. Archive formats belong to OpenTape.
+
 ## Buffered aliases
 
 With `-b`, `MT0` rewinds and `NMT0` preserves the append position. Their

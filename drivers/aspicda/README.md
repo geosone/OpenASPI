@@ -16,7 +16,7 @@ such as AHCIASPI (SATA/IDE) or EUSBASPI (USB).
 Options: `/D:name` device name (default `ASPICDA0`), `/V` list the drives.
 Up to 8 drives, one subunit each.
 
-Version 0.1:
+Implemented behavior:
 
 - READ LONG cooked (2048 bytes, READ(10)) and raw (2352 bytes, READ CD),
   HSG and Red Book addresses.  Raw reads of audio sectors give the

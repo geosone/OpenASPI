@@ -32,6 +32,26 @@ and rewind-progress diagnostics.
 
 ### Transfers and tape operations
 
+The separate native API tests use category `80h` and `OTAPINFO.EXE`.
+`native-*` fixtures check version/size negotiation, unchanged rejected buffers,
+address bounds, command-free snapshots and busy sessions, and explicit
+INQUIRY/READ BLOCK LIMITS/MODE SENSE queries. They cover residual-capable and
+legacy managers, short and malformed replies, optional-page absence versus
+valid unsupported compression, block-descriptor/page offsets, granularity
+and unspecified maximum. Test-manager counters assert command counts; the
+legacy 16-byte status is compared before and after native queries. The client
+also refuses a regular file named NRMT3 without modifying it. See
+[native query ABI and limits](../../docs/native-tape-query.md).
+
+Focused run:
+
+```sh
+bash tests/dos_tape_ioctl.sh native-normal native-legacy native-no-compression \
+  native-no-dcc native-short native-short-legacy native-residual-bad \
+  native-residual-high native-host native-no-descriptor native-extra-page \
+  native-bad-page native-bad-descriptor native-granularity native-unlimited
+```
+
 Fixtures cover raw-mode setup, full and residual variable-block reads,
 fixed- and descriptor-sense ILI short records, filemarks, both EOM policies,
 variable-block writes, write protection and explicit `MTWEOF`. They validate
@@ -68,6 +88,18 @@ injecting host selection timeout, aborted ASPI status, SCSI GOOD instead of
 CHECK CONDITION, or SCSI BUSY. Reads and ignore-EOT writes must remain errors.
 Legacy reads and both status ABIs are covered, including BUSY's error `22`.
 Write snapshots must survive readiness checks and reopen without driver replay.
+
+`TAPSENSE.COM` executes the same resident decoder include used by ASPITAP in
+every fixture. It checks untouched/stale decoded state, wrong commands/CDB
+lengths, short and oversized sense allocations, fixed ASC bounds, descriptor
+boundaries and reserved response bits. Installed-driver variants
+`read-stream-short`, `read-stream-invalid-type`, `read-stream-overlength`,
+`read-stream-success-host`, `read-stream-success-check` and
+`raw-eot-short-ignored` require errors despite plausible stream flags.
+`rewind-undeclared-asc` supplies apparent becoming-ready bytes outside the
+declared fixed-sense extent: the wait must fail, leaving rewind pending until
+the next explicit request. These bounds do not prove the true autosense byte
+count when a DOS manager leaves the allocation unchanged after a short reply.
 
 Deferred-sense cases use fixed `71h` and descriptor `73h` responses with ILI,
 FILEMARK and ignored EOM. Reads must fail, including through a legacy manager
@@ -357,3 +389,90 @@ real drives and media. Real-drive fixed-block and broader error/partial-
 transfer qualification remain outstanding.
 The current mhVTL LTO profile advertises variable block limits; these runs
 do not establish mandatory fixed-block behavior on a different drive profile.
+
+### Native READY and synchronous REWIND
+
+`native-normal` also exercises the separate 64-byte category `80h`, function
+`01h` control packet, rejected headers, busy ownership, guard bytes and exact
+submission counts. `native-control-host`, `native-control-target`,
+`native-control-deferred`, `native-control-unsupported` and
+`native-control-contradict` check failed rewind diagnostics and unknown position.
+The mock requires a zero IMMED bit, a six-byte CDB and no data buffer. No
+failed movement is replayed. See [the control ABI](../../docs/native-tape-control.md).
+
+The sibling OpenTape repository adds `tests/dos_native_api.sh`, running its
+actual DOS CLI and common adapter tests against this memory-only provider.
+This checks snapshot/refresh/READY/REWIND, invalid arguments, ordinary-file
+rejection and exact command counts in disposable QEMU boot images. It does
+not qualify physical tape hardware or Windows bindings.
+
+### Native variable-record reads
+
+See [the read ABI and result rules](../../docs/native-tape-read.md).
+`native-read-*` includes short/empty records, filemark with/without data,
+EOM/EOD, host/deferred errors, invalid/contradictory residuals, truncation,
+partial data with a hard error and old-manager sense counts. All native fixtures
+also check rejected record packets, physical pointer alias overlap, guard bytes,
+multiple-handle blocking and exact submissions without synthetic EOF.
+`native-read-fixed` verifies UNSUPPORTED without a READ CDB.
+
+OpenTape's `NTREAD.EXE` test keeps the actual DOS native reader open across
+records, checks content and both buffer guards, and verifies that another read
+after a failure submits no command. Archive operations still use their existing
+backend; native writing follows its own explicit session contract.
+
+### Native writer ownership and explicit finalization
+
+`native-write-*` fixtures check BEGIN/WRITE/FLUSH/FILEMARK/END/ABORT and validate
+CDB flags/counts, exact WRITE/mark/flush totals, no legacy close-time marks,
+short/full error counts, write protection, EOM, deferred/contradictory failures
+and each failed finalization stage. Extra DOS opens poison the claim and are
+counted even when DOS ignores driver OPEN errors. Abrupt DOS close retains
+uncertainty without submitting a CDB. A released failed stream requires an
+explicit successful native REWIND before reuse. See [the writer ABI](../../docs/native-tape-write.md).
+
+OpenTape's `NTWRITE.EXE` tests the actual DOS adapter, malformed argument and
+ordinary-file rejection, retained first errors, blocked replay, explicit END,
+unfinished common close and bypassed DOS close. QEMU fixtures write only to a
+memory-only ASPI mock, not `/dev/sg*` or real tape media.
+
+### Native archive CLI integration
+
+The sibling OpenTape `tests/dos_native_archive.sh` runs the actual backup,
+verify, list, scan, preview, restore and compare commands through `--native`.
+`NATIVE_ARCHIVE_TEST` adds a resident memory-only record medium to the native
+ASPI mock (`tests/mockarchive.inc`), retaining records across opens and rewind.
+The test reads back a 35-KB binary file, checks directory backups/replacement,
+compares file bytes and validates exact SCSI command totals. Faults cover
+combined data/filemarks, EOM/EOD, corrupt/failed reads, short writes and each
+failed finalization stage. No physical tape or changer is involved.
+
+Device-specific cases remain qualification backlog for a later separate quirks
+layer; these fixtures test common archive and tape API semantics.
+
+The native UI fixtures drive real BIOS keys through QEMU HMP and inspect VGA
+text memory. They verify native snapshot/alias discovery without SCSI commands,
+missing/non-device errors, cancelled and confirmed rewind, unknown position
+after failed rewind, archive verification/catalog/export and unfinished-session
+recovery. Exact command counters prohibit implicit retry or extra movement.
+The default legacy UI uses the same helpers and receives its own regression
+fixture.
+
+### Explicit native fixed-block I/O
+
+`native-fixed-*` uses two 512-byte blocks to check that CDB counts use blocks
+while request/actual/ASPI residuals use bytes. Cases cover aligned full/partial
+reads/writes, filemarks/EOM, fixed ILI errors, fractional/oversize residuals,
+conflicting sense, multiplied sense overflow, old managers and failed-write
+ownership. Reject bad sizes and mode switches without a CDB or changed packet.
+`NTFIX.EXE` in OpenTape checks the real DOS consumer path and exact command
+counts; host tests enforce negotiation and echoed mode and reject fixed-mode
+archive attachment. See [the fixed binding](../../docs/native-tape-fixed.md).
+
+## Native media commands
+
+OpenTape's `dos-native-media-smoke` exercises production ASPITAP plus the
+memory-only `tests/mockmedia.inc` manager in disposable DOS images. It checks
+LOAD/UNLOAD CDBs, empty-drive errors, ownership, clean/dirty abandoned writers,
+retained uncertainty, explicit recovery and exact submissions without hidden
+filemarks/flushes. See [media contract](../../docs/native-tape-media.md).

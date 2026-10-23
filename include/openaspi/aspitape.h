@@ -1,3 +1,10 @@
+/* Legacy ASPITAPE-compatible character-device IOCTL packets (category 07h).
+ * This ABI is distinct from native OTAP packets in tape_api.h. Select the
+ * 14-byte or 16-byte status layout explicitly; do not infer it from buffer
+ * contents. Packed fields preserve DOS offsets across compilers; status and
+ * operation encodings describe the legacy contract, not generic SCSI CDBs.
+ */
+
 #ifndef OPENASPI_ASPITAPE_H
 #define OPENASPI_ASPITAPE_H
 
@@ -56,6 +63,10 @@
 #pragma pack(push, 1)
 #endif
 
+/* Six-byte request, little-endian operation/count. count is unsigned at the
+ * ABI boundary; the operation chooses forward/backward semantics and the driver
+ * checks the command-specific SCSI range before encoding a signed SPACE count.
+ */
 struct oa_aspitape_mtop {
     oa_u16 operation;
     oa_u32 count;
@@ -65,6 +76,10 @@ __attribute__((packed))
 #endif
 ;
 
+/* Fourteen-byte status response. fixed_block_size=0 describes variable mode;
+ * residual_bytes is untransferred data, not an absolute tape position. Status
+ * fields can report a saved write failure; requesting status does not run TUR.
+ */
 struct oa_aspitape_mtget {
     oa_u8  host_id;
     oa_u8  target_id;
@@ -83,6 +98,11 @@ __attribute__((packed))
 #endif
 ;
 
+/* Sixteen-byte status response, selected via explicit 05h or configured 02h.
+ * The WORD current_state moves every following field relative to the 14-byte
+ * layout; driver_error is separate from SCSI sense. WRITE_ERROR marks a saved
+ * write/finalization snapshot that a later successful status query cannot erase.
+ */
 struct oa_aspitape_mtget16 {
     oa_u8  host_id;
     oa_u8  target_id;

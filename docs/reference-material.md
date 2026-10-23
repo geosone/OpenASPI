@@ -4,6 +4,31 @@ These paths are development inputs on the current machine.  They are not
 dependencies of a source release and their binaries must not be copied into
 OpenASPI packages unless redistribution rights are independently established.
 
+## Published programming references
+
+- [Brian Sawert: The Programmer's Guide to SCSI](https://vtda.org/books/Computing/Hardware/SCSI/The_Programmers_Guide_To_SCSI.pdf):
+  ASPI and SCSI reference; see [Windows integration notes](windows9x-storage.md#additional-aspi-implementation-references).
+- [IBM OS/2 ASPI specification, EDM2 reprint](https://www.edm2.com/index.php/Advanced_SCSI_Programming_Interface_%28ASPI%29_OS/2_Specification):
+  compare platform contracts; OS/2 layouts and entry points are not DOS or Win32 ABIs.
+
+These documents are linked, not redistributed with installation media.
+
+Tape-relevant locations in Sawert (printed book page / PDF page):
+
+- MODE SENSE/SELECT and parameter headers: 39–41 / 60–62.
+- Fixed sense, FILEMARK/EOM/ILI and ASC/ASCQ: 49–52 / 70–73.
+- Completion callbacks for streaming devices: 62–63 / 83–84.
+- Immediate REWIND and later readiness checks: 156 / 177.
+- Windows tape class versus SCSI-port responsibilities: 165 / 186.
+- The SCSI Snooper example limits tape actions to common commands: 243 / 264.
+  It is not a complete tape implementation. Appendix B identifies SSC as the
+  command-set reference for sequential devices.
+
+For the implemented native record-limit query, the
+[IBM LTO SCSI reference](https://www.ibm.com/support/pages/system/files/inline-files/%5BAPPROVED%5D%20LTO%20SCSI%20Reference%20GA32-0928-07%20%28EXTERNAL%29.pdf)
+documents READ BLOCK LIMITS granularity. Device-specific documentation and
+SSC remain necessary alongside the general programming book.
+
 ## Free ASPI managers
 
 - `/home/mario/mars/ahciaspi`: AHCI/IDE ATAPI ASPI manager, ASPI constants,
@@ -12,9 +37,9 @@ OpenASPI packages unless redistribution rights are independently established.
   manager chaining, hotplug behavior, `ASPITEST`, and `USBSYNC`.
 
 OpenASPI must be tested as a normal client of both managers and of historical
-Adaptec-compatible managers.  Shared protocol code may be imported later once
-the OpenASPI license is selected; until then the sibling trees remain
-read-only references.
+Adaptec-compatible managers. Source reuse should retain the selected code's
+license and provenance; sibling trees remain read-only references during
+these compatibility investigations.
 
 ## Historical binaries and media
 
@@ -58,6 +83,24 @@ ABI, not evidence that all historical binaries use one layout.
 
 Reference archive SHA-256:
 `62f5d4a75e8fa6baefce5aaea5e62642b72bd1e10c12784cdaf0c497e1495917`.
+
+The [mpoli.fi tape archive mirror](https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/)
+adds device/application references for DAT, QIC and DLT. The
+[device-case ledger](tape-device-profiles.md) separates documented behavior,
+qualification candidates, platform-specific drivers and source candidates.
+The [27-archive manifest](tape-reference-archives.json) pins URLs, sizes,
+hashes, documentation members and six analyzed NT PE inputs. Downloads and
+extracted material remain under ignored `build/reference/tape-other/` and
+`build/reference/tape-vendors/`. The [NT](nt-tape-analysis.md) and
+[DOS/Win3.x](dos-tape-api-analysis.md) investigations record binary-level
+findings for the [native OpenTape API](native-tape-api.md).
+
+`ASPITAR.ZIP` is a GNU tar 1.10 ASPI port with C sources and a bundled GPLv1
+`COPYING`; it is a source-reuse/test-client candidate, distinct from the
+original ASPITAPE character driver. `ASPI505A.ZIP` contains Valitek backup
+software, not a generic ASPI manager. Local copies of both under
+`/home/mario/Iso/Dos` match the downloaded hashes. No archive binaries or source
+were imported into OpenASPI packages by this investigation.
 
 ## Virtual tape integration
 

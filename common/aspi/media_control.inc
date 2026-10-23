@@ -1,3 +1,8 @@
+; Transport only: DS=CS, unit address and shared SRB come from aspi_client.
+; AH contains command-specific control bits, not a DOS drive or media policy.
+; The caller checks completion before committing cached lock/eject state and
+; maps unsupported commands or errors to its own block/CD request contract.
+
 ; Shared no-data medium control for block and CD drivers.
 ; AL = opcode (1Bh START STOP, 1Eh PREVENT ALLOW), AH = CDB byte 4.
 ; Leaves the raw SRB for the caller's own sense/error and state policy.

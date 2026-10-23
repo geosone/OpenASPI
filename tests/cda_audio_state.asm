@@ -502,6 +502,8 @@ fake_error:
         mov byte ptr cs:[srb+SRB_TargStat], 2
         xor bx, bx
         mov bl, byte ptr cs:[srb+SRB_CDBLen]
+        mov byte ptr cs:[srb+SRB_CDB+bx],70h
+        mov byte ptr cs:[srb+SRB_CDB+bx+7],6
         mov byte ptr cs:[srb+SRB_CDB+bx+2], al
         ret
 fake_aspi endp

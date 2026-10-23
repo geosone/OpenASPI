@@ -1,3 +1,9 @@
+; Initialization only: DOS services discover the manager, then ASPI queries
+; walk host/target/LUN addresses. A successful INQUIRY supplies identification,
+; not permission to claim a device; each driver's ownership policy decides that.
+; Do not call these routines from resident request handlers after INIT returns:
+; DOS may already have reused their code and discovery buffers.
+
 ; ASPI client initialization shared by ASPIDSK, ASPIFDD and ASPICDA.
 ;
 ; Include in the transient part of a driver (after its resident end): it is
@@ -21,6 +27,10 @@ scan_targets    db      0
 scan_own_id     db      0
 inquiry_data    db      INQUIRY_LEN dup (0)
 
+; Open SCSIMGR$ only to retrieve its FAR manager entry point, then close the
+; DOS handle while retaining IOCTL carry. Query adapter count through that entry;
+; CF clear means a non-null entry and at least one advertised adapter, not a
+; discovered or claimed storage device. DS=CS; init-time DOS services are used.
 aspi_open proc near
         mov     ax, 3D00h
         mov     dx, offset aspi_manager_name
@@ -60,6 +70,8 @@ aspi_open_done:
         ret
 aspi_open endp
 
+; Reset only enumeration state; the first aspi_scan_next loads adapter zero.
+; This is not a returned candidate and does not clear registered DOS units.
 aspi_scan_first proc near
         mov     byte ptr [scan_ha], 0
         mov     byte ptr [scan_target], 0FFh    ; aspi_scan_next starts at 0
@@ -68,6 +80,10 @@ aspi_scan_first proc near
         ret
 aspi_scan_first endp
 
+; Enumeration state is scan_*, separate from runtime unit_*. GET DEVICE TYPE
+; finds candidates; INQUIRY and driver-specific ownership policy still qualify
+; them. Skip the adapter's own target ID and advance LUN/target/adapter at the
+; respective bounds; end-of-scan carry does not designate an installed DOS unit.
 aspi_scan_next proc near
 scan_next_lun:
         inc     byte ptr [scan_lun]
@@ -89,6 +105,10 @@ scan_adapter:
         jb      scan_adapter_inquiry
         stc
         ret
+; Load this adapter's initiator ID and bounded target count (default eight).
+; A failed adapter inquiry follows the limited failure path below, not a valid
+; advertisement of a full target range. These are manager addresses, not drive
+; letters, and the initiator's own target is excluded from candidate probing.
 scan_adapter_inquiry:
         call    clear_srb
         mov     byte ptr [srb+SRB_Cmd], SC_HA_INQUIRY
@@ -128,6 +148,9 @@ scan_query:
         call    call_aspi
         cmp     byte ptr [srb+SRB_Status], SS_COMP
         je      scan_found
+; Current block/CD enumeration stops this target after a failed GET DEVICE
+; TYPE at a LUN. It does not promise exhaustive discovery of higher sparse LUNs;
+; ASPITAP's independent discovery loop instead advances through all eight LUNs.
         ; no device: the other LUNs of this target are not asked
         mov     byte ptr [scan_lun], 7
         jmp     scan_next_lun
@@ -139,6 +162,10 @@ scan_found:
         ret
 aspi_scan_next endp
 
+; Copy scan_* into runtime unit_* and read 36-byte standard identity. This
+; selects the shared SRB address as a side effect; callers retain scan_* if they
+; need to continue discovery. Carry reports checked completion, not ownership
+; or proof that the drive currently contains a mountable filesystem.
 aspi_inquiry proc near
         mov     al, byte ptr [scan_ha]
         mov     byte ptr [unit_ha], al

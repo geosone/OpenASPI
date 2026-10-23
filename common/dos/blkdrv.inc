@@ -1,9 +1,20 @@
+; Shared resident block-driver implementation; the small ASPIDSK/ASPIFDD
+; front ends select ownership policy rather than duplicating request handling.
+; DOS requests select a unit-table record before using the shared ASPI SRB.
+; DOS-visible sector numbers are relative to the selected FAT volume; physical
+; raw and track interfaces have their own explicit address rules.
+;
+; Keep BPB/media caches, access/lock state and raw-session ownership coherent:
+; validate first, perform I/O, then publish successful state changes. FAT32 is
+; advertised only for a qualified DOS kernel. Resident code/data precede
+; resident_end; discovery, option parsing and banners after it are transient.
+; See docs/block-ioctl.md and docs/block-access.md for the external contracts.
+
 ; Block device driver core shared by ASPIDSK.SYS and ASPIFDD.SYS.
 ;
-; The including driver defines before it:
-;   DRIVER_NAME     macro text of the banner
-;   FDD_DRIVER      (ASPIFDD only) removable-media policy
-; and includes dos_aspi.inc and devreq.inc.
+; The including driver supplies msg_banner/msg_no_device for initialization,
+; defines FDD_DRIVER for ASPIFDD ownership policy, and includes dos_aspi.inc
+; and devreq.inc before this file. Banner labels may follow this include.
 ;
 ; One DOS unit per device: the first supported FAT partition of a partitioned
 ; medium, or the whole medium of a superfloppy (no partition table, as on
@@ -19,6 +30,11 @@ MAX_UNITS       equ     8
 CHUNK_SECTORS   equ     64              ; 32 KB per READ(10)
 
 ; unit table entry
+; Per-unit persistent state, not a wire packet. U_START is a physical LBA;
+; U_BPB is the active DOS view, U_DEFAULT_BPB the default logical parameters.
+; MEDIA validates the cached view, BPB_OVERRIDE records explicit geometry,
+; RAW_ACTIVE/WRITE reserve administrative access, and NOACCESS gates normal
+; DOS block I/O. U_LOCKS counts accepted locks independently of these flags.
 U_HA            equ     0
 U_TARGET        equ     1
 U_LUN           equ     2
@@ -36,6 +52,8 @@ UF_MEDIA        equ     02h
 UF_RAW_ACTIVE   equ     04h
 UF_RAW_WRITE    equ     08h
 UF_FAT32        equ     10h
+UF_NOACCESS     equ     20h            ; DOS block data I/O disabled by 47h
+UF_BPB_OVERRIDE equ     40h            ; explicitly selected current DOS BPB
 
 ; BPB offsets (from the boot sector offset 0Bh)
 BPB_BYTES       equ     0
@@ -71,13 +89,27 @@ unit_ptr        dw      0               ; entry of the current request
 sector_buf      db      512 dup (0)
 fat32_enabled   db      0
 ioctl_bpb_size  dw      BPB_SIZE
+volume_extent   dd      0               ; selected MBR partition length, or 0
+media_id_value  db      23 dup (0)
+media_id_primary db     512 dup (0)
+media_id_verify db      512 dup (0)
+media_id_offset dw      0
+media_id_backup dd      0
+media_id_target dd      0
 
+; DOS's strategy entry only remembers ES:BX. The subsequent interrupt entry
+; establishes DS=CS and dispatches using that request. Shared scratch storage
+; assumes serialized requests; strategy is not the hardware-completion callback.
 strategy proc far
         mov     word ptr cs:[request_ptr], bx
         mov     word ptr cs:[request_ptr+2], es
         ret
 strategy endp
 
+; Request lifecycle: save caller registers, establish DS=CS and switch to the
+; resident stack before ASPI work. INIT bypasses unit selection; runtime commands
+; resolve a unit before dispatch. The epilogue restores the original stack.
+; Handlers return CF/AL; only this boundary publishes the DOS DONE/ERROR word.
 interrupt proc far
         push    ax
         push    bx
@@ -128,6 +160,9 @@ ifdef FDD_DRIVER
         jne     raw_request_busy
         cmp     byte ptr es:[bx+RH_IOCTL_CATEGORY], 80h
         je      raw_normal_request
+; An ASPIFDD raw owner excludes ordinary filesystem traffic. Keep capability
+; queries and RAW1 generic requests available so the owner can finish/release.
+; Reject other commands here, before their handlers can refresh or write media.
 raw_request_busy:
         mov     al, ERR_NOT_READY
         jmp     request_failed
@@ -183,12 +218,24 @@ command_table:
         dw      generic_ioctl
         db      CMD_IOCTL_QUERY
         dw      ioctl_query
+        db      CMD_GET_LOGICAL
+        dw      logical_mapping
+        db      CMD_SET_LOGICAL
+        dw      logical_mapping
         db      0FFh
 
 do_nothing proc near
         clc
         ret
 do_nothing endp
+
+; Each unit has its own device, not alternate A:/B: mappings of one drive.
+; DOS expects zero in the unit byte when no alternate mapping exists.
+logical_mapping proc near
+        mov     byte ptr es:[bx+RH_UNIT], 0
+        clc
+        ret
+logical_mapping endp
 
 ; unit of the request -> unit_ptr, unit_ha/target/lun
 select_unit proc near
@@ -227,6 +274,10 @@ read_sectors proc near
         mov     byte ptr [xfer_opcode], 28h
 read_sectors endp
 
+; Encode DX:AX LBA and CX sector count into big-endian READ/WRITE-family CDB
+; fields. Payload bytes are count*512; VERIFY has no payload even though it uses
+; the same LBA/count path. This transport helper does not add U_START or apply
+; DOS volume policy; its caller must validate the chosen address space first.
 xfer_sectors proc near
         push    ax
         push    cx
@@ -291,10 +342,17 @@ test_unit_ready proc near
         jmp     aspi_result
 test_unit_ready endp
 
-; Read the volume of the unit at DI: its BPB and first sector.  CF if the
-; medium has no usable FAT12/FAT16 volume.
+        include common/dos/block_capacity.inc
+
+; Load BPB/volume mapping for DI's unit; CF if no supported volume is usable.
+; Distinguish a superfloppy from
+; an MBR-selected FAT extent; on failure do not leave old MEDIA/FAT32/override
+; flags advertising a previously inserted disk. Empty removable drives may
+; remain installed even though no usable volume can currently be loaded.
 load_volume proc near
-        and     byte ptr [di+U_FLAGS], not (UF_MEDIA or UF_FAT32)
+        and     byte ptr [di+U_FLAGS], not (UF_MEDIA or UF_FAT32 or UF_BPB_OVERRIDE)
+        mov     word ptr [volume_extent], 0
+        mov     word ptr [volume_extent+2], 0
         mov     word ptr [xfer_buffer], offset sector_buf
         mov     word ptr [xfer_buffer+2], cs
         xor     ax, ax
@@ -307,9 +365,13 @@ load_volume proc near
         ; a boot sector (superfloppy): jump and 512 bytes per sector
         call    check_boot_sector
         jnc     load_boot_ok
-        ; a partition table: the first FAT12/FAT16 partition
+        ; a partition table: the first supported FAT partition
         mov     si, offset sector_buf+1BEh
         mov     cx, 4
+; Scan four primary MBR entries in table order. Recognize the listed FAT
+; types; FAT32 entries are considered only when kernel support is qualified.
+; No extended-partition chain or GPT traversal occurs here. Once an entry is
+; selected, its invalid boot/layout fails this load rather than installing it.
 load_find_partition:
         mov     al, byte ptr [si+4]
         cmp     al, 01h                         ; FAT12
@@ -335,8 +397,26 @@ load_failed:
         stc
         ret
 load_partition:
+        ; Reject empty/wrapping extents before reading a selected partition.
+        mov     ax, word ptr [si+12]
+        mov     dx, word ptr [si+14]
+        mov     word ptr [volume_extent], ax
+        mov     word ptr [volume_extent+2], dx
+        mov     bx, ax
+        or      bx, dx
+        jnz     load_extent_nonempty
+        jmp     load_bad
+load_extent_nonempty:
+        sub     ax, 1
+        sbb     dx, 0
+        add     ax, word ptr [si+8]
+        adc     dx, word ptr [si+10]
+        jc      load_bad
         mov     ax, word ptr [si+8]
         mov     dx, word ptr [si+10]
+        mov     bx, ax
+        or      bx, dx
+        jz      load_bad
         mov     word ptr [di+U_START], ax
         mov     word ptr [di+U_START+2], dx
         mov     cx, 1
@@ -351,6 +431,31 @@ load_boot_ok:
         mov     word ptr [di+U_START], 0
         mov     word ptr [di+U_START+2], 0
 load_copy:
+        ; A BPB must not expose sectors outside the selected MBR extent.
+        mov     ax, word ptr [sector_buf+0Bh+BPB_TOTAL16]
+        xor     dx, dx
+        or      ax, ax
+        jnz     load_extent_total
+        mov     ax, word ptr [sector_buf+0Bh+BPB_TOTAL32]
+        mov     dx, word ptr [sector_buf+0Bh+BPB_TOTAL32+2]
+load_extent_total:
+        mov     bx, ax
+        or      bx, dx
+        jz      load_bad
+        mov     bx, word ptr [volume_extent]
+        or      bx, word ptr [volume_extent+2]
+        jz      load_extent_ok
+        cmp     dx, word ptr [volume_extent+2]
+        ja      load_bad
+        jb      load_extent_ok
+        cmp     ax, word ptr [volume_extent]
+        jbe     load_extent_ok
+        jmp     load_bad
+; The candidate boot/BPB passed this load's checks. Copy the extended store,
+; then zero the FAT32-only tail for FAT12/16 so boot-code bytes cannot become
+; logical parameters. Replace hidden sectors with the selected physical start
+; before publishing MEDIA. Later callers still enforce their own capacity bounds.
+load_extent_ok:
         push    di
         push    es
         push    cs
@@ -388,7 +493,11 @@ load_hidden:
         ret
 load_volume endp
 
-; sector_buf holds a FAT12/16 boot sector?  CF if not.
+; sector_buf contains a supported FAT boot sector? CF set on rejection.
+; Check the sector envelope and basic BPB geometry before publishing a view.
+; A valid signature alone does not establish FAT layout. Cluster size must have
+; one set bit and fit the supported range; FAT32 requires separate size/auxiliary
+; checks plus a qualified DOS kernel. This routine consumes sector_buf, not disk.
 check_boot_sector proc near
         mov     al, byte ptr [sector_buf]
         cmp     al, 0EBh
@@ -471,6 +580,9 @@ fat32_subtract_fat:
         dec     si
         jnz     fat32_subtract_fat
         mov     cl, byte ptr [sector_buf+13]
+; DX:BX holds the data-sector count. SPC was already
+; qualified as a nonzero power of two. Repeated paired right shifts divide this
+; 32-bit value by SPC without a 16-bit DIV overflow or an implicit truncation.
 fat32_clusters:
         cmp     cl, 1
         jbe     fat32_cluster_count
@@ -490,6 +602,9 @@ fat32_min_clusters:
         jnz     fat32_check_root
         cmp     bx, 0FFF5h
         jb      fat32_size_bad
+; Cluster numbers start at 2, so cluster_count+1 is the highest data-cluster
+; number. Compare the root against that bound; the next increment below includes
+; both reserved FAT entries when testing the table's storage capacity.
 fat32_check_root:
         add     bx, 1
         adc     dx, 0
@@ -498,6 +613,10 @@ fat32_check_root:
         jb      fat32_check_fat_entries
         cmp     word ptr [sector_buf+44], bx
         ja      fat32_size_bad
+; A 512-byte FAT32 sector holds 128 entries: shift FAT sectors left seven
+; bits and compare against cluster_count+2. If the high word of FAT sectors is
+; already >=20h, capacity covers the supported cluster range; avoid overflowing
+; a 32-bit shift just to prove a bound that is already satisfied.
 fat32_check_fat_entries:
         add     bx, 1
         adc     dx, 0
@@ -524,6 +643,10 @@ fat32_size_bad:
         ret
 validate_fat32_size endp
 
+; Validate BPB references/flags, not the contents of FSINFO or backup sectors.
+; FSINFO FFFFh means absent; otherwise it must be nonzero and inside reserved
+; sectors. Backup 0/FFFFh means absent. With FAT mirroring disabled, the low
+; nibble selects an existing FAT; reserved flag bits must not acquire meaning.
 validate_fat32_aux proc near
         mov     ax, word ptr [sector_buf+48]
         cmp     ax, 0FFFFh
@@ -564,11 +687,20 @@ validate_fat32_aux endp
 ;-----------------------------------------------------------------------------
 
 ; 1 unchanged, 0 don't know, 0FFh changed
+; A media-check answer is not a data transfer. Return the DOS change hint in
+; RH_MEDIA_RET with a successful request envelope; failed readiness invalidates
+; the cached view. ASPIFDD asks DOS to recheck removable media even after READY,
+; because a successful readiness test alone does not identify the inserted disk.
 media_check proc near
         mov     di, word ptr [unit_ptr]
         mov     ah, 1
         test    byte ptr [di+U_FLAGS], UF_REMOVABLE
-        jz      media_check_done
+        jnz     media_check_removable
+        test    byte ptr [di+U_FLAGS], UF_MEDIA
+        jnz     media_check_done
+        mov     ah, 0                          ; invalidated fixed unit needs BPB
+        jmp     short media_check_done
+media_check_removable:
         push    es
         push    bx
         call    test_unit_ready
@@ -580,6 +712,7 @@ else
         mov     ah, 1
 endif
         jnc     media_check_done
+        and     byte ptr [di+U_FLAGS], not (UF_MEDIA or UF_BPB_OVERRIDE)
         mov     ah, 0FFh                        ; UNIT ATTENTION, no medium
 media_check_done:
         mov     byte ptr es:[bx+RH_MEDIA_RET], ah
@@ -587,10 +720,22 @@ media_check_done:
         ret
 media_check endp
 
+; Return a resident FAR BPB pointer, not a pointer to scratch/caller storage.
+; Reuse an explicitly selected BPB only while MEDIA still validates it. Otherwise
+; refresh the medium; ASPIFDD's blank-media placeholder keeps the unit reachable
+; for raw tools without granting normal block access to an unrecognized volume.
 build_bpb proc near
         mov     di, word ptr [unit_ptr]
+        test    byte ptr [di+U_FLAGS], UF_BPB_OVERRIDE
+        jz      build_bpb_refresh
+        test    byte ptr [di+U_FLAGS], UF_MEDIA
+        jnz     build_bpb_ready
+build_bpb_refresh:
         test    byte ptr [di+U_FLAGS], UF_REMOVABLE
-        jz      build_bpb_ready
+        jnz     build_bpb_read
+        test    byte ptr [di+U_FLAGS], UF_MEDIA
+        jnz     build_bpb_ready
+build_bpb_read:
         push    es
         push    bx
         call    load_volume
@@ -645,16 +790,31 @@ rw_opcode       db      0
 rw_verify_after_write db 0
 
 ; READ, WRITE, WRITE WITH VERIFY: RH_COUNT sectors from RH_START
+; DOS sector requests are volume-relative. Validate the entire requested
+; range before adding U_START and splitting into transport chunks. Only advance
+; LBA/buffer and completed count after the chunk (including VERIFY) succeeds.
+; Fallback from WRITE AND VERIFY requires checked unsupported-command sense;
+; a host/controller error must not cause a speculative repeat write.
 rw_request proc near
         mov     byte ptr [rw_verify_after_write], 0
+        cmp     byte ptr es:[bx+RH_LENGTH], 16h
+        jae     read_header_ready
+        ; RH_COUNT is outside a short request: do not overwrite its tail.
+        mov     al, 5
+        stc
+        ret
+read_header_ready:
         mov     di, word ptr [unit_ptr]
+        test    byte ptr [di+U_FLAGS], UF_NOACCESS
+        jz      read_access_allowed
+        mov     al, ERR_GENERAL
+        jmp     read_error
+read_access_allowed:
         test    byte ptr [di+U_FLAGS], UF_MEDIA
         jnz     read_have_media
         mov     al, ERR_NOT_READY
         jmp     read_error
 read_have_media:
-        cmp     byte ptr es:[bx+RH_LENGTH], 16h
-        jb      read_bad_packet
         cmp     word ptr es:[bx+RH_COUNT], 0
         jne     read_nonempty
         clc
@@ -809,89 +969,104 @@ removable_yes:
 removable_request endp
 
 ; Only advertise executable operations, independent of media presence.
-; Category 48h/FAT32 and write/format minors remain unsupported. Media
-; control (08h/48h,49h) is available only for removable units.
+; Extended calls require FAT32-capable DOS. Software access flags do not
+; imply hardware protection; media controls are removable-unit operations.
 ioctl_query proc near
         cmp     byte ptr es:[bx+RH_LENGTH], 0Fh
-        jae     ioctl_query_length_ok
+        jae     ioctl_query_header
         jmp     ioctl_unsupported
-ioctl_query_length_ok:
+ioctl_query_header:
 ifdef FDD_DRIVER
         cmp     byte ptr es:[bx+RH_IOCTL_CATEGORY], 80h
         jne     ioctl_query_standard
         cmp     byte ptr es:[bx+RH_IOCTL_MINOR], 4
-        jbe     ioctl_query_raw_known
-        jmp     ioctl_unsupported
-ioctl_query_raw_known:
-        jmp     ioctl_query_removable
+        ja      ioctl_query_bad
+        mov     di, word ptr [unit_ptr]
+        test    byte ptr [di+U_FLAGS], UF_REMOVABLE
+        jz      ioctl_query_bad
+        clc
+        ret
 ioctl_query_standard:
 endif
-        cmp     byte ptr es:[bx+RH_IOCTL_CATEGORY], 48h
-        jne     ioctl_query_legacy
-        cmp     byte ptr [fat32_enabled], 0
-        jne     ioctl_query_fat32
-        jmp     ioctl_unsupported
-ioctl_query_fat32:
-        cmp     byte ptr es:[bx+RH_IOCTL_MINOR], 60h
-        je      ioctl_query_yes
-        cmp     byte ptr es:[bx+RH_IOCTL_MINOR], 66h
-        je      ioctl_query_yes
-        jmp     ioctl_unsupported
-ioctl_query_legacy:
-        cmp     byte ptr es:[bx+RH_IOCTL_CATEGORY], 08h
+        mov     ah, byte ptr es:[bx+RH_IOCTL_CATEGORY]
+        mov     al, byte ptr es:[bx+RH_IOCTL_MINOR]
+        cmp     ah, 08h
+        je      ioctl_query_codes
+        cmp     ah, 48h
         jne     ioctl_query_edr
-        cmp     byte ptr es:[bx+RH_IOCTL_MINOR], 60h
-        je      ioctl_query_yes
-        cmp     byte ptr es:[bx+RH_IOCTL_MINOR], 66h
-        je      ioctl_query_yes
-        cmp     byte ptr es:[bx+RH_IOCTL_MINOR], 48h
-        je      ioctl_query_removable
-        cmp     byte ptr es:[bx+RH_IOCTL_MINOR], 49h
-        jne     ioctl_unsupported
-ioctl_query_removable:
-        mov     di, word ptr [unit_ptr]
-        test    byte ptr [di+U_FLAGS], UF_REMOVABLE
-        jz      ioctl_unsupported
-ioctl_query_yes:
-        clc
-        ret
+        cmp     byte ptr [fat32_enabled], 0
+        jne     ioctl_query_codes
+ioctl_query_bad:
+        jmp     ioctl_unsupported
+; This is an alternate QUERY-only envelope, not an alternate data-operation
+; packet. Require its exact command/header shape before reading category/minor
+; from RH_COUNT. On a supported query zero that count as required by this ABI;
+; do not route SET/track/raw operations through guessed EDR field offsets.
 ioctl_query_edr:
-        ; EDR-DOS INT 21h/4411h uses the 22-byte legacy IOCTL layout:
-        ; CX=category:minor at RH_COUNT; AX is returned from that count.
-        ; Restrict this alternate layout to QUERY, never generic execution.
+        ; EDR-DOS QUERY alone puts category/minor in its legacy byte count.
         cmp     byte ptr es:[bx+RH_COMMAND], CMD_IOCTL_QUERY
-        jne     ioctl_unsupported
+        jne     ioctl_query_bad
         cmp     byte ptr es:[bx+RH_LENGTH], 16h
-        jne     ioctl_unsupported
+        jne     ioctl_query_bad
         cmp     byte ptr es:[bx+RH_MEDIA], 0
-        jne     ioctl_unsupported
-        cmp     word ptr es:[bx+RH_COUNT], 0860h
-        je      ioctl_query_edr_yes
-        cmp     word ptr es:[bx+RH_COUNT], 0866h
-        je      ioctl_query_edr_yes
-        cmp     word ptr es:[bx+RH_COUNT], 0848h
-        je      ioctl_query_edr_removable
-        cmp     word ptr es:[bx+RH_COUNT], 0849h
-        jne     ioctl_unsupported
-ioctl_query_edr_removable:
-        mov     di, word ptr [unit_ptr]
-        test    byte ptr [di+U_FLAGS], UF_REMOVABLE
-        jz      ioctl_unsupported
-ioctl_query_edr_yes:
+        jne     ioctl_query_bad
+        mov     ax, word ptr es:[bx+RH_COUNT]
+        cmp     ah, 08h
+        jne     ioctl_query_bad
+        call    ioctl_query_codes
+        jc      ioctl_query_return
         mov     word ptr es:[bx+RH_COUNT], 0
-        clc
+ioctl_query_return:
         ret
 ioctl_query endp
+
+; One registry for both standard categories and the EDR-DOS query envelope.
+; AL=minor, AH=category; only category 08h offers removable-media controls.
+; Capability discovery must agree with generic_ioctl's dispatch. Recognizing
+; a DOS function number does not mean the attached hardware supports every
+; optional CDB; report the driver's implemented contract and qualify removable
+; or FAT32-only functions separately.
+ioctl_query_codes proc near
+        push    si
+        mov     si, offset ioctl_block_minors
+ioctl_query_scan:
+        cmp     byte ptr [si], 0FFh
+        je      ioctl_query_media
+        cmp     al, byte ptr [si]
+        je      ioctl_query_known
+        inc     si
+        jmp     short ioctl_query_scan
+ioctl_query_media:
+        cmp     ah, 08h
+        jne     ioctl_query_unknown
+        cmp     al, 48h
+        je      ioctl_query_media_known
+        cmp     al, 49h
+        jne     ioctl_query_unknown
+ioctl_query_media_known:
+        mov     di, word ptr [unit_ptr]
+        test    byte ptr [di+U_FLAGS], UF_REMOVABLE
+        jz      ioctl_query_unknown
+ioctl_query_known:
+        pop     si
+        clc
+        ret
+ioctl_query_unknown:
+        pop     si
+        mov     al, ERR_UNKNOWN_CMD
+        stc
+        ret
+ioctl_query_codes endp
+ioctl_block_minors db 40h,41h,46h,47h,60h,61h,62h,66h,67h,0FFh
 
 ioctl_unsupported:
         mov     al, ERR_UNKNOWN_CMD
         stc
         ret
 
-; Category 08h, minor 60h: seven descriptor bytes + the 25-byte DOS BPB.
-; Bit 0 selects current media instead of installation-time defaults. Bit 2
-; (uniform sector sizes) is accepted; reserved/track-layout-only bits fail.
-; Never modify the output until all input/media/geometry checks succeed.
+; Generic block IOCTL dispatcher: query capability before accessing the
+; function-specific packet. Category 80h belongs to ASPIFDD's RAW1 binding;
+; standard categories dispatch to parameter, track, access, media or ID handlers.
 generic_ioctl proc near
         call    ioctl_query
         jc      ioctl_unsupported
@@ -903,6 +1078,27 @@ ifdef FDD_DRIVER
         jmp     raw_ioctl
 ioctl_standard:
 endif
+        cmp     byte ptr es:[bx+RH_IOCTL_MINOR], 40h
+        jne     ioctl_not_set_parameters
+        jmp     set_parameters
+ioctl_not_set_parameters:
+        mov     al, byte ptr es:[bx+RH_IOCTL_MINOR]
+        cmp     al, 41h
+        je      ioctl_track_dispatch
+        cmp     al, 61h
+        je      ioctl_track_dispatch
+        cmp     al, 62h
+        jne     ioctl_not_track
+ioctl_track_dispatch:
+        jmp     ioctl_track
+ioctl_not_track:
+        cmp     al, 47h
+        je      ioctl_access_dispatch
+        cmp     al, 67h
+        jne     ioctl_not_access
+ioctl_access_dispatch:
+        jmp     ioctl_access_flag
+ioctl_not_access:
         cmp     byte ptr es:[bx+RH_IOCTL_MINOR], 48h
         jne     ioctl_not_lock
         jmp     ioctl_media_lock
@@ -911,9 +1107,17 @@ ioctl_not_lock:
         jne     ioctl_not_eject
         jmp     ioctl_media_eject
 ioctl_not_eject:
+        cmp     byte ptr es:[bx+RH_IOCTL_MINOR], 46h
+        jne     ioctl_not_set_id
+        jmp     set_media_id
+ioctl_not_set_id:
         cmp     byte ptr es:[bx+RH_IOCTL_MINOR], 66h
         jne     ioctl_get_parameters
         jmp     get_media_id
+; Category 08h, minor 60h: seven descriptor bytes + the 25-byte DOS BPB.
+; Bit 0 selects current media instead of installation-time defaults. Bit 2
+; (uniform sector sizes) is accepted; reserved/track-layout-only bits fail.
+; Never modify the output until all input/media/geometry checks succeed.
 ioctl_get_parameters:
         les     bp, dword ptr es:[bx+RH_IOCTL_PARAM]
         mov     word ptr [ioctl_bpb_size], BPB_SIZE
@@ -926,13 +1130,16 @@ ioctl_get_parameters:
 ioctl_parameter_size:
         les     bp, dword ptr es:[bx+RH_IOCTL_PARAM]
         cmp     bp, ax
-        ja      ioctl_unsupported
+        ja      ioctl_bad_parameter
         mov     ax, es
         or      ax, bp
-        jz      ioctl_unsupported               ; never write through NULL
+        jz      ioctl_bad_parameter             ; never write through NULL
         mov     al, es:[bp]
         test    al, 0FAh
-        jnz     ioctl_unsupported
+        jz      ioctl_parameter_valid
+ioctl_bad_parameter:
+        jmp     ioctl_unsupported
+ioctl_parameter_valid:
         push    es
         push    bp
         mov     di, word ptr [unit_ptr]
@@ -941,6 +1148,8 @@ ioctl_parameter_size:
         lea     si, [di+U_DEFAULT_BPB]
         jmp     short ioctl_bpb_ready
 ioctl_current:
+        test    byte ptr [di+U_FLAGS], UF_BPB_OVERRIDE
+        jnz     ioctl_current_cached
         test    byte ptr [di+U_FLAGS], UF_REMOVABLE
         jz      ioctl_current_cached
         call    load_volume                     ; read only, refresh partition/BPB
@@ -956,7 +1165,8 @@ ioctl_bpb_ready:
         cmp     word ptr [si+BPB_FATSIZE], 0
         jne     ioctl_fat_size_ok
         cmp     word ptr [ioctl_bpb_size], BPB_STORE_SIZE
-        jne     ioctl_no_medium
+        je      ioctl_fat_size_ok
+        jmp     ioctl_no_medium
 ioctl_fat_size_ok:
         pop     bp
         pop     es
@@ -1016,9 +1226,15 @@ ioctl_bad_geometry:
         ret
 generic_ioctl endp
 
+        include common/dos/block_params.inc
+        include common/dos/block_track.inc
+
 ; 08h/66h: info level 0, serial (4), volume label (11), filesystem text (8).
 ; Always load this unit's actual boot sector, including partition selection:
 ; sector_buf may belong to another unit or a previous medium. No writes.
+; Media-ID describes filesystem boot metadata. Load a valid volume and check
+; the extended signature before copying serial/label/type bytes. It is unrelated
+; to INQUIRY identity, device capacity or a unique hardware serial number.
 get_media_id proc near
         les     bp, dword ptr es:[bx+RH_IOCTL_PARAM]
         cmp     bp, 0FFE7h                      ; 25-byte packet
@@ -1059,8 +1275,195 @@ media_id_invalid:
         jmp     ioctl_unsupported
 get_media_id endp
 
+; SET Media-ID: copy only the 23 metadata bytes, never geometry/boot code.
+; Preflight FAT32 backup layout, then update/verify backup before primary.
+; No retries or success-only masking of partial/failed writes.
+; Filesystem metadata update, not raw serial-number assignment. Preserve the
+; boot sector's other fields and validate the FAT layout before writing. FAT32
+; backup metadata and failure reporting are part of the same request policy.
+set_media_id proc near
+        les     bp, dword ptr es:[bx+RH_IOCTL_PARAM]
+        cmp     bp, 0FFE7h
+        jbe     set_id_pointer
+        jmp     ioctl_unsupported
+set_id_pointer:
+        mov     ax, es
+        or      ax, bp
+        jnz     set_id_not_null
+        jmp     set_id_invalid
+set_id_not_null:
+        cmp     word ptr es:[bp], 0
+        je      set_id_level_ok
+        jmp     set_id_invalid
+set_id_level_ok:
+        ; Capture input before disk I/O; caller's packet is never modified.
+        push    ds
+        push    es
+        pop     ds
+        push    cs
+        pop     es
+        lea     si, [bp+2]
+        mov     di, offset media_id_value
+        mov     cx, 23
+        rep     movsb
+        pop     ds
+        mov     di, word ptr [unit_ptr]
+        call    load_volume
+        jnc     set_id_volume_ready
+        jmp     set_id_failed
+set_id_volume_ready:
+        mov     word ptr [media_id_offset], 27h
+        mov     word ptr [media_id_backup], 0
+        mov     word ptr [media_id_backup+2], 0
+        test    byte ptr [di+U_FLAGS], UF_FAT32
+        jz      set_id_signature
+        mov     word ptr [media_id_offset], 43h
+        mov     ax, word ptr [sector_buf+50]
+        or      ax, ax
+        jz      set_id_signature
+        cmp     ax, 0FFFFh
+        je      set_id_signature
+        xor     dx, dx
+        add     ax, word ptr [di+U_START]
+        adc     dx, word ptr [di+U_START+2]
+        jc      set_id_media_bad
+        mov     word ptr [media_id_backup], ax
+        mov     word ptr [media_id_backup+2], dx
+set_id_signature:
+        mov     si, word ptr [media_id_offset]
+        cmp     byte ptr [sector_buf+si-1], 29h
+        jne     set_id_media_bad
+        push    cs
+        pop     es
+        mov     si, offset sector_buf
+        mov     di, offset media_id_primary
+        mov     cx, 512
+        rep     movsb
+        mov     ax, word ptr [media_id_backup]
+        mov     dx, word ptr [media_id_backup+2]
+        mov     cx, ax
+        or      cx, dx
+        jz      set_id_primary
+        mov     cx, 1
+        call    read_sectors
+        jc      set_id_failed
+        cmp     word ptr [sector_buf+510], 0AA55h
+        jne     set_id_media_bad
+        cmp     byte ptr [sector_buf+42h], 29h
+        jne     set_id_media_bad
+        mov     si, offset sector_buf+0Bh
+        mov     di, offset media_id_primary+0Bh
+        mov     cx, BPB_STORE_SIZE
+        repe    cmpsb
+        jne     set_id_media_bad
+        mov     ax, word ptr [media_id_backup]
+        mov     dx, word ptr [media_id_backup+2]
+        call    write_media_id_sector
+        jc      set_id_failed
+set_id_primary:
+        mov     si, offset media_id_primary
+        mov     di, offset sector_buf
+        mov     cx, 512
+        rep     movsb
+        mov     di, word ptr [unit_ptr]
+        mov     ax, word ptr [di+U_START]
+        mov     dx, word ptr [di+U_START+2]
+        call    write_media_id_sector
+        jc      set_id_failed
+        clc
+        ret
+set_id_invalid:
+        jmp     ioctl_unsupported
+set_id_media_bad:
+        mov     al, ERR_UNKNOWN_MEDIA
+set_id_failed:
+        mov     di, word ptr [unit_ptr]
+        and     byte ptr [di+U_FLAGS], not (UF_MEDIA or UF_BPB_OVERRIDE)
+        stc
+        ret
+set_media_id endp
+
+; DX:AX is one previously validated physical boot-sector LBA. ES=CS.
+write_media_id_sector proc near
+        mov     word ptr [media_id_target], ax
+        mov     word ptr [media_id_target+2], dx
+        mov     si, offset media_id_value
+        mov     di, offset sector_buf
+        add     di, word ptr [media_id_offset]
+        mov     cx, 23
+        rep     movsb
+        mov     word ptr [xfer_buffer], offset sector_buf
+        mov     word ptr [xfer_buffer+2], cs
+        mov     byte ptr [xfer_opcode], 2Ah
+        mov     cx, 1
+        call    xfer_sectors
+        jc      write_id_done
+        mov     word ptr [xfer_buffer], offset media_id_verify
+        mov     word ptr [xfer_buffer+2], cs
+        mov     ax, word ptr [media_id_target]
+        mov     dx, word ptr [media_id_target+2]
+        mov     cx, 1
+        call    read_sectors
+        jc      write_id_done
+        mov     si, offset sector_buf
+        mov     di, offset media_id_verify
+        mov     cx, 512
+        repe    cmpsb
+        je      write_id_ok
+        mov     al, ERR_WRITE
+        stc
+        ret
+write_id_ok:
+        clc
+write_id_done:
+        ret
+write_media_id_sector endp
+
+; 08h/48h:47h and 67h, two-byte packet: reserved=0, access byte.
+; Any nonzero SET value enables normal DOS block reads/writes; GET returns
+; a canonical 0/1. This is per-unit software policy, independent of medium,
+; hardware write protection and PREVENT/ALLOW counts. Administrative/raw
+; access is separate so a formatter can disable filesystem block traffic.
+ioctl_access_flag proc near
+        mov     dl, byte ptr es:[bx+RH_IOCTL_MINOR]
+        les     bp, dword ptr es:[bx+RH_IOCTL_PARAM]
+        cmp     bp, 0FFFEh
+        ja      access_bad_packet
+        mov     ax, es
+        or      ax, bp
+        jz      access_bad_packet
+        cmp     byte ptr es:[bp], 0
+        jne     access_bad_packet
+        mov     di, word ptr [unit_ptr]
+        cmp     dl, 67h
+        je      access_get
+        cmp     byte ptr es:[bp+1], 0
+        je      access_disable
+        and     byte ptr [di+U_FLAGS], not UF_NOACCESS
+        clc
+        ret
+access_disable:
+        or      byte ptr [di+U_FLAGS], UF_NOACCESS
+        clc
+        ret
+access_get:
+        mov     al, 1
+        test    byte ptr [di+U_FLAGS], UF_NOACCESS
+        jz      access_result
+        xor     al, al
+access_result:
+        mov     byte ptr es:[bp+1], al
+        clc
+        ret
+access_bad_packet:
+        jmp     ioctl_unsupported
+ioctl_access_flag endp
+
 ; DOS 08h/48h: byte operation 0=lock, 1=unlock, 2=status; byte result count.
 ; Never mutate count/output on a rejected request or failed hardware command.
+; Nested DOS locks translate to hardware only at the edges: 0->1 PREVENT,
+; 1->0 ALLOW. Intermediate count changes stay in software. Overflow, unmatched
+; unlock and failed hardware commands must not publish a new lock count.
 ioctl_media_lock proc near
         les     bp, dword ptr es:[bx+RH_IOCTL_PARAM]
         cmp     bp, 0FFFEh
@@ -1117,11 +1520,15 @@ ioctl_media_eject proc near
         mov     ax, 021Bh                     ; LoEj=1, Start=0
         call    medium_control_result
         jc      media_eject_done
-        and     byte ptr [di+U_FLAGS], not UF_MEDIA
+        and     byte ptr [di+U_FLAGS], not (UF_MEDIA or UF_BPB_OVERRIDE)
 media_eject_done:
         ret
 ioctl_media_eject endp
 
+; Convert shared no-data CDB completion into this block driver's CF/AL.
+; An unsupported PREVENT/ALLOW must not count as a lock; callers commit lock or
+; media state only on clear carry. DATA PROTECT can legitimately be AL=0 on an
+; error path, so carry remains authoritative.
 medium_control_result proc near
         call    aspi_media_control
         call    aspi_result
@@ -1173,6 +1580,11 @@ resident_end label byte
 
 first_drive     db      0
 
+; INIT registers devices, not merely inserted media. Classify type-00
+; candidates, check manager/DOS ownership, and allocate at most MAX_UNITS.
+; ASPIFDD can register a placeholder for an empty/unrecognized drive; ASPIDSK
+; requires a supported FAT volume before adding a unit. Runtime BPB refresh
+; must not call this transient discovery code after DOS has reclaimed it.
 init_request:
         call    detect_fat32_kernel
         les     bx, [request_ptr]
@@ -1243,8 +1655,12 @@ ifdef FDD_DRIVER
         pop     di
         jmp     short init_add_unit
 else
-        jmp     init_next_device                ; no FAT12/16 volume
+        jmp     init_next_device                ; no supported FAT volume
 endif
+; Only accepted devices reach the DOS unit/BPB pointer arrays. Capture the
+; default logical BPB separately from the current one so media changes do not
+; silently redefine GET DEFAULT PARAMETERS. All published BPB pointers refer
+; to resident unit-table storage, not the transient INQUIRY or sector scratch.
 init_add_unit:
         ; Standard parameters remain stable when removable media change.
         push    di
@@ -1292,6 +1708,11 @@ init_installed:
 ; INIT-only ownership check before TUR, volume reads or DOS unit allocation.
 ; Int13 accessibility alone does not mean DOS has claimed the device.
 ; Only an explicit unsupported command permits the legacy fallback.
+; Avoid exposing a second DOS unit for a disk already exposed to DOS by the
+; manager/BIOS path; INT 13h mapping alone is not the same as DOS ownership.
+; GET DISK INFO is manager policy, not an execute-SCSI CDB; classify its ownership
+; enum as a whole value. An unsupported ownership query has its own compatibility
+; path and must not be confused with a known existing INT 13h/DOS owner.
 check_disk_ownership proc near
         call    clear_srb
         mov     byte ptr [srb+SRB_Cmd], SC_GET_DISK_INFO
@@ -1434,6 +1855,9 @@ print_digit endp
 ; Probe the extended DOS API with a deliberately invalid drive, so no disk
 ; access or recursion into an uninitialized unit is necessary. Older DOS
 ; returns AL=0 with no structure; a supported API reports invalid drive.
+; Initialization-only feature gate: a FAT32-looking BPB alone cannot make an
+; older DOS kernel understand the extended block interface. Record a positive
+; kernel qualification before advertising the corresponding IOCTL capability.
 detect_fat32_kernel proc near
         push    es
         push    ds

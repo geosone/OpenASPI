@@ -22,6 +22,7 @@ TESTBIN := $(BUILD)/host/test_tape
 ASPITESTBIN := $(BUILD)/host/test_aspi
 FATTESTBIN := $(BUILD)/host/test_fat_format
 RESCUETESTBIN := $(BUILD)/host/test_rescue
+NATIVEAPITESTBIN := $(BUILD)/host/test_native_tape_api
 DOSDRV  := $(BUILD)/dos/ASPITAP.SYS
 DOSCDA  := $(BUILD)/dos/ASPICDA.SYS
 DOSDSK  := $(BUILD)/dos/ASPIDSK.SYS
@@ -41,6 +42,7 @@ DOSMGR := $(BUILD)/$(MAXLANG)/dos/ASPIMGR.EXE
 QUILIB := $(abspath $(BUILD)/tools/quilib-$(MAXLANG)/LQUILIBR.LIB)
 QUIJWASM := $(abspath $(BUILD)/tools/qui-jwasm/jwasm)
 DOSTAPECTL := $(BUILD)/dos/TAPECTL.COM
+DOSAPIINFO := $(BUILD)/dos/OTAPINFO.EXE
 DOSWINCHECK := $(BUILD)/dos/WINCHECK.COM
 WIN16CHECK := $(BUILD)/win16/WINCHECK.EXE
 WIN16CHECKOBJ := $(BUILD)/win16/wincheck.obj
@@ -53,13 +55,14 @@ CPPFLAGS += -Iinclude
 
 .PHONY: all tools test check dos-c-check dos-smoke dos-cda-smoke dos-media-smoke dos-disk-smoke dos-tape-smoke dos-mhvtl-smoke dos-mhvtl-roundtrip dos-mhvtl-write-protect gdi-install dist disksets clean
 
-all: $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(DOSSHSUCDX) $(DOSCDAUDIO) $(DOSSCAN) $(DOSMGR) $(DOSCTL) $(DOSCTLALIASES) $(DOSFMT) $(DOSDD) $(DOSDDGUI) $(DOSTAPECTL) $(DOSWINCHECK) $(WIN16CHECK) $(TESTBIN) $(ASPITESTBIN)
+all: $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(DOSSHSUCDX) $(DOSCDAUDIO) $(DOSSCAN) $(DOSMGR) $(DOSCTL) $(DOSCTLALIASES) $(DOSFMT) $(DOSDD) $(DOSDDGUI) $(DOSTAPECTL) $(DOSAPIINFO) $(DOSWINCHECK) $(WIN16CHECK) $(TESTBIN) $(ASPITESTBIN)
 
-test: $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(TESTBIN) $(ASPITESTBIN) $(FATTESTBIN) $(RESCUETESTBIN)
+test: $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(TESTBIN) $(ASPITESTBIN) $(FATTESTBIN) $(RESCUETESTBIN) $(NATIVEAPITESTBIN)
 	$(TESTBIN)
 	$(ASPITESTBIN)
 	$(FATTESTBIN)
 	$(RESCUETESTBIN)
+	$(NATIVEAPITESTBIN)
 	sh tests/dos_driver_layout.sh $(DOSDRV)
 	sh tests/dos_cda_layout.sh $(DOSCDA)
 	sh tests/dos_block_layout.sh $(DOSDSK)
@@ -70,6 +73,10 @@ check: tools all test dos-c-check
 $(FATTESTBIN): tests/fat_format_test.c common/dos/fat_format.c include/openaspi/fat_format.h include/openaspi/types.h
 	mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/fat_format_test.c common/dos/fat_format.c
+
+$(NATIVEAPITESTBIN): tests/native_tape_api_test.c common/tape/tape_api.c include/openaspi/tape_api.h include/openaspi/types.h
+	mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/native_tape_api_test.c common/tape/tape_api.c
 
 $(RESCUETESTBIN): tests/rescue_test.c common/dos/rescue_read.c include/openaspi/rescue.h include/openaspi/types.h
 	mkdir -p $(@D)
@@ -116,7 +123,7 @@ dos-mhvtl-write-protect: all
 dist: all gdi-install LICENSE tests/dist_layout.sh tools/package/localize.py installer/lang/GR.json installer/README.GR.TXT
 	rm -rf $(DISTDIR)
 	mkdir -p $(DISTDIR)
-	cp $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(DOSSHSUCDX) $(DOSCDAUDIO) $(DOSSCAN) $(DOSTAPECTL) $(DOSWINCHECK) $(WIN16CHECK) $(GDIINSTALL) installer/INSTALL.INI \
+	cp $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(DOSSHSUCDX) $(DOSCDAUDIO) $(DOSSCAN) $(DOSTAPECTL) $(DOSAPIINFO) $(DOSWINCHECK) $(WIN16CHECK) $(GDIINSTALL) installer/INSTALL.INI \
 		installer/README.TXT LICENSE $(DISTDIR)/
 	cp $(DOSMGR) $(DISTDIR)/
 	cp $(DOSCTL) $(DOSCTLALIASES) $(DISTDIR)/
@@ -138,7 +145,8 @@ disksets: gdi-install
 	$(MAKE) -o gdi-install MAXLANG=GR DISTDIR=$(BUILD)/packages/GR dist
 	bash tools/package/mkdisks.sh GR $(BUILD)/packages/GR $(RELEASEDIR)/GR
 
-$(DOSDRV): drivers/aspitap/aspitap.asm common/aspi/dos_aspi.inc | $(JWASM)
+$(DOSDRV): drivers/aspitap/aspitap.asm common/aspi/dos_aspi.inc common/aspi/tape_sense.inc \
+		common/aspi/native_tape.inc common/aspi/native_tape_defs.inc common/aspi/native_tape_read.inc common/aspi/native_tape_write.inc | $(JWASM)
 	mkdir -p $(@D)
 	$(JWASM) -q -bin -0 -W4 -WX -Fl=$(BUILD)/dos/ASPITAP.lst -Fw$(BUILD)/dos/ASPITAP.err -Fo=$@ $<
 
@@ -149,7 +157,7 @@ $(DOSCDA): drivers/aspicda/aspicda.asm common/aspi/dos_aspi.inc common/aspi/aspi
 
 BLKDEPS := common/dos/blkdrv.inc common/aspi/dos_aspi.inc common/aspi/aspi_client.inc \
 		common/aspi/aspi_init.inc common/aspi/removable.inc common/aspi/media_control.inc common/dos/devreq.inc
-BLKDEPS += common/dos/raw_media.inc
+BLKDEPS += common/dos/raw_media.inc common/dos/block_capacity.inc common/dos/block_params.inc common/dos/block_track.inc
 
 $(DOSDSK): drivers/aspidsk/aspidsk.asm $(BLKDEPS) | $(JWASM)
 	mkdir -p $(@D)
@@ -246,6 +254,18 @@ $(DOSTAPECTL): tools/tapectl/tapectl.asm | $(JWASM)
 	mkdir -p $(@D)
 	$(JWASM) -q -bin -0 -W4 -WX -Fl=$(BUILD)/dos/TAPECTL.lst -Fw$(BUILD)/dos/TAPECTL.err -Fo=$@ $<
 
+$(DOSAPIINFO): $(BUILD)/dos/otapinfo.obj $(BUILD)/dos/tape_api.obj
+	WATCOM=$(WATCOM) $(WLINK) format dos name $@ file $(BUILD)/dos/otapinfo.obj,$(BUILD)/dos/tape_api.obj \
+		libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286 option quiet,stack=4096
+
+$(BUILD)/dos/otapinfo.obj: tools/otapinfo/otapinfo.c include/openaspi/tape_api.h include/openaspi/types.h
+	mkdir -p $(@D)
+	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(WATCOM)/h -fo=$@ $<
+
+$(BUILD)/dos/tape_api.obj: common/tape/tape_api.c include/openaspi/tape_api.h include/openaspi/types.h
+	mkdir -p $(@D)
+	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(WATCOM)/h -fo=$@ $<
+
 $(DOSWINCHECK): tools/wincheck/wincheck.asm | $(JWASM)
 	mkdir -p $(@D)
 	$(JWASM) -q -bin -0 -W4 -WX -Fl=$(BUILD)/dos/WINCHECK.lst -Fw$(BUILD)/dos/WINCHECK.err -Fo=$@ $<
@@ -264,7 +284,7 @@ $(BUILD)/dos/tape_cdb.obj: common/scsi/tape_cdb.c include/openaspi/scsi_tape.h i
 	mkdir -p $(@D)
 	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(WATCOM)/h -fo=$@ $<
 
-$(BUILD)/dos/tape_abi.obj: tests/tape_abi.c include/openaspi/aspitape.h include/openaspi/types.h
+$(BUILD)/dos/tape_abi.obj: tests/tape_abi.c include/openaspi/aspitape.h include/openaspi/tape_api.h include/openaspi/types.h
 	mkdir -p $(@D)
 	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(WATCOM)/h -fo=$@ $<
 

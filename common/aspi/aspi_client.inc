@@ -1,3 +1,10 @@
+; Resident transport boundary: one shared SRB, synchronous submission, no
+; reentrant calls. The caller selects unit_ha/target/lun before preparation.
+; Completion status, host status and target status must agree before success;
+; a sense key alone never authorizes a retry or an unsupported-CDB fallback.
+; Initialization/enumeration code is separate in aspi_init.inc so DOS can reclaim
+; it; these helpers and their buffers must remain below resident_end.
+
 ; ASPI client helpers shared by ASPIDSK, ASPIFDD and ASPICDA.
 ;
 ; Include after dos_aspi.inc inside the resident code of a driver.  The
@@ -56,6 +63,10 @@ call_aspi_wait:
         ret
 call_aspi endp
 
+; Reset the whole resident SRB backing store, including CDB/sense/workspace.
+; A new command must not inherit status, direction or sense from the previous
+; one. ES:DI and AX/CX are saved because callers may still hold DOS packet data.
+; Only call after the manager no longer owns a pending SRB.
 clear_srb proc near
         push    ax
         push    cx
@@ -93,19 +104,19 @@ aspi_prepare proc near
 aspi_prepare endp
 
 ; CF clear when the command completed without error.  AL = sense key of a
-; CHECK CONDITION (0 if none).  Sense follows the actual CDB in the SRB.
+; CHECK CONDITION (0 if unavailable). AH is unspecified. Sense follows the
+; actual CDB in the DOS SRB, unlike the separate Win32 sense array.
 aspi_result proc near
-        xor     al, al
+        xor     ax, ax
         cmp     byte ptr [srb+SRB_Status], SS_COMP
-        je      aspi_result_ok
-        cmp     byte ptr [srb+SRB_TargStat], 02h        ; CHECK CONDITION
+        jne     aspi_result_error
+        cmp     byte ptr [srb+SRB_HaStat], 0
         jne     aspi_result_fail
-        push    bx
-        mov     bl, byte ptr [srb+SRB_CDBLen]
-        xor     bh, bh
-        mov     al, byte ptr [srb+bx+SRB_CDB+2]
-        and     al, 0Fh
-        pop     bx
+        cmp     byte ptr [srb+SRB_TargStat], 0
+        je      aspi_result_ok
+        jmp     short aspi_result_fail
+aspi_result_error:
+        call    aspi_sense
 aspi_result_fail:
         stc
         ret
@@ -114,7 +125,80 @@ aspi_result_ok:
         ret
 aspi_result endp
 
+; CF clear: checked autosense, AL = key, AH = ASC (zero if unavailable).
+; CF set: no trustworthy autosense, AX = 0. All other registers preserved.
+; Fixed responses need their eight-byte header; ASC also needs byte 12
+; within both the allocation and the additional-length field. Descriptor
+; responses carry key/ASC in the header. No descriptor traversal is needed.
+; SenseLen is an allocation, not proof of the actual transfer length. The
+; zeroed SRB prevents reuse; DOS ASPI cannot prove every short transfer.
+aspi_sense proc near
+        push    bx
+        xor     ax, ax
+        cmp     byte ptr [srb+SRB_Cmd], SC_EXEC_SCSI_CMD
+        jne     aspi_sense_invalid
+        cmp     byte ptr [srb+SRB_Status], SS_ERR
+        jne     aspi_sense_invalid
+        cmp     byte ptr [srb+SRB_HaStat], 0
+        jne     aspi_sense_invalid
+        cmp     byte ptr [srb+SRB_TargStat], 2
+        jne     aspi_sense_invalid
+        cmp     byte ptr [srb+SRB_SenseLen], 8
+        jb      aspi_sense_invalid
+        cmp     byte ptr [srb+SRB_SenseLen], ASPI_SENSE_LEN
+        ja      aspi_sense_invalid
+        mov     bl, byte ptr [srb+SRB_CDBLen]
+        xor     bh, bh
+        cmp     bl, 6
+        je      aspi_sense_address
+        cmp     bl, 10
+        je      aspi_sense_address
+        cmp     bl, 12
+        je      aspi_sense_address
+        cmp     bl, 16
+        jne     aspi_sense_invalid
+aspi_sense_address:
+        mov     al, byte ptr [srb+bx+SRB_CDB]
+        cmp     al, 72h
+        je      aspi_sense_descriptor
+        cmp     al, 73h
+        je      aspi_sense_descriptor
+        and     al, 7Fh                  ; VALID bit belongs to fixed sense
+        cmp     al, 70h
+        je      aspi_sense_fixed
+        cmp     al, 71h
+        jne     aspi_sense_invalid
+aspi_sense_fixed:
+        xor     ah, ah
+        cmp     byte ptr [srb+SRB_SenseLen], 13
+        jb      aspi_sense_key
+        cmp     byte ptr [srb+bx+SRB_CDB+7], 5
+        jb      aspi_sense_key
+        mov     ah, byte ptr [srb+bx+SRB_CDB+12]
+aspi_sense_key:
+        mov     al, byte ptr [srb+bx+SRB_CDB+2]
+        and     al, 0Fh
+        jmp     short aspi_sense_valid
+aspi_sense_descriptor:
+        mov     ah, byte ptr [srb+bx+SRB_CDB+2]
+        mov     al, byte ptr [srb+bx+SRB_CDB+1]
+        and     al, 0Fh
+aspi_sense_valid:
+        pop     bx
+        clc
+        ret
+aspi_sense_invalid:
+        xor     ax, ax
+        pop     bx
+        stc
+        ret
+aspi_sense endp
+
 ; AL = SCSI sense key -> AL = DOS driver error code (devreq.inc)
+; Lossy mapping from a qualified key (or zero/unavailable) to DOS error AL.
+; It does NOT return completion in carry: DATA PROTECT deliberately yields AL=0,
+; a valid write-protection error when the caller sets DOS ERROR. General errors
+; remain general; use original sense/ASC for unsupported-opcode or rescue policy.
 sense_to_doserr proc near
         cmp     al, 02h                         ; NOT READY
         jne     sense_not_medium

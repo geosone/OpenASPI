@@ -55,6 +55,12 @@ Diskettenlaufwerke ohne ASPIFDD-Rohzugriff werden von diesen Tools nicht bedient
 SHSUCDX.COM und CDAUDIO.COM sind fuer CD/DVD und die Audio-Moduswahl enthalten.
 SHSUCD.LIC und SHSUCD.TXT enthalten Lizenz und Originaldokumentation.
 TAPECTL.COM fragt den Bandstatus ueber NRMT0 ab; /READY prueft die Bereitschaft.
+OTAPINFO.EXE nutzt die neue native Tape-API. Ohne Optionen erfolgt kein
+SCSI-Zugriff; /REFRESH fragt Identitaet, Blockgrenzen und optionale Mode Pages
+ohne Bandbewegung oder Bandschreiben ab. Unbekannte Faehigkeiten bleiben
+unbekannt. Exit 0: Abfrage fertig; 1: Aufruf-/DOS-/API-Fehler; 2: unvollstaendig,
+belegt oder gespeicherter Schreibfehler. Details im Quellbaum:
+docs/native-tape-query.md.
 Der Band-Schreibpfad ist emuliert getestet, aber noch nicht fuer produktive
 Sicherungen auf echten Baendern qualifiziert. Es wird ein Laufwerk angeboten;
 Bandwechsler gehoeren noch nicht zu diesem Stand.

@@ -45,7 +45,8 @@ layout. See [installation media](installer/README.md).
 - [ASPITAP driver](drivers/aspitap/README.md): setup, options and tape behavior.
 - [ASPITAPE compatibility](docs/aspitape-compat.md): application interface and ABI.
 - [Installation](installer/README.md): shared GDI installer and package probes.
-- [Architecture](docs/architecture.md) and [Windows 9x plans](docs/windows9x-storage.md).
+- [Documentation index](docs/README.md), [source guide](docs/source-guide.md)
+  and [architecture](docs/architecture.md).
 - Tools: [ASPISCAN](tools/aspiscan/README.md),
   [ASPIMGR DOS interface](tools/aspimgr/README.md),
   [ASPICTL media controls](tools/aspictl/README.md),

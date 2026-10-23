@@ -1,3 +1,10 @@
+/* Read-only ASPI adapter/device browser using Open386MAX's shared QUILIB.
+ * Discover SCSIMGR$, enumerate addresses and gather INQUIRY identity into bounded
+ * UI rows. Displayed inventory is not device ownership or a claim. Hardware I/O
+ * is serialized through one SRB; the assembly bridge preserves C runtime state
+ * across third-party manager calls. UI selection never sends media controls.
+ */
+
 /* ASPIMGR: shared QUILIB DOS interface for the OpenASPI suite. GPL-3.0. */
 #include <stdio.h>
 #include <string.h>
@@ -74,6 +81,10 @@ static void identity(char *out, const unsigned char *in, unsigned size)
     out[size] = 0;
 }
 
+/* The display inventory is bounded independently of how many devices exist.
+ * Return NULL and mark truncation when full; callers stop scanning rather than
+ * write beyond rows or imply that the displayed list is a complete inventory.
+ */
 static struct row *add_row(unsigned host, int adapter)
 {
     struct row *p;
@@ -85,6 +96,12 @@ static struct row *add_row(unsigned host, int adapter)
     return p;
 }
 
+/* Rebuild the inventory from the active manager. Adapter metadata bounds the
+ * target scan (fall back to eight targets for missing/unusable limits); skip its
+ * initiator ID and scan eight LUNs. A device-type candidate can remain visible
+ * with failed INQUIRY, but identity/removable data are used only after all three
+ * completion layers agree. Scanning does not claim or mount the device.
+ */
 static void scan(void)
 {
     unsigned h, t, l, hosts, targets, initiator;

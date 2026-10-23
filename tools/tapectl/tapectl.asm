@@ -1,3 +1,9 @@
+; Legacy category-07h status/diagnostic client. Status layout (14/16 bytes)
+; is selected explicitly rather than guessed from a response. A reported saved
+; write/finalization error remains distinct from this query's delivery status.
+; Readiness probing is explicit; displaying cached status should not silently
+; introduce a positioning or write operation. Native OTAP QUERY uses OTAPINFO.
+
 ; Non-destructive ASPITAPE-compatible status utility for DOS.
 
         .8086
@@ -296,6 +302,10 @@ tape_name_bad:
         ret
 validate_tape_name endp
 
+; Input DS:DX validated no-rewind alias; return AX handle with carry clear.
+; After open, require a character device and set DOS raw mode. If either check
+; fails, close the acquired handle while preserving the original error in AX;
+; an ordinary file of the same name must not receive tape control requests.
 open_raw proc near
         mov     ax, 3D00h
         int     21h
@@ -336,6 +346,11 @@ close_handle proc near
         ret
 close_handle endp
 
+; Try explicit function 0705h, then the historical 0702h 14-byte contract on
+; failure. Normalize status/opcode/residual into the display's common slots while
+; saving the 16-bit state/error separately. This is not length autodetection:
+; a third-party 0702h using a different layout needs an explicit compatibility
+; choice, not an assumption that our larger backing buffer reveals its ABI.
 get_status proc near
         mov     bx, word ptr [handle]
         mov     cx, 0705h              ; explicit sixteen-byte ABI first
@@ -372,6 +387,9 @@ get_status_done:
         ret
 get_status endp
 
+; Explicit legacy MTNOP readiness request, distinct from cached status.
+; A failure is this probe's DOS result, not proof that a saved write diagnostic
+; belongs to the probe. The caller preserves AX before querying status again.
 test_ready proc near
         mov     bx, word ptr [handle]
         mov     ch, IOCTL_TAPE

@@ -37,7 +37,7 @@ An exported function is evidence to review, not a passed compatibility test.
 | 0Dh/0Eh OPEN/CLOSE | yes | yes (no-op) | yes (no-op) |
 | 0Fh REMOVABLE MEDIA | yes | yes (no-op) | yes |
 | 13h GENERIC IOCTL | yes | yes | 08h/60h parameters, 08h/66h Media-ID (read only) |
-| 17h/18h GET/SET LOGICAL DRIVE | yes | 17h only | **missing** |
+| 17h/18h GET/SET LOGICAL DRIVE | yes | 17h only | yes, independent units return no alternate mapping |
 | 19h IOCTL QUERY | yes | yes | yes, only advertises 08h/60h and 08h/66h |
 
 ### Generic IOCTL (13h)
@@ -93,14 +93,14 @@ output; reconstructed C types and register arguments alone are not an ABI.
 | `0012h` / `001Dh`, table `13B7h` | Strategy / interrupt; DOS commands 00h..1Ah are table-dispatched | Keep an explicit supported-command matrix; slot 1Ah is zero, not a supported operation |
 | `0117h`, DOS 03h/0Ch | Seven-byte private packet, signature word `4131h` (bytes `31h 41h`), copying five per-unit state bytes from/to offset `+5Ch` | This is not general SCSI passthrough; validate its semantics/target ownership before considering legacy binary compatibility |
 | `0194h` | OPEN/CLOSE return success without device I/O | Existing no-op is not proof of locking support |
-| `01B3h` | GET/SET LOGICAL DRIVE both return unit byte zero | Single-logical-drive mapping behavior still needs implementing/testing in OpenASPI |
+| `01B3h` | GET/SET LOGICAL DRIVE both return unit byte zero | Implemented and tested for OpenASPI's independent units |
 | `02D5h` / `02E6h` | Get/set access flag reads/writes the global byte `135Ah` | Software access status, **not** MODE SENSE write-protection detection; enforcement is not demonstrated by these handlers |
-| `0322h` / `0407h` | Get/set parameter paths distinguish 25-byte and extended BPBs and category 08h/48h | 60h supports legacy/extended BPBs; 40h remains open |
+| `0322h` / `0407h` | Get/set parameter paths distinguish 25-byte and extended BPBs and category 08h/48h | 40h/60h support checked logical BPBs; variable track-table and physical profiles remain open |
 | `0460h` / `0473h` | Track read/write select a shared CHS-to-LBA path | Requires tested geometry, partition offsets, bounds and error handling, not just generic block I/O |
 | `0556h` | 42h/62h share a handler; ordinary path constructs VERIFY(10), with a separate format branch for recognized floptical media and a query-only branch | Do not implement a universal physical FORMAT UNIT just because 42h exists |
 | `1A19h` | Floptical format helper builds FORMAT UNIT plus a small media/track-specific parameter list | Needs a separately validated device profile and scratch-media tests |
 | `018Dh` -> `0699h` | DOS WRITE WITH VERIFY uses a WRITE followed by VERIFY path | OpenASPI fallback now uses WRITE + separate VERIFY instead of silently dropping verification |
-| `1604h` / `164Ch` | Media-ID helpers handle FAT12/16 and extended-BPB metadata layouts | 66h covers FAT12/16 and conditional FAT32 reads; 46h remains open |
+| `1604h` / `164Ch` | Media-ID helpers handle FAT12/16 and extended-BPB metadata layouts | 46h/66h cover FAT12/16 and conditional FAT32; writes are read back and failures propagate |
 | `31D4h` | Uses ASPI command 06h (GET DISK INFO) to check BIOS handling | INIT now skips DOS-owned units; explicit unsupported fallback and malformed/error replies are tested |
 | `3483h` / `36DEh` / `3586h` | Partition discovery, extended-BPB units and reserved removable-volume entries | Multi-partition/removable-letter coverage is larger than today's first-volume-only model |
 
@@ -114,9 +114,9 @@ because Ghidra found a function.
 |---|---|---|
 | FAT12/FAT16 data I/O | Implemented for one selected volume, 512-byte sectors | Retain success/error, large-LBA, buffer/chunk and image-consistency tests |
 | WRITE WITH VERIFY | Combined command, with WRITE+VERIFY fallback | Memory tests check both chunks, no-data VERIFY and failures of WRITE/VERIFY; device qualification remains |
-| Parameters / Media-ID | Read-only 60h/66h with matching queries | Add 40h/46h and their error/media-change tests; no success-only shims |
-| Software access flag / logical mapping | Not implemented | Distinguish logical policy from hardware write protection and lock state |
-| Track read/write/verify/format | Not implemented | Exact packet/bounds behavior plus validated device-specific destructive paths |
+| Parameters / Media-ID | 40h/60h logical BPBs, 66h reads, verified 46h writes including FAT32 backup | Track-table modes and real device qualification remain open; see [parameter scope](block-parameters.md) |
+| Software access flag / logical mapping | Per-unit 47h/67h with normal block-I/O enforcement; 17h/18h report no alternate mapping | Resident tests for both variants and live DOS calls pass; see [access behavior](block-access.md). Hardware protection and Windows locks remain separate |
+| Track read/write/verify/format | 41h/61h/62h implemented with tested FreeDOS addressing and bounds | MS-DOS conventions, track tables and physical 42h profiles remain open; see [track behavior](block-track.md) |
 | FAT32/category 48h | Extended BPB, parameter/Media-ID reads, DOS filesystem read/write tested on FreeDOS 1.4 | Standard setting/track operations and MS-DOS 7.1/Windows 9x qualification remain open |
 | Multiple primary/extended partitions | First supported primary partition only | EBR traversal, overflow/loop guards, independent units and partition isolation |
 | Removable reserved letters / identity | Limited | Empty-media boot, replacement media with changed partitioning, stable letters and stale-cache rejection |
@@ -145,9 +145,10 @@ services must not make ASPIDSK claim those same targets.
 1. Hardware write-protection sensing (MODE SENSE) separately from DOS
    software access flags 47h/67h. The original ASPIDISK getter does not itself
    probe hardware write protection.
-2. Extend generic IOCTL beyond implemented 60h/66h: 40h, 46h, 67h/47h,
-   61h/41h, 62h; extend the matching query only as operations are implemented;
-   17h/18h. See [current block IOCTL behavior](block-ioctl.md).
+2. Extend generic IOCTL beyond logical 40h/60h, 46h/66h and 47h/67h:
+   qualify variable parameter track tables and remaining format/media operations.
+   Basic 61h/41h/62h and independent mapping requests 17h/18h are implemented.
+   See [current block IOCTL behavior](block-ioctl.md).
 3. ASPIFDD: 42h format with FORMAT UNIT, 68h media type, eject/lock, the
    LS-120 media types (sensed with READ FORMAT CAPACITIES).
 4. ASPIDSK: all partitions (extended partitions), remaining FAT32/category-48

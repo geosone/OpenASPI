@@ -1,3 +1,10 @@
+/* Raw-sector reader contract: read(ctx,lba,count,buffer) returns zero or an
+ * error; bad(ctx,lba,error) returns zero to accept a zero-filled sector. The
+ * DEVICE_READ tag carries qualified device faults alongside DOS error codes.
+ * Supply both callbacks and count*512 bytes of storage; rescue may proceed
+ * past read faults, but does not authorize ignoring media/transport changes.
+ */
+
 #ifndef OA_RESCUE_H
 #define OA_RESCUE_H
 #include "openaspi/types.h"

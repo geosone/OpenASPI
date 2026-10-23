@@ -21,7 +21,7 @@ The caller supplies a 32-byte packet at the standard generic-IOCTL pointer:
 | 1Ch | 4 | INFO/BEGIN: selected FAT volume length, zero if absent |
 
 On a submitted transport operation's error, byte 0Dh returns the original
-driver error; bytes 0Eh/0Fh return checked fixed-format sense key/ASC, or
+driver error; bytes 0Eh/0Fh return checked fixed/descriptor sense key/ASC, or
 zero when no valid sense reply exists. DOS AX alone is insufficient: the
 tested kernels map these errors differently. A caller must reset the count
 and clear its error fields before each new transfer, as the C wrapper does.

@@ -1,3 +1,8 @@
+; DOS companion to the Win16 probe. Multiplex environment checks classify the
+; hosting DOS session for package-defined installer decisions; no UI or driver
+; is loaded here. A matching environment is not proof of ASPI availability.
+; Keep selector exit codes stable: installer configuration consumes them.
+
 ; WINCHECK.COM - report the Windows environment hosting this DOS program.
 ;
 ; Exit status with /WIN, /3X, /9X or /DOS: 0 = requested environment,
@@ -33,6 +38,10 @@ start:
 
 ; INT 2Fh/AX=1600h identifies an active Windows enhanced-mode DOS box.
 ; The true DOS version separates Windows 9x (DOS 7/8) from Windows 3.x.
+; Two-stage classification: first require an active enhanced Windows session
+; from INT 2Fh/1600h, then use true DOS version to separate its 3.x/9x families.
+; DOS 7/8 outside an active Windows session remains DOS. This does not detect
+; installed Windows files, available ASPI runtime or a usable storage backend.
 detect_environment proc near
         mov     byte ptr [environment], ENV_DOS
         mov     ax, 1600h

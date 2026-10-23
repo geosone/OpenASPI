@@ -1,0 +1,385 @@
+{
+  "inspected": "2026-10-23",
+  "archives": [
+    {
+      "file": "4MMDRV.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/OTHER/4MMDRV.ZIP",
+      "bytes": 31409,
+      "sha256": "9356cdb2801eb2047144b03d63a20d7b7e605029c2ee10393a62569dfb9ee04a",
+      "documentation": [
+        "IBG_DATI.TXT",
+        "README.TXT",
+        "FILE_ID.DIZ"
+      ],
+      "group": "OTHER"
+    },
+    {
+      "file": "4MMS2.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/OTHER/4MMS2.ZIP",
+      "bytes": 28022,
+      "sha256": "3be6e4558010a3e5ff756fb7010312276467ff45586398684d169723c7aaa676",
+      "documentation": [
+        "LICENSE.TXT",
+        "OEMSETUP.INF",
+        "README.TXT",
+        "SCSI.TXT",
+        "FILE_ID.DIZ"
+      ],
+      "group": "OTHER",
+      "ghidra_analysis": {
+        "member": "4MMDDS2.SYS",
+        "bytes": 55808,
+        "sha256": "4b7c638087f6c8c953ab76951c55af31f50d05ea98c9cd3d587e4391b3702052",
+        "image_base": "00010000",
+        "functions": 83,
+        "report_name": "4mmdds2.txt"
+      }
+    },
+    {
+      "file": "ASPI505A.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/OTHER/ASPI505A.ZIP",
+      "bytes": 314169,
+      "sha256": "6b22754cf3c9d086afb3faa96d0a6e7c7bd3da7557acfab5ab192b6e33dcdfd5",
+      "documentation": [
+        "INFO_95.TXT",
+        "MAIN.HLP",
+        "README.NOW",
+        "STEST.HLP",
+        "VFBACK.HLP",
+        "VFREST.HLP",
+        "file_id.diz"
+      ],
+      "group": "OTHER"
+    },
+    {
+      "file": "ASPITAR.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/OTHER/ASPITAR.ZIP",
+      "bytes": 391086,
+      "sha256": "10d8c2f07311dd34282482c65691dc049001e148c9168115cc019ee055d116d5",
+      "documentation": [],
+      "group": "OTHER"
+    },
+    {
+      "file": "BETA905A.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/OTHER/BETA905A.ZIP",
+      "bytes": 279284,
+      "sha256": "ce6bbe94f1796a8cdc90d9e0f24f17b36bdeb2f34b3583d18a8830b2f8e82805",
+      "documentation": [
+        "PMAIN.HLP",
+        "PVFBACK.HLP",
+        "PVFREST.HLP",
+        "READTHIS.NEW",
+        "STEST.HLP",
+        "file_id.diz"
+      ],
+      "group": "OTHER"
+    },
+    {
+      "file": "CNR35FLC.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/OTHER/CNR35FLC.ZIP",
+      "bytes": 59368,
+      "sha256": "9455b337ec90e7f67ab44af9a43a09365871e4a0701e4a356d695bcacc0a0d03",
+      "documentation": [
+        "HOW2INST.TXT",
+        "I386/OEMSETUP.INF",
+        "MIPS/OEMSETUP.INF",
+        "ALPHA/OEMSETUP.INF",
+        "FILE_ID.DIZ"
+      ],
+      "group": "OTHER",
+      "ghidra_analysis": {
+        "member": "I386/CONRMQIC.SYS",
+        "bytes": 23296,
+        "sha256": "3eca6c45bd1a6ac2d3da06677483494193b71c18f6e27de3f20db2ed145f2c24",
+        "image_base": "00010000",
+        "functions": 43,
+        "report_name": "conrmqic.txt"
+      }
+    },
+    {
+      "file": "CONNER.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/OTHER/CONNER.ZIP",
+      "bytes": 114266,
+      "sha256": "f760d64fbe8576b76b89d4d8d3feaab91d10f5d617ce4a5f196b50d83fc7b5d7",
+      "documentation": [
+        "README.TXT",
+        "FILE_ID.DIZ"
+      ],
+      "group": "OTHER"
+    },
+    {
+      "file": "DLT.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/OTHER/DLT.ZIP",
+      "bytes": 7418,
+      "sha256": "bd68419de731b31181b69ac4e599d866aa98664f5cff5f2bb0ad3775ba9c517d",
+      "documentation": [
+        "DLT.FAQ",
+        "FILE_ID.DIZ"
+      ],
+      "group": "OTHER"
+    },
+    {
+      "file": "EX2501.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/OTHER/EX2501.ZIP",
+      "bytes": 24658,
+      "sha256": "af1561d9c6882a2621e3fe1f518721a19dd8f72776788ebbb04db0f2f3316df5",
+      "documentation": [
+        "LICENSE.TXT",
+        "OEMSETUP.INF",
+        "README.TXT",
+        "SCSI.TXT",
+        "FILE_ID.DIZ"
+      ],
+      "group": "OTHER",
+      "ghidra_analysis": {
+        "member": "MINIQIC.SYS",
+        "bytes": 46080,
+        "sha256": "aa8165e8801590c05b129d7de9f912d30c75d3f93367f3cbeed31c51f3ca08b6",
+        "image_base": "00010000",
+        "functions": 83,
+        "report_name": "miniqic.txt"
+      }
+    },
+    {
+      "file": "IBM4MM.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/OTHER/IBM4MM.ZIP",
+      "bytes": 56883,
+      "sha256": "d33d5afa094b768c5d68dee6c0dd9a40a9e91a7443017d60efa5198cda9a673e",
+      "documentation": [
+        "LICENSE.TXT",
+        "OEMSETUP.INF",
+        "README.TXT",
+        "SCSI.TXT",
+        "FILE_ID.DIZ"
+      ],
+      "group": "OTHER",
+      "ghidra_analysis": {
+        "member": "4MMIBM.SYS",
+        "bytes": 137728,
+        "sha256": "8e65c16cad4810316641156e23619af201941878d5f260d88f7fa253e63d97cc",
+        "image_base": "00010000",
+        "functions": 84,
+        "report_name": "4mmibm.txt"
+      }
+    },
+    {
+      "file": "IOMET250.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/OTHER/IOMET250.ZIP",
+      "bytes": 1715981,
+      "sha256": "d82a681d77d285abd2bfe768e442dcec250b6e6c8d3a10f8dce743ee21ac3268",
+      "documentation": [
+        "DISK1/SETUP.INF",
+        "DISK1/README.TXT"
+      ],
+      "group": "OTHER"
+    },
+    {
+      "file": "LITE31.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/OTHER/LITE31.ZIP",
+      "bytes": 478784,
+      "sha256": "68e130a11b69f9a645e1c6c6b664dee753b75426ea84a36cee961d5209c9aa0d",
+      "documentation": [
+        "diag.txt",
+        "LICENSE.TXT",
+        "readme.txt",
+        "31guide.doc",
+        "file_id.diz"
+      ],
+      "group": "OTHER"
+    },
+    {
+      "file": "LITE95.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/OTHER/LITE95.ZIP",
+      "bytes": 1326832,
+      "sha256": "bcc400f85380755cafdd06cb79816c659139a0ef8c118d010c884c49fb0af94f",
+      "documentation": [
+        "README95.TXT",
+        "95guide.doc",
+        "file_id.diz"
+      ],
+      "group": "OTHER"
+    },
+    {
+      "file": "QICTEST.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/OTHER/QICTEST.ZIP",
+      "bytes": 32851,
+      "sha256": "f356e321227b3df7d3397b42b1d221d2382df1aba51dadcdfd933e7604f17e53",
+      "documentation": [
+        "README.DOC",
+        "FILE_ID.DIZ"
+      ],
+      "group": "OTHER"
+    },
+    {
+      "file": "TD2040.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/OTHER/TD2040.ZIP",
+      "bytes": 228373,
+      "sha256": "61277a2176a32f58b2429fe19d0ca3c1d9c16ece2df70d67be52d7a9abfda14c",
+      "documentation": [
+        "file_id.diz"
+      ],
+      "group": "OTHER"
+    },
+    {
+      "file": "VER19P.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/OTHER/VER19P.ZIP",
+      "bytes": 182009,
+      "sha256": "02f0dbf3d5a0912973e6be6cf8393ae79374602c984024b7605836abcf77d178",
+      "documentation": [
+        "MAIN.HLP",
+        "STEST.HLP",
+        "VFBACK.HLP",
+        "VFREST.HLP",
+        "file_id.diz"
+      ],
+      "group": "OTHER"
+    },
+    {
+      "file": "VER35C.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/OTHER/VER35C.ZIP",
+      "bytes": 330776,
+      "sha256": "f901a6a336d1ed590db072c5a7f998f9af277f7b4f6bc6198bf9f665f4d022df",
+      "documentation": [
+        "INFO_95.TXT",
+        "MAIN.HLP",
+        "README.NOW",
+        "STEST.HLP",
+        "VFBACK.HLP",
+        "VFREST.HLP",
+        "file_id.diz"
+      ],
+      "group": "OTHER"
+    },
+    {
+      "group": "COLORADO",
+      "file": "JUMBO403.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/COLORADO/JUMBO403.ZIP",
+      "bytes": 313574,
+      "sha256": "e751a15fa72891f211359979d0044269a410840030cf7c9d9ea0037cb8268072",
+      "documentation": [
+        "RELEASE.NOT"
+      ]
+    },
+    {
+      "group": "COLORADO",
+      "file": "JUMBO405.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/COLORADO/JUMBO405.ZIP",
+      "bytes": 406818,
+      "sha256": "8dd957162c0196a4952d81412d11e788358eeddaae0f55b0238c3c218a7b4516",
+      "documentation": []
+    },
+    {
+      "group": "COLORADO",
+      "file": "JUMBOSYT.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/COLORADO/JUMBOSYT.ZIP",
+      "bytes": 108989,
+      "sha256": "1c3aaf662a35e1e89714d60c063c897dbb94912bc5258b89cbc9b7ee9d9e054f",
+      "documentation": [
+        "readme.txt",
+        "FILE_ID.DIZ",
+        "README.TXT"
+      ]
+    },
+    {
+      "group": "COLORADO",
+      "file": "POWER401.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/COLORADO/POWER401.ZIP",
+      "bytes": 384841,
+      "sha256": "7a02b97f20c012f840366246ec6da53305dcf5134bd6c833e8766d7c7727466f",
+      "documentation": [
+        "README.DOC"
+      ]
+    },
+    {
+      "group": "COLORADO",
+      "file": "QICBAT12.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/COLORADO/QICBAT12.ZIP",
+      "bytes": 258576,
+      "sha256": "eec7165c2b534ac97d0a67b20a46e9ddd55ee2eab457969f83688888a2506a59",
+      "documentation": [
+        "FILE_ID.DIZ",
+        "QICBAT.HLP",
+        "QICBAT.DOC",
+        "REGISTER.DOC",
+        "VENDOR.DOC",
+        "VENDINFO.DIZ"
+      ]
+    },
+    {
+      "group": "COLORADO",
+      "file": "TAPELIB3.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/COLORADO/TAPELIB3.ZIP",
+      "bytes": 218133,
+      "sha256": "9225fbd591e6aa925aa4658bf3e60bbc0d3415cb6c7d3e592bbdc64bf1eeb196",
+      "documentation": [
+        "INSTALL.DOC",
+        "FILE_ID.DIZ"
+      ]
+    },
+    {
+      "group": "COLORADO",
+      "file": "TRAVAN1K.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/COLORADO/TRAVAN1K.ZIP",
+      "bytes": 776377,
+      "sha256": "f0a773471deaa3b56e106da02de26a71697ab8c348600542806f897f081fb63a",
+      "documentation": [
+        "FILE_ID.DIZ"
+      ]
+    },
+    {
+      "group": "MOUNTAIN",
+      "file": "525TD.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/MOUNTAIN/525TD.ZIP",
+      "bytes": 432716,
+      "sha256": "e977f4254e5db7c30d7a243f17d180a0e34b8757436b9e42b9e8eb8751e76ed9",
+      "documentation": [
+        "README",
+        "ENGLISH.HLP",
+        "FILE_ID.DIZ"
+      ]
+    },
+    {
+      "group": "SANKYO",
+      "file": "SANKYO.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/SANKYO/SANKYO.ZIP",
+      "bytes": 21333,
+      "sha256": "bad2674086d013c24d8a31eace672a7aa228b7ae99d7cb475d42dff3507cc4c3",
+      "documentation": [
+        "LICENSE.TXT",
+        "OEMSETUP.INF",
+        "SCSI.TXT",
+        "FILE_ID.DIZ"
+      ],
+      "ghidra_analysis": {
+        "member": "SANKQIC.SYS",
+        "bytes": 37376,
+        "sha256": "af9381c9746f5f18f322c1abe89900187976f2059c2207085a6d9739ff6e4681",
+        "image_base": "00010000",
+        "functions": 78,
+        "report_name": "sankyo.txt"
+      }
+    },
+    {
+      "group": "SONY",
+      "file": "S4MM.ZIP",
+      "url": "https://ftp.zx.net.nz/pub/mirror/files.mpoli.fi/files/hardware/TAPE/SONY/S4MM.ZIP",
+      "bytes": 58573,
+      "sha256": "e04eed17b85342bc05e77ef479304bb3384710ad211ec2889926f9b5d1eaec9e",
+      "documentation": [
+        "LICENSE.TXT",
+        "OEMSETUP.INF",
+        "README.TXT",
+        "SCSI.TXT",
+        "FILE_ID.DIZ"
+      ],
+      "ghidra_analysis": {
+        "member": "4MMSONY.SYS",
+        "bytes": 141312,
+        "sha256": "39fc1be3c537b6e4206183b9b75a64f4d43fb45fb52dcfc2c45540afcbfa23da",
+        "image_base": "00010000",
+        "functions": 84,
+        "report_name": "sony.txt"
+      }
+    }
+  ]
+}

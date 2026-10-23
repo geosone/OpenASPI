@@ -561,6 +561,8 @@ fake_success:
 fake_error:
         mov byte ptr cs:[srb+SRB_Status], SS_ERR
         mov byte ptr cs:[srb+SRB_TargStat], 2
+        mov byte ptr cs:[srb+SRB_CDB+10],70h
+        mov byte ptr cs:[srb+SRB_CDB+10+7],6
         mov byte ptr cs:[srb+SRB_CDB+12], 5
         ret
 fake_aspi endp

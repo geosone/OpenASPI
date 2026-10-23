@@ -626,6 +626,9 @@ endif
         and ax, 0200h
         cmp ax, 0200h
         expect_equal
+ifdef NATIVE_QUERY_GUARD
+        call native_saved_error_check
+endif
         ret
 endif
 verify_write_error endp
@@ -785,6 +788,88 @@ old_int24 dd 0
 status db 18 dup (0)
 control dw 7
         dd 0
+ifdef NATIVE_QUERY_GUARD
+native_saved_error_check proc near
+        push cs
+        pop es
+        mov si,offset status_extended
+        mov di,offset native_old_status
+        mov cx,16
+        rep movsb
+        mov di,offset native_packet
+        mov cx,128
+        xor al,al
+        rep stosb
+        mov word ptr [native_packet],544Fh
+        mov word ptr [native_packet+2],5041h
+        mov word ptr [native_packet+4],128
+        mov word ptr [native_packet+6],0100h
+        mov bx,[handle]
+        mov cx,8000h
+        mov dx,offset native_packet
+        mov ax,440Ch
+        int 21h
+        expect_ok
+        cmp word ptr [native_packet+10],0
+        expect_equal
+        mov ax,word ptr [native_packet+76]
+        and ax,8
+        cmp ax,8
+        expect_equal
+        mov word ptr [native_packet+8],1
+        mov bx,[handle]
+        mov cx,8000h
+        mov dx,offset native_packet
+        mov ax,440Ch
+        int 21h
+        expect_ok
+        cmp word ptr [native_packet+10],2
+        expect_equal
+        cmp word ptr [native_packet+128],0A55Ah
+        expect_equal
+        ; A native record request must preserve this saved failure too.
+        push cs
+        pop es
+        mov di,offset native_packet
+        mov cx,64
+        xor al,al
+        rep stosb
+        mov word ptr [native_packet],544Fh
+        mov word ptr [native_packet+2],5041h
+        mov word ptr [native_packet+4],64
+        mov word ptr [native_packet+6],0100h
+        mov word ptr [native_packet+28],8
+        mov word ptr [native_packet+40],offset buffer
+        mov ax,ds
+        mov word ptr [native_packet+42],ax
+        mov word ptr [buffer],0A55Ah
+        mov bx,[handle]
+        mov cx,8002h
+        mov dx,offset native_packet
+        mov ax,440Ch
+        int 21h
+        expect_ok
+        cmp word ptr [native_packet+12],2
+        expect_equal
+        cmp word ptr [native_packet+26],0
+        expect_equal
+        cmp word ptr [buffer],0A55Ah
+        expect_equal
+        call get_status
+        expect_ok
+        push cs
+        pop es
+        mov si,offset native_old_status
+        mov di,offset status_extended
+        mov cx,16
+        repe cmpsb
+        expect_equal
+        ret
+native_saved_error_check endp
+native_packet db 128 dup (0)
+              dw 0A55Ah
+native_old_status db 16 dup (0)
+endif
 buffer db 2300 dup (0)
 success_message db 'OpenASPI buffered tape smoke test passed', 13, 10, '$'
 failure_message db 'OpenASPI buffered tape smoke test FAILED at stage $'

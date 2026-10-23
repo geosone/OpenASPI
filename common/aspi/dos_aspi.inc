@@ -1,3 +1,9 @@
+; Wire definitions, not one interchangeable SRB layout. Host inquiry, device
+; type and execute-SCSI commands share a header but have different payloads.
+; For execute-SCSI, autosense starts immediately after the ACTUAL CDB length,
+; not after a maximum-size CDB array. Negotiate residual-count support before
+; interpreting a returned buffer length as a transferred-byte count.
+
 ; ASPI for DOS SCSI Request Block offsets and constants.
 ; Keep these byte-for-byte in sync with include/openaspi/aspi.h.
 

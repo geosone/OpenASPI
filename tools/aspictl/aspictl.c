@@ -1,3 +1,10 @@
+/* Drive-letter front end: use MSCDEX/SHSUCDX requests for CDs and DOS generic
+ * block IOCTLs for removable disks. The driver owns SCSI transport and device
+ * policy. commands.def is the common command-name registry for both ASPICTL
+ * subcommands and renamed/copied executable aliases. /FORCE releases accepted
+ * locks before EJECT; every unlock/eject must still report DONE without ERROR.
+ */
+
 /* DOS drive-letter media controls. The same binary supports EJECT/CLOSE
  * aliases via argv[0]; no ASPI transport or device policy is duplicated.
  * GPL-3.0. */
@@ -16,6 +23,9 @@ static int known_command(const char *name)
     return 0;
 }
 
+/* Strip directory/drive and the extension, preserving DOS's 8-character
+ * basename. A registered basename is equivalent to an ASPICTL subcommand.
+ */
 static const char *invoked_name(char *out, const char *path)
 {
     const char *p, *base = path;
@@ -37,6 +47,10 @@ static int is_cd(unsigned drive)
     return r.x.bx == 0xADAD && r.x.ax != 0;
 }
 
+/* MSCDEX driver request packet: command 03h reads IOCTL state, 0Ch writes
+ * control. The far pointer targets a separate control block. Return the DOS
+ * driver status word; neither a clear ERROR bit nor DONE alone proves success.
+ */
 static unsigned cd_control(unsigned drive, const char *operation)
 {
     union REGS r;
@@ -61,6 +75,9 @@ static unsigned cd_control(unsigned drive, const char *operation)
     return *(unsigned *)(packet + 3);
 }
 
+/* DOS block IOCTL uses one-based drive numbers, unlike MSCDEX's zero-based
+ * CX. Normalize carry/AX to a DONE/ERROR status for the shared result path.
+ */
 static unsigned block_control(unsigned drive, const char *operation)
 {
     union REGS r;

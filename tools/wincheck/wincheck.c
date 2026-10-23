@@ -1,6 +1,14 @@
+/* Win16 installer environment helper; no MFC or storage-driver dependencies.
+ * GetVersion supplies the running Win16 environment's version. Classify 4.x or
+ * 3.90+ as the 9x/ME installation family and earlier versions as Windows 3.x.
+ * Selectors communicate by process exit code; quiet mode avoids dialogs for
+ * package-defined installer actions. This probe does not establish that an
+ * ASPI manager or a particular storage device is available.
+ */
+
 /* WINCHECK.EXE - Win16 companion environment probe for OpenASPI.
  * Returns zero when /3X or /9X matches. Without a selector it displays the
- * version, providing the first Win16 executable for the future Windows setup.
+ * version. Installer rules use its result for Windows-family selection.
  * GNU General Public License version 3. */
 
 #include <windows.h>

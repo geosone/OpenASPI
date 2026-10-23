@@ -1,0 +1,39 @@
+{
+  "repository": "https://github.com/torvalds/linux",
+  "commit": "7a78f7ba9f24962c8033e0152bf34a7903ff61ba",
+  "commit_date": "2026-10-23T19:51:16Z",
+  "review_date": "2026-10-23",
+  "purpose": "Pinned reference for later capability/emulation and qualified quirks work; no runtime quirks enabled",
+  "files": [
+    {
+      "path": "drivers/scsi/st.c",
+      "url": "https://github.com/torvalds/linux/blob/7a78f7ba9f24962c8033e0152bf34a7903ff61ba/drivers/scsi/st.c",
+      "sha256": "8d3b27691550aaf82fa94e3b3a11e7793a65c7d05f6aaf11dfd8f65a03740d45",
+      "bytes": 135682
+    },
+    {
+      "path": "drivers/scsi/st.h",
+      "url": "https://github.com/torvalds/linux/blob/7a78f7ba9f24962c8033e0152bf34a7903ff61ba/drivers/scsi/st.h",
+      "sha256": "4a9e79ba350b4a0cf59049fcf2f6153c0de5b6522a3e9de2e0f4595461e3ac01",
+      "bytes": 7555
+    },
+    {
+      "path": "drivers/scsi/scsi_devinfo.c",
+      "url": "https://github.com/torvalds/linux/blob/7a78f7ba9f24962c8033e0152bf34a7903ff61ba/drivers/scsi/scsi_devinfo.c",
+      "sha256": "d03fed1f71fe1cf1374ece536a87b943d62bec6abbaa4e93f6a954f83e777932",
+      "bytes": 28968
+    },
+    {
+      "path": "include/scsi/scsi_devinfo.h",
+      "url": "https://github.com/torvalds/linux/blob/7a78f7ba9f24962c8033e0152bf34a7903ff61ba/include/scsi/scsi_devinfo.h",
+      "sha256": "086e7f44fa0e890b5554ae7c912d1264042c23375af3cbaccc8f2a50d285e56b",
+      "bytes": 3994
+    },
+    {
+      "path": "Documentation/scsi/st.rst",
+      "url": "https://github.com/torvalds/linux/blob/7a78f7ba9f24962c8033e0152bf34a7903ff61ba/Documentation/scsi/st.rst",
+      "sha256": "b67a20ff36c9f4a6ea4392fbdbe880e41f6756c03121c53c7cb34712619f276b",
+      "bytes": 29730
+    }
+  ]
+}

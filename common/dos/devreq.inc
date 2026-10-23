@@ -1,3 +1,8 @@
+; Offsets are command-specific overlays of the DOS request buffer. Check the
+; request command and required length before accessing its extension fields;
+; a field valid for INIT, block I/O or generic IOCTL is not valid for every
+; request. Handlers return DONE plus ERROR/error-code through RH_STATUS.
+
 ; DOS device driver request header: offsets, commands and status words
 ; shared by the OpenASPI drivers.  Block, character and CD-ROM drivers use
 ; different subsets; see docs/driver-suite.md.

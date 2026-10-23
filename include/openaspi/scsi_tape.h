@@ -1,3 +1,10 @@
+/* Transport-independent tape CDB construction and sense decoding.
+ * CDB fields are big-endian wire bytes; oa_tape_sense is a decoded host-side
+ * result with separate information validity. Builders neither submit nor retry.
+ * Sense decoding does not qualify ASPI completion or distinguish a safe retry;
+ * those decisions belong to the transport/session layer. See common/scsi/.
+ */
+
 #ifndef OPENASPI_SCSI_TAPE_H
 #define OPENASPI_SCSI_TAPE_H
 
@@ -33,6 +40,13 @@
 #define OA_SENSE_ABORTED_COMMAND  0x0Bu
 #define OA_SENSE_VOLUME_OVERFLOW  0x0Du
 
+/* Decoded host-side state, not a packed copy of sense bytes. Zero optional
+ * fields can mean absent: information needs information_valid, and callers use
+ * response_code to distinguish current 70h/72h from deferred 71h/73h sense.
+ * information retains the raw 32-bit value, not a sign-extended byte count.
+ * This structure has no separate ASC-presence flag; zero ASC alone cannot prove
+ * that a partial reply actually supplied ASC/ASCQ.
+ */
 struct oa_tape_sense {
     oa_u8 response_code;
     oa_u8 sense_key;
@@ -45,12 +59,26 @@ struct oa_tape_sense {
     oa_u32 information;
 };
 
+/* All builders require a writable six-byte array. Void builders always fill
+ * it; checked int builders return 0 on encoding success, -1 without mutation
+ * when a range is unencodable. They do not check buffer pointers or drive support.
+ */
 void oa_scsi_cdb_test_unit_ready(oa_u8 cdb[OA_SCSI_CDB6_SIZE]);
 void oa_scsi_cdb_rewind(oa_u8 cdb[OA_SCSI_CDB6_SIZE], int immediate);
+/* transfer_length is unsigned 24-bit: bytes for variable records, whole
+ * blocks for FIXED. The builder does not derive the count from a buffer size.
+ */
 int oa_scsi_cdb_read_write(oa_u8 cdb[OA_SCSI_CDB6_SIZE], int write,
                            int fixed_blocks, oa_u32 transfer_length);
+/* count is unsigned 24-bit marks. immediate controls the CDB's IMMED bit;
+ * encoding IMMED does not implement completion polling or prove media is ready.
+ */
 int oa_scsi_cdb_write_filemarks(oa_u8 cdb[OA_SCSI_CDB6_SIZE],
                                 oa_u32 count, int immediate);
+/* code selects a SPACE operation; count is signed 24-bit, with negative
+ * counts encoding backward movement. Encoding does not validate whether a drive
+ * can perform that movement or emulate an unsupported operation.
+ */
 int oa_scsi_cdb_space(oa_u8 cdb[OA_SCSI_CDB6_SIZE], oa_u8 code,
                       oa_s32 count);
 void oa_scsi_cdb_load_unload(oa_u8 cdb[OA_SCSI_CDB6_SIZE], int load,

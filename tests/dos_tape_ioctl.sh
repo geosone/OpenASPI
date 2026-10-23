@@ -12,9 +12,11 @@ QEMU_BIN=${QEMU_BIN:-qemu-system-i386}
 make -C "$ROOT" all >/dev/null
 rm -rf -- "$OUT"
 mkdir -p "$OUT"
+"$JWASM" -q -bin -0 -W4 -WX -Fo="$OUT/TAPSENSE.COM" "$ROOT/tests/tape_sense.asm"
 
 run_fixture() {
     local variant=$1 run_dir="$OUT/$1" defines=()
+    printf 'Tape fixture: %s\n' "$variant"
     local test_source="$ROOT/tests/tape_ioctl.asm"
     local success_text='OpenASPI tape IOCTL smoke test passed'
     local driver_line='DEVICE=ASPITAP.SYS -w'
@@ -25,6 +27,94 @@ run_fixture() {
     local test_arguments=''
 
     case "$variant" in
+        native-*)
+            defines=(-DNATIVE_PROBE_TEST)
+            test_source="$ROOT/tests/tape_native_api.asm"
+            success_text='Native tape API negotiation/probe/guard tests passed'
+            case "$variant" in
+                native-fixed-*)
+                    defines+=(-DNATIVE_FIXED_IO_TEST -DNATIVE_FIXED_LIMITS)
+                    case "$variant" in
+                        native-fixed-normal) ;;
+                        native-fixed-legacy) defines+=(-DNO_RESIDUAL) ;;
+                        native-fixed-read-mark) defines+=(-DNATIVE_FIXED_READ_CASE=1) ;;
+                        native-fixed-read-data-mark) defines+=(-DNATIVE_FIXED_READ_CASE=2) ;;
+                        native-fixed-read-eom) defines+=(-DNATIVE_FIXED_READ_CASE=3) ;;
+                        native-fixed-read-unaligned) defines+=(-DNATIVE_FIXED_READ_CASE=4) ;;
+                        native-fixed-read-conflict) defines+=(-DNATIVE_FIXED_READ_CASE=5) ;;
+                        native-fixed-read-overflow) defines+=(-DNATIVE_FIXED_READ_CASE=6) ;;
+                        native-fixed-read-ili) defines+=(-DNATIVE_FIXED_READ_CASE=7) ;;
+                        native-fixed-read-medium) defines+=(-DNATIVE_FIXED_READ_CASE=8) ;;
+                        native-fixed-read-host) defines+=(-DNATIVE_FIXED_READ_CASE=9) ;;
+                        native-fixed-read-deferred) defines+=(-DNATIVE_FIXED_READ_CASE=10) ;;
+                        native-fixed-read-large) defines+=(-DNATIVE_FIXED_READ_CASE=11) ;;
+                        native-fixed-mark-legacy) defines+=(-DNATIVE_FIXED_READ_CASE=2 -DNO_RESIDUAL) ;;
+                        native-fixed-noinfo-legacy) defines+=(-DNATIVE_FIXED_READ_CASE=12 -DNO_RESIDUAL) ;;
+                        native-fixed-overflow-legacy) defines+=(-DNATIVE_FIXED_READ_CASE=6 -DNO_RESIDUAL) ;;
+                        native-fixed-write-short) defines+=(-DNATIVE_FIXED_WRITE_CASE=1) ;;
+                        native-fixed-write-protect) defines+=(-DNATIVE_FIXED_WRITE_CASE=2) ;;
+                        native-fixed-write-unaligned) defines+=(-DNATIVE_FIXED_WRITE_CASE=3) ;;
+                        native-fixed-write-host) defines+=(-DNATIVE_FIXED_WRITE_CASE=4) ;;
+                        native-fixed-write-deferred) defines+=(-DNATIVE_FIXED_WRITE_CASE=5) ;;
+                        native-fixed-write-eom-full) defines+=(-DNATIVE_FIXED_WRITE_CASE=6) ;;
+                        native-fixed-write-eom-partial) defines+=(-DNATIVE_FIXED_WRITE_CASE=7) ;;
+                        native-fixed-write-medium) defines+=(-DNATIVE_FIXED_WRITE_CASE=8) ;;
+                        native-fixed-protect-legacy) defines+=(-DNATIVE_FIXED_WRITE_CASE=2 -DNO_RESIDUAL) ;;
+                        *) echo "Unknown fixed fixture: $variant" >&2; exit 1 ;;
+                    esac ;;
+                native-write-normal) defines+=(-DNATIVE_WRITE_TEST) ;;
+                native-write-legacy) defines+=(-DNATIVE_WRITE_TEST -DNO_RESIDUAL) ;;
+                native-write-fixed) defines+=(-DNATIVE_WRITE_TEST -DNATIVE_FIXED_LIMITS) ;;
+                native-write-short) defines+=(-DNATIVE_WRITE_TEST -DNATIVE_WRITE_CASE=1) ;;
+                native-write-host) defines+=(-DNATIVE_WRITE_TEST -DNATIVE_WRITE_CASE=2) ;;
+                native-write-protect) defines+=(-DNATIVE_WRITE_TEST -DNATIVE_WRITE_CASE=3) ;;
+                native-write-eom) defines+=(-DNATIVE_WRITE_TEST -DNATIVE_WRITE_CASE=4) ;;
+                native-write-residual) defines+=(-DNATIVE_WRITE_TEST -DNATIVE_WRITE_CASE=5) ;;
+                native-write-deferred) defines+=(-DNATIVE_WRITE_TEST -DNATIVE_WRITE_CASE=6) ;;
+                native-write-contradict) defines+=(-DNATIVE_WRITE_TEST -DNATIVE_WRITE_CASE=7) ;;
+                native-write-partial) defines+=(-DNATIVE_WRITE_TEST -DNATIVE_WRITE_CASE=8) ;;
+                native-write-eom-full) defines+=(-DNATIVE_WRITE_TEST -DNATIVE_WRITE_CASE=9) ;;
+                native-write-protect-legacy) defines+=(-DNATIVE_WRITE_TEST -DNATIVE_WRITE_CASE=3 -DNO_RESIDUAL) ;;
+                native-write-flush) defines+=(-DNATIVE_WRITE_TEST -DNATIVE_FINISH_FAULT=1) ;;
+                native-write-mark) defines+=(-DNATIVE_WRITE_TEST -DNATIVE_FINISH_FAULT=2) ;;
+                native-write-end) defines+=(-DNATIVE_WRITE_TEST -DNATIVE_FINISH_FAULT=3) ;;
+                native-read-fixed) defines+=(-DNATIVE_FIXED_LIMITS) ;;
+                native-read-legacy) defines+=(-DNO_RESIDUAL) ;;
+                native-read-short-legacy) defines+=(-DNO_RESIDUAL -DNATIVE_READ_CASE=1) ;;
+                native-read-filemark-legacy) defines+=(-DNO_RESIDUAL -DNATIVE_READ_CASE=3) ;;
+                native-read-short) defines+=(-DNATIVE_READ_CASE=1) ;;
+                native-read-filemark) defines+=(-DNATIVE_READ_CASE=2) ;;
+                native-read-data-filemark) defines+=(-DNATIVE_READ_CASE=3) ;;
+                native-read-eom) defines+=(-DNATIVE_READ_CASE=4) ;;
+                native-read-host) defines+=(-DNATIVE_READ_CASE=5) ;;
+                native-read-residual) defines+=(-DNATIVE_READ_CASE=6) ;;
+                native-read-deferred) defines+=(-DNATIVE_READ_CASE=7) ;;
+                native-read-conflict) defines+=(-DNATIVE_READ_CASE=8) ;;
+                native-read-truncated) defines+=(-DNATIVE_READ_CASE=9) ;;
+                native-read-partial-error) defines+=(-DNATIVE_READ_CASE=10) ;;
+                native-read-eod) defines+=(-DNATIVE_READ_CASE=11) ;;
+                native-read-empty) defines+=(-DNATIVE_READ_CASE=12) ;;
+                native-legacy) defines+=(-DNO_RESIDUAL) ;;
+                native-short) defines+=(-DNATIVE_SHORT) ;;
+                native-short-legacy) defines+=(-DNATIVE_SHORT -DNO_RESIDUAL) ;;
+                native-granularity) defines+=(-DNATIVE_GRANULARITY) ;;
+                native-unlimited) defines+=(-DNATIVE_UNLIMITED) ;;
+                native-host) defines+=(-DNATIVE_HOST) ;;
+                native-residual-bad) defines+=(-DNATIVE_RESIDUAL_BAD) ;;
+                native-residual-high) defines+=(-DNATIVE_RESIDUAL_BAD -DNATIVE_RESIDUAL_HIGH) ;;
+                native-no-compression) defines+=(-DNATIVE_NO_COMP) ;;
+                native-no-dcc) defines+=(-DNATIVE_NO_DCC) ;;
+                native-no-descriptor) defines+=(-DNATIVE_NO_DESCRIPTOR) ;;
+                native-extra-page) defines+=(-DNATIVE_EXTRA_PAGE) ;;
+                native-bad-page) defines+=(-DNATIVE_BAD_PAGE) ;;
+                native-bad-descriptor) defines+=(-DNATIVE_BAD_DESCRIPTOR) ;;
+                native-control-host) defines+=(-DNATIVE_CONTROL_FAULT=1) ;;
+                native-control-target) defines+=(-DNATIVE_CONTROL_FAULT=2) ;;
+                native-control-deferred) defines+=(-DNATIVE_CONTROL_FAULT=3) ;;
+                native-control-unsupported) defines+=(-DNATIVE_CONTROL_FAULT=4) ;;
+                native-control-contradict) defines+=(-DNATIVE_CONTROL_FAULT=5) ;;
+            esac
+            ;;
         write-protect-acceptance)
             defines=(-DWRITE_PROTECT_TEST -DWRITE_PROTECT_ACCEPTANCE -DNO_RESIDUAL)
             test_source="$ROOT/tests/tape_roundtrip.asm"
@@ -127,6 +217,8 @@ run_fixture() {
                     defines+=(-DRAW_EOT_IGNORE -DRAW_EOT_COMPLETION=5) ;;
                 raw-eot-deferred-descriptor-ignored)
                     defines+=(-DRAW_EOT_IGNORE -DRAW_EOT_COMPLETION=6) ;;
+                raw-eot-short-ignored)
+                    defines+=(-DRAW_EOT_IGNORE -DRAW_EOT_COMPLETION=7) ;;
                 raw-write-bad-residual) defines+=(-DRAW_BAD_RESIDUAL) ;;
                 *-recovery) defines+=(-DBUFFER_RECOVERY -DBUFFER_RAW_RECOVERY) ;;
                 *-retry) defines+=(-DBUFFER_RECOVERY -DBUFFER_RAW_RECOVERY -DRAW_RETRY) ;;
@@ -198,7 +290,7 @@ run_fixture() {
                 *-status16) defines+=(-DSTATUS16); driver_line='DEVICE=ASPITAP.SYS -2w' ;;
             esac
             ;;
-        read-stream-deferred*|read-stream-transport*|read-stream-aborted*|read-stream-target|read-stream-busy)
+        read-stream-deferred*|read-stream-transport*|read-stream-aborted*|read-stream-target|read-stream-busy|read-stream-short|read-stream-invalid-type|read-stream-success-host|read-stream-success-check|read-stream-overlength)
             defines=(-DREAD_STREAM_KEY=0 -DREAD_STREAM_REJECT -DREAD_STREAM_ERROR=31)
             case "$variant" in
                 read-stream-deferred*) defines+=(-DREAD_STREAM_DEFERRED) ;;
@@ -206,6 +298,11 @@ run_fixture() {
                 read-stream-aborted*) defines+=(-DREAD_STREAM_TRANSPORT=2) ;;
                 read-stream-target) defines+=(-DREAD_STREAM_TRANSPORT=3) ;;
                 read-stream-busy) defines=(-DREAD_STREAM_KEY=0 -DREAD_STREAM_REJECT -DREAD_STREAM_ERROR=22 -DREAD_STREAM_TRANSPORT=4) ;;
+                read-stream-short) defines+=(-DREAD_STREAM_TRANSPORT=5) ;;
+                read-stream-invalid-type) defines+=(-DREAD_STREAM_TRANSPORT=6) ;;
+                read-stream-success-host) defines+=(-DREAD_STREAM_TRANSPORT=7) ;;
+                read-stream-success-check) defines+=(-DREAD_STREAM_TRANSPORT=8) ;;
+                read-stream-overlength) defines+=(-DREAD_STREAM_TRANSPORT=9) ;;
             esac
             case "$variant" in
                 *-legacy) defines+=(-DNO_RESIDUAL) ;;
@@ -314,6 +411,7 @@ run_fixture() {
                 rewind-error) defines+=(-DREWIND_ERROR) ;;
                 rewind-deferred) defines+=(-DREWIND_ERROR -DREWIND_DEFERRED=1) ;;
                 rewind-deferred-descriptor) defines+=(-DREWIND_ERROR -DREWIND_DEFERRED=2) ;;
+                rewind-undeclared-asc) defines+=(-DREWIND_ERROR -DREWIND_DEFERRED=3) ;;
                 rewind-timeout) defines+=(-DREWIND_ERROR -DREWIND_TIMEOUT) ;;
                 rewind-midnight) defines+=(-DREWIND_MIDNIGHT) ;;
                 rewind-break) defines+=(-DREWIND_BREAK -DREWIND_ERROR); driver_line='DEVICE=ASPITAP.SYS /I' ;;
@@ -333,6 +431,11 @@ run_fixture() {
                 buffered-fixed) defines+=(-DFIXED_BLOCK) ;;
                 buffered-fixed-legacy) defines+=(-DFIXED_BLOCK -DNO_RESIDUAL) ;;
                 buffered-write-error) defines+=(-DBUFFER_ERROR -DBUFFER_WRITE_ERROR) ;;
+                buffered-native-query)
+                    defines+=(-DBUFFER_ERROR -DBUFFER_WRITE_ERROR -DNATIVE_QUERY_GUARD) ;;
+                buffered-native-query-status16)
+                    defines+=(-DBUFFER_ERROR -DBUFFER_WRITE_ERROR -DNATIVE_QUERY_GUARD -DSTATUS16)
+                    driver_line='DEVICE=ASPITAP.SYS -2bwm' ;;
                 buffered-close-error) defines+=(-DBUFFER_ERROR -DBUFFER_CLOSE_ERROR) ;;
                 buffered-write-error-fixed) defines+=(-DBUFFER_ERROR -DBUFFER_WRITE_ERROR -DFIXED_BLOCK) ;;
                 buffered-write-error-legacy) defines+=(-DBUFFER_ERROR -DBUFFER_WRITE_ERROR -DNO_RESIDUAL) ;;
@@ -430,6 +533,7 @@ run_fixture() {
     autoexec_lines=(
         '@ECHO OFF'
         'BOOTLOG > AUX'
+        'TAPSENSE > AUX'
         'ASPISCAN > AUX'
         "$initial_tapectl > AUX"
         "TAPETEST$test_arguments > AUX"
@@ -448,6 +552,33 @@ run_fixture() {
             ':TOOLDONE'
         )
     fi
+    if [[ "$variant" = native-* ]]; then
+        local native_exit=0
+        case "$variant" in
+            native-short|native-short-legacy|native-host|native-residual-bad|native-residual-high|native-no-compression|native-bad-page|native-bad-descriptor)
+                native_exit=2 ;;
+        esac
+        autoexec_lines+=(
+            'OTAPINFO NRMT0 > AUX'
+            'IF ERRORLEVEL 1 GOTO NATIVEFAIL'
+            'OTAPINFO NRMT0 /refresh > AUX'
+            "IF ERRORLEVEL $((native_exit + 1)) GOTO NATIVEFAIL"
+            "IF ERRORLEVEL $native_exit GOTO NATIVEPASS"
+            'GOTO NATIVEFAIL'
+            ':NATIVEPASS'
+            'OTAPINFO RMT0 > AUX'
+            'IF ERRORLEVEL 2 GOTO NATIVEFAIL'
+            'IF NOT ERRORLEVEL 1 GOTO NATIVEFAIL'
+            'OTAPINFO NRMT3 > AUX'
+            'IF ERRORLEVEL 2 GOTO NATIVEFAIL'
+            'IF NOT ERRORLEVEL 1 GOTO NATIVEFAIL'
+            'ECHO Native client exit checks passed > AUX'
+            'GOTO NATIVEDONE'
+            ':NATIVEFAIL'
+            'ECHO Native client FAILED > AUX'
+            ':NATIVEDONE'
+        )
+    fi
     autoexec_lines+=('QEXIT')
     printf '%s\r\n' "${autoexec_lines[@]}" > "$run_dir/AUTOEXEC.BAT"
 
@@ -457,6 +588,11 @@ run_fixture() {
         "$ROOT/build/dos/ASPISCAN.COM" "$ROOT/build/dos/TAPECTL.COM" \
         "$run_dir/TAPETEST.COM" "$run_dir/QEXIT.COM" \
         "$run_dir/BOOTLOG.COM" ::/
+    mcopy -o -i "$run_dir/boot.img" "$OUT/TAPSENSE.COM" ::/
+    if [[ "$variant" = native-* ]]; then
+        mcopy -o -i "$run_dir/boot.img" "$ROOT/build/dos/OTAPINFO.EXE" ::/
+        mcopy -i "$run_dir/boot.img" "$ROOT/LICENSE" ::/NRMT3
+    fi
 
     if test "$variant" = tapectl-device-file; then
         mcopy -i "$run_dir/boot.img" "$ROOT/LICENSE" ::/NRAT0
@@ -482,6 +618,8 @@ run_fixture() {
     fi
 
     tr -d '\r' < "$run_dir/serial.log" | sed '/^[[:space:]]*$/d'
+    grep -Fq 'Resident tape sense validation passed' "$run_dir/serial.log"
+    ! grep -Fq 'Resident tape sense validation FAILED' "$run_dir/serial.log"
     if [[ "$variant" = no-* || "$variant" = bad-inquiry ]]; then
         grep -q 'Cannot open NRMT0' "$run_dir/serial.log"
     elif [[ "$variant" = options* || "$variant" = invalid-* || "$variant" = buffered-renamed ]]; then
@@ -492,6 +630,10 @@ run_fixture() {
     fi
     grep -q "$success_text" "$run_dir/serial.log"
     ! grep -q 'FAILED' "$run_dir/serial.log"
+    if [[ "$variant" = native-* ]]; then
+        grep -Fq 'Native client exit checks passed' "$run_dir/serial.log"
+        mtype -i "$run_dir/boot.img" ::/NRMT3 | cmp - "$ROOT/LICENSE"
+    fi
     if test -n "$post_tapectl"; then
         grep -q 'TAPECTL EXIT CHECK PASSED' "$run_dir/serial.log"
         if test "$post_result" = usage; then
@@ -528,7 +670,7 @@ run_fixture() {
         esac
     fi
     case "$variant" in
-      write-protect-acceptance|legacy|fixed-legacy|fixed-multiblock*-legacy|fixed-residual-*-legacy|buffered-legacy|buffered-fixed-legacy|buffered-boundary*-legacy|buffered-refill-*-legacy|buffered-write-error-legacy|buffered-close-error-legacy|final-*-legacy|raw-write-error-legacy|read-stream-*-legacy|read-combined-*-legacy)
+      native-fixed-legacy|native-fixed-*-legacy|native-write-legacy|native-write-*-legacy|native-read-legacy|native-read-*-legacy|native-legacy|native-short-legacy|write-protect-acceptance|legacy|fixed-legacy|fixed-multiblock*-legacy|fixed-residual-*-legacy|buffered-legacy|buffered-fixed-legacy|buffered-boundary*-legacy|buffered-refill-*-legacy|buffered-write-error-legacy|buffered-close-error-legacy|final-*-legacy|raw-write-error-legacy|read-stream-*-legacy|read-combined-*-legacy)
         grep -q 'extensions=0000' "$run_dir/serial.log"
         ;;
       no-manager|no-adapters|bad-inquiry) ;;
@@ -574,6 +716,83 @@ run_fixture() {
 if test "$#" -gt 0; then
     for variant in "$@"; do run_fixture "$variant"; done
 else
+run_fixture native-normal
+run_fixture native-fixed-normal
+run_fixture native-fixed-legacy
+run_fixture native-fixed-read-mark
+run_fixture native-fixed-read-data-mark
+run_fixture native-fixed-read-eom
+run_fixture native-fixed-read-unaligned
+run_fixture native-fixed-read-conflict
+run_fixture native-fixed-read-overflow
+run_fixture native-fixed-read-ili
+run_fixture native-fixed-read-medium
+run_fixture native-fixed-read-host
+run_fixture native-fixed-read-deferred
+run_fixture native-fixed-read-large
+run_fixture native-fixed-mark-legacy
+run_fixture native-fixed-noinfo-legacy
+run_fixture native-fixed-overflow-legacy
+run_fixture native-fixed-write-short
+run_fixture native-fixed-write-protect
+run_fixture native-fixed-write-unaligned
+run_fixture native-fixed-write-host
+run_fixture native-fixed-write-deferred
+run_fixture native-fixed-write-eom-full
+run_fixture native-fixed-write-eom-partial
+run_fixture native-fixed-write-medium
+run_fixture native-fixed-protect-legacy
+run_fixture native-write-normal
+run_fixture native-write-legacy
+run_fixture native-write-fixed
+run_fixture native-write-short
+run_fixture native-write-host
+run_fixture native-write-protect
+run_fixture native-write-eom
+run_fixture native-write-residual
+run_fixture native-write-deferred
+run_fixture native-write-contradict
+run_fixture native-write-partial
+run_fixture native-write-eom-full
+run_fixture native-write-protect-legacy
+run_fixture native-write-flush
+run_fixture native-write-mark
+run_fixture native-write-end
+run_fixture native-read-fixed
+run_fixture native-read-short
+run_fixture native-read-filemark
+run_fixture native-read-data-filemark
+run_fixture native-read-eom
+run_fixture native-read-host
+run_fixture native-read-residual
+run_fixture native-read-deferred
+run_fixture native-read-conflict
+run_fixture native-read-truncated
+run_fixture native-read-partial-error
+run_fixture native-read-eod
+run_fixture native-read-empty
+run_fixture native-read-legacy
+run_fixture native-read-short-legacy
+run_fixture native-read-filemark-legacy
+run_fixture native-control-host
+run_fixture native-control-target
+run_fixture native-control-deferred
+run_fixture native-control-unsupported
+run_fixture native-control-contradict
+run_fixture native-legacy
+run_fixture native-short
+run_fixture native-short-legacy
+run_fixture native-granularity
+run_fixture native-unlimited
+run_fixture native-host
+run_fixture native-residual-bad
+run_fixture native-residual-high
+run_fixture native-no-compression
+run_fixture native-no-dcc
+run_fixture native-no-descriptor
+run_fixture native-extra-page
+run_fixture native-bad-page
+run_fixture native-bad-descriptor
 run_fixture residual
 run_fixture async
 run_fixture legacy
@@ -590,6 +809,11 @@ run_fixture read-stream-transport
 run_fixture read-stream-aborted
 run_fixture read-stream-target
 run_fixture read-stream-busy
+run_fixture read-stream-short
+run_fixture read-stream-invalid-type
+run_fixture read-stream-success-host
+run_fixture read-stream-success-check
+run_fixture read-stream-overlength
 run_fixture read-stream-transport-legacy
 run_fixture read-stream-aborted-status16
 run_fixture read-stream-deferred
@@ -653,6 +877,7 @@ run_fixture rewind-write-single-allowed
 run_fixture rewind-error
 run_fixture rewind-deferred
 run_fixture rewind-deferred-descriptor
+run_fixture rewind-undeclared-asc
 run_fixture rewind-timeout
 run_fixture rewind-midnight
 run_fixture rewind-break
@@ -665,6 +890,8 @@ run_fixture buffered-legacy
 run_fixture buffered-fixed
 run_fixture buffered-fixed-legacy
 run_fixture buffered-write-error
+run_fixture buffered-native-query
+run_fixture buffered-native-query-status16
 run_fixture buffered-close-error
 run_fixture buffered-write-error-fixed
 run_fixture buffered-write-error-legacy
@@ -737,6 +964,7 @@ run_fixture raw-eot-transport-ignored-status16
 run_fixture raw-eot-deferred-ignored
 run_fixture raw-eot-deferred-ignored-status16
 run_fixture raw-eot-deferred-descriptor-ignored
+run_fixture raw-eot-short-ignored
 run_fixture raw-write-bad-residual
 run_fixture tapectl-write-error
 run_fixture tapectl-ready-error

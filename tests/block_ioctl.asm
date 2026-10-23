@@ -60,7 +60,7 @@ filesystem db 'FAT12   '
      dw 0AA55h
 mbr db 446 dup (0)
      db 0, 0, 0, 0, 6, 0, 0, 0
-     dd 32, 1440
+     dd 32, 2880
      db 48 dup (0)
      dw 0AA55h
 message_ok db 'Block IOCTL parameters/query tests passed',13,10,'$'
@@ -217,6 +217,20 @@ test_start:
         mov cx, 256
 query_every_minor:
         call submit
+        cmp byte ptr [packet+RH_IOCTL_MINOR], 41h
+        je query_supported
+        cmp byte ptr [packet+RH_IOCTL_MINOR], 61h
+        je query_supported
+        cmp byte ptr [packet+RH_IOCTL_MINOR], 62h
+        je query_supported
+        cmp byte ptr [packet+RH_IOCTL_MINOR], 40h
+        je query_supported
+        cmp byte ptr [packet+RH_IOCTL_MINOR], 46h
+        je query_supported
+        cmp byte ptr [packet+RH_IOCTL_MINOR], 47h
+        je query_supported
+        cmp byte ptr [packet+RH_IOCTL_MINOR], 67h
+        je query_supported
         cmp byte ptr [packet+RH_IOCTL_MINOR], 60h
         je query_supported
         cmp byte ptr [packet+RH_IOCTL_MINOR], 66h
@@ -300,7 +314,19 @@ query_checked:
         inc ax
         mov word ptr [packet+RH_IOCTL_PARAM+2], ax
         mov byte ptr [packet+RH_IOCTL_MINOR], 46h
+        mov word ptr [output], 0100h             ; SET also validates info level
         EXPECT_STATUS ST_DONE or ST_ERROR or ERR_UNKNOWN_CMD
+        EXPECT_WORD calls, 0
+        mov word ptr [output], 0
+        mov word ptr [packet+RH_IOCTL_PARAM], 0
+        mov word ptr [packet+RH_IOCTL_PARAM+2], 0
+        EXPECT_STATUS ST_DONE or ST_ERROR or ERR_UNKNOWN_CMD
+        mov word ptr [packet+RH_IOCTL_PARAM], 0FFE8h
+        mov ax, cs
+        inc ax
+        mov word ptr [packet+RH_IOCTL_PARAM+2], ax
+        EXPECT_STATUS ST_DONE or ST_ERROR or ERR_UNKNOWN_CMD
+        mov word ptr [packet+RH_IOCTL_PARAM], offset output-16
         EXPECT_WORD calls, 0
         call unchanged_id
         cmp byte ptr [output_guard], 0A5h
@@ -417,6 +443,8 @@ fake_bad:
 fake_absent:
         mov byte ptr [srb+SRB_Status], SS_ERR
         mov byte ptr [srb+SRB_TargStat], 2
+        mov byte ptr [srb+SRB_CDB+10],70h
+        mov byte ptr [srb+SRB_CDB+10+7],6
         mov byte ptr [srb+SRB_CDB+10+2], 2
         pop ds
         ret

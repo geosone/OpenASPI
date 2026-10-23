@@ -1,3 +1,9 @@
+; Installer-facing inventory, not a resident driver or automatic device claim.
+; Filters reuse the block/FDD ownership classification so detection agrees with
+; installation. Exit status is the package-level protocol; human-readable text
+; is optional and must not be parsed as a hardware API. Keep all submissions
+; read-only and retain the SRB/buffer until manager completion.
+
 ; ASPISCAN.COM - read-only ASPI for DOS adapter and device inventory.
 ;
 ; Opens SCSIMGR$, obtains the ASPI entry point, enumerates host/target/LUN
@@ -248,6 +254,10 @@ probe_device endp
 ; Count a device selected by the command-line filter.  DISK and FDD are both
 ; direct-access devices (type 00). Use exactly the drivers' shared removable
 ; model policy: ordinary removable sticks/readers belong to DISK, not FDD.
+; Presence counters and installation-class matching are different. TAPE/CDA
+; use the reported peripheral type; DISK/FDD additionally require INQUIRY for
+; the shared removable-model policy. A removable USB stick remains DISK unless
+; its checked identity matches that policy; the removable bit alone is not FDD.
 count_match proc near
         mov     al, byte ptr [filter]
         cmp     al, FILTER_ANY

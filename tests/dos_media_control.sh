@@ -10,6 +10,8 @@ if [ ! -f "$ROOT/build/dos-cda/cd.iso" ]; then
 fi
 cp "$ROOT/build/dos-cda/boot.img" "$ROOT/build/dos-cda/cd.iso" "$OUT/"
 "$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX \
+    -Fo="$OUT/SENSE.COM" "$ROOT/tests/aspi_result.asm"
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX \
     -Fo="$OUT/FDDMEDIA.COM" "$ROOT/tests/media_control.asm"
 "$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -DTEST_CDA \
     -Fo="$OUT/CDAMEDIA.COM" "$ROOT/tests/media_control.asm"
@@ -17,7 +19,8 @@ cp "$ROOT/build/dos-cda/boot.img" "$ROOT/build/dos-cda/cd.iso" "$OUT/"
     -Fo="$OUT/RAWTEST.COM" "$ROOT/tests/raw_media.asm"
 "$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX \
     -Fo="$OUT/F32TEST.COM" "$ROOT/tests/fat32_driver.asm"
-printf '%s\r\n' '@ECHO OFF' 'FDDMEDIA > AUX' \
+printf '%s\r\n' '@ECHO OFF' 'SENSE > AUX' \
+    'IF ERRORLEVEL 1 GOTO FAILED' 'FDDMEDIA > AUX' \
     'IF ERRORLEVEL 1 GOTO FAILED' 'CDAMEDIA > AUX' \
     'IF ERRORLEVEL 1 GOTO FAILED' 'RAWTEST > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
     'F32TEST > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
@@ -33,7 +36,7 @@ printf '%s\r\n' '@ECHO OFF' 'FDDMEDIA > AUX' \
     'TYPE R:\README.TXT > AUX' \
     'GOTO DONE' ':FAILED' 'ECHO Media controls FAILED > AUX' ':DONE' \
     'ECHO OPENASPI MEDIA CONTROL DONE > AUX' 'QEXIT' > "$OUT/AUTOEXEC.BAT"
-mcopy -o -i "$OUT/boot.img" "$OUT/AUTOEXEC.BAT" "$OUT/FDDMEDIA.COM" \
+mcopy -o -i "$OUT/boot.img" "$OUT/AUTOEXEC.BAT" "$OUT/SENSE.COM" "$OUT/FDDMEDIA.COM" \
     "$OUT/CDAMEDIA.COM" "$OUT/RAWTEST.COM" "$OUT/F32TEST.COM" "$ROOT/build/dos/ASPICDA.SYS" \
     "$ROOT/build/dos/ASPICTL.EXE" "$ROOT/build/dos/EJECT.EXE" \
     "$ROOT/build/dos/CLOSE.EXE" "$ROOT/build/dos-cda/QEXIT.COM" ::/
@@ -50,6 +53,7 @@ set -e
 test "$test_rc" = 1 || { echo "QEMU failed/timeout: $test_rc" >&2; exit 1; }
 cat "$OUT/serial.log"
 ! grep -Fq 'FAILED' "$OUT/serial.log"
+grep -Fq 'ASPI completion/sense validation passed' "$OUT/serial.log"
 test "$(grep -Fc 'Media control resident tests passed' "$OUT/serial.log")" = 2
 grep -Fq 'OpenASPI ASPICDA read test' "$OUT/serial.log"
 grep -Fq 'LOCK R: OK (CD)' "$OUT/serial.log"

@@ -360,6 +360,8 @@ fake_error:
         cmp al, 0FFh
         je fake_done
         mov byte ptr cs:[srb+SRB_TargStat], 2
+        mov byte ptr cs:[srb+SRB_CDB+6],70h
+        mov byte ptr cs:[srb+SRB_CDB+6+7],6
         mov byte ptr cs:[srb+SRB_CDB+6+2], al
 fake_done:
         ret
