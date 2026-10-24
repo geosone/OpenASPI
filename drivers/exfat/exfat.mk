@@ -3,8 +3,9 @@
 DOSEXFAT := $(BUILD)/dos/EXFAT.SYS
 EXFATTESTBIN := $(BUILD)/host/test_exfat
 EXCHKTESTBIN := $(BUILD)/host/test_exchk
+EXFMTTESTBIN := $(BUILD)/host/test_exfmt
 EXFATCORE := common/exfat/exfat.c common/exfat/codepage.c
-EXFATHDR := include/openaspi/exfat.h include/openaspi/exfatsys.h include/openaspi/exfat_check.h include/openaspi/types.h
+EXFATHDR := include/openaspi/exfat.h include/openaspi/exfatsys.h include/openaspi/exfat_check.h include/openaspi/exfat_format.h include/openaspi/types.h
 EXFATOBJ := $(BUILD)/dos/exfatsys_a.obj $(BUILD)/dos/exfatsys.obj $(BUILD)/dos/exfat.obj $(BUILD)/dos/cpinit.obj
 # small model, no stack checks, no C runtime start-up: CS = DS = SS
 EXFATWCC := $(WCC) -q -ms -0 -os -s -zl -zdp -wx -we -Iinclude -I$(WATCOM)/h
@@ -16,6 +17,10 @@ $(EXFATTESTBIN): tests/exfat_test.c $(EXFATCORE) $(EXFATHDR)
 $(EXCHKTESTBIN): tests/exchk_test.c common/exfat/exfat_check.c $(EXFATCORE) $(EXFATHDR)
 	mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/exchk_test.c common/exfat/exfat_check.c $(EXFATCORE)
+
+$(EXFMTTESTBIN): tests/exfmt_test.c common/exfat/exfat_format.c common/exfat/upcase.c $(EXFATHDR)
+	mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/exfmt_test.c common/exfat/exfat_format.c common/exfat/upcase.c
 
 $(BUILD)/dos/exfatsys_a.obj: drivers/exfat/exfatsys.asm | $(JWASM)
 	mkdir -p $(@D)

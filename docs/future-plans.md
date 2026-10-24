@@ -86,29 +86,34 @@ exFAT drive of EXFAT.SYS is not.  So exFAT gets its own two tools.  They
 read the sectors themselves, as EXFAT.SYS does (INT 13h, the exFAT service
 of ASPIDSK/ASPIFDD), so that the resident driver does not grow; EXFAT.SYS
 tells them its volumes through a table its device header points to
-(`EXI1`, `include/openaspi/exfatsys.h`).  EXCHK with `/F` is done
-([EXCHK](../tools/exchk/README.md)), also for TexFAT.
+(`EXI1`, `include/openaspi/exfatsys.h`).  Both are done, also for TexFAT:
+[EXCHK](../tools/exchk/README.md) with `/F` and
+[EXFMT](../tools/exfmt/README.md).  For media of ASPIDSK/ASPIFDD that are
+not exFAT yet, EXFMT writes through functions of their exFAT service that
+address the whole medium (PREAD, PWRITE, CAPACITY, RELOAD).
 
 TexFAT (two FATs and allocation bitmaps, ActiveFat in the boot sector) is
 worth it for aging removable media such as ZIP and SuperDisk: EXFAT.SYS
-reads it, EXCHK repairs one FAT from the other.  Still to come: EXFMT
-`/TEXFAT` creates it, and the writing of EXFAT.SYS keeps both copies (write
+reads it, EXCHK repairs one FAT from the other, EXFMT `/TEXFAT` creates
+it.  Still to come: the writing of EXFAT.SYS keeps both copies (write
 the inactive one, then switch ActiveFat, then bring the other one up to
 date).
 
-- **EXFMT**: creates exFAT (boot region with its backup and checksum,
-  allocation bitmap, upcase table, root directory with volume label),
-  cluster size by medium size as Windows does.  The target is an exFAT
-  drive letter, a FAT drive (reformatted in its partition, as ASPIFMT does),
-  or a blank medium: BIOS disk number (`/D:80`) or ASPIDSK/ASPIFDD letter.
-  Like ASPIFMT: without `/YES` only the layout is shown; read check of the
-  data area, bad clusters marked in the FAT and allocation bitmap.
-- **EXCHK**: checks an exFAT volume: boot sector checksums, entry set
-  checksums, allocation bitmap against the cluster chains, lost and cross
-  linked clusters, the VolumeDirty flag.  First version only reports;
-  `/F` repairs later, with the writing of EXFAT.SYS.
-- While a tool writes, EXFAT.SYS locks the drive (no open files, caches
-  flushed) and reads the volume again afterwards.
+- **EXFMT** (done): creates exFAT (boot region with its backup and
+  checksum, allocation bitmap, upcase table, root directory with volume
+  label), cluster size by volume size as Windows does.  The target is an
+  EXFAT.SYS drive, a FAT drive of ASPIDSK/ASPIFDD (reformatted in its
+  partition, as ASPIFMT does), a blank medium of theirs, or a BIOS disk
+  (`/D:80`).  Like ASPIFMT: without `/YES` only the layout is shown; read
+  check of the data area, bad clusters marked in the FAT and allocation
+  bitmap.
+- **EXCHK** (done): checks an exFAT volume: boot sector checksums, entry
+  set checksums, name hashes, allocation bitmap against the cluster chains,
+  lost and cross linked clusters, the VolumeDirty flag; `/F` repairs.
+- After a tool has written, EXFAT.SYS reads the volume again (`changed`).
+  Still missing: a lock while the tool writes (no open files on the drive,
+  caches flushed); until EXFAT.SYS writes, only reading programs can be
+  disturbed.
 - ASPIFMT stays the FAT formatter for ASPIFDD; it can get `/FS:EXFAT`
   calling the same format code.
 

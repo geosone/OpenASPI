@@ -7,12 +7,19 @@
 ; the device header: "EXF1" and the entry offset after the unit count.
 ;
 ; exfat_service: ES:BX -> 16-byte packet, all registers kept.
-;   00h byte  function: 0 INFO, 1 READ, 2 CHECK, 3 CALLBACK, 4 WRITE (EXCHK /F)
+;   00h byte  function: 0 INFO, 1 READ, 2 CHECK, 3 CALLBACK, 4 WRITE (EXCHK /F),
+;             for EXFMT: 5 PREAD, 6 PWRITE (sectors of the medium, not of
+;             the volume), 7 CAPACITY, 8 RELOAD (reads the medium again,
+;             the next MEDIA CHECK reports "changed", EXFAT.SYS is told
+;             when it is exFAT now)
 ;   01h byte  unit
 ;   02h word  out: 0 done, else 8000h | DOS driver error
-;   04h dword READ/WRITE: sector, relative to the exFAT volume
+;   04h dword READ/WRITE: sector, relative to the exFAT volume; PREAD/PWRITE:
+;             sector of the medium, below its capacity of the last CAPACITY
 ;             INFO out: first sector of the volume (U_START)
-;   08h word  READ/WRITE: count, 1-64; INFO out: U_FLAGS (UF_EXFAT: exFAT volume)
+;             CAPACITY out: sectors of the medium
+;   08h word  READ/WRITE/PREAD/PWRITE: count, 1-64
+;             INFO, RELOAD out: U_FLAGS (UF_EXFAT: exFAT volume)
 ;   0Ah dword READ/WRITE: far buffer; INFO out: sectors of the exFAT volume;
 ;             CALLBACK: far procedure, called with AL = unit and DX = the
 ;             driver's segment when BUILD BPB or a READ after a media
@@ -303,21 +310,71 @@ svc_unit_ok:
         mov     al, byte ptr [di+U_LUN]
         mov     byte ptr [unit_lun], al
         mov     al, byte ptr es:[bx+PK_FUNC]
+        cmp     al, 8
+        ja      svc_unknown
+        xor     ah, ah
+        mov     si, ax
+        shl     si, 1
         or      al, al
-        jz      svc_info
+        jz      svc_go
         test    byte ptr [di+U_FLAGS], UF_RAW_ACTIVE
-        jz      svc_free
+        jz      svc_go
         mov     al, ERR_NOT_READY
         jmp     svc_error
-svc_free:
-        cmp     al, 1
-        je      svc_read
-        cmp     al, 4
-        je      svc_read
-        cmp     al, 2
-        je      svc_check
+svc_go:
+        jmp     word ptr [svc_table+si]
+svc_table       dw      svc_info, svc_read, svc_check, svc_unknown, svc_read
+                dw      svc_phys, svc_phys, svc_capacity, svc_reload
+svc_unknown:
         mov     al, ERR_UNKNOWN_CMD
         jmp     svc_error
+svc_capacity:
+        ; a changed medium answers NOT READY / UNIT ATTENTION once each
+        mov     cx, 3
+svc_capacity_tur:
+        push    cx
+        call    test_unit_ready
+        pop     cx
+        jnc     svc_capacity_read
+        loop    svc_capacity_tur
+svc_capacity_read:
+        call    block_read_capacity
+        jnc     svc_capacity_ok
+        jmp     svc_error
+svc_capacity_ok:
+        les     bx, [exfat_packet]
+        mov     ax, word ptr [di+U_CAPACITY]
+        mov     word ptr es:[bx+PK_LBA], ax
+        mov     ax, word ptr [di+U_CAPACITY+2]
+        mov     word ptr es:[bx+PK_LBA+2], ax
+        jmp     svc_done
+svc_phys:
+        mov     cx, word ptr es:[bx+PK_COUNT]
+        jcxz    svc_phys_count
+        cmp     cx, CHUNK_SECTORS
+        ja      svc_phys_count
+        mov     ax, word ptr es:[bx+PK_LBA]
+        mov     dx, word ptr es:[bx+PK_LBA+2]
+        add     ax, cx
+        adc     dx, 0
+        jc      svc_phys_range
+        cmp     dx, word ptr [di+U_CAPACITY+2]
+        ja      svc_phys_range
+        jb      svc_phys_ok
+        cmp     ax, word ptr [di+U_CAPACITY]
+        ja      svc_phys_range
+svc_phys_ok:
+        mov     ax, word ptr es:[bx+PK_BUFFER]
+        mov     word ptr [xfer_buffer], ax
+        mov     ax, word ptr es:[bx+PK_BUFFER+2]
+        mov     word ptr [xfer_buffer+2], ax
+        mov     ax, word ptr es:[bx+PK_LBA]
+        mov     dx, word ptr es:[bx+PK_LBA+2]
+        jmp     svc_opcode
+svc_phys_count:
+        jmp     svc_bad_count
+svc_phys_range:
+        jmp     svc_range
 svc_info:
         mov     ax, word ptr [di+U_START]
         mov     word ptr es:[bx+PK_LBA], ax
@@ -378,14 +435,30 @@ svc_in_range:
         add     ax, word ptr [di+U_START]
         adc     dx, word ptr [di+U_START+2]
         jc      svc_range
+svc_opcode:
         mov     byte ptr [xfer_opcode], 28h     ; READ(10)
         cmp     byte ptr es:[bx+PK_FUNC], 4
+        je      svc_write
+        cmp     byte ptr es:[bx+PK_FUNC], 6
         jne     svc_xfer
+svc_write:
         mov     byte ptr [xfer_opcode], 2Ah     ; WRITE(10)
 svc_xfer:
         call    xfer_sectors
         jnc     svc_done
         jmp     short svc_error
+svc_reload:
+        or      byte ptr [di+U_XFLAGS], XF_CHANGED
+        call    load_volume_x
+        test    byte ptr [di+U_FLAGS], UF_EXFAT
+        jz      svc_reloaded
+        call    exfat_notify
+svc_reloaded:
+        les     bx, [exfat_packet]
+        mov     al, byte ptr [di+U_FLAGS]
+        xor     ah, ah
+        mov     word ptr es:[bx+PK_COUNT], ax
+        jmp     svc_done
 svc_bad_count:
         mov     al, ERR_GENERAL
         jmp     short svc_error
