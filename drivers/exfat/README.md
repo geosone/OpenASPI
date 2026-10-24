@@ -47,11 +47,12 @@ Up to eight volumes.
 - Files of 4 GB and more are shown with the size FFFFFFFFh; only their
   first 4 GB can be read.
 - CHKDSK, SCANDISK and DEFRAG do not work on the drive (as on CD-ROM
-  drives); EXFMT and EXCHK will.
+  drives); [EXCHK](../../tools/exchk/README.md) checks it, EXFMT will
+  format.
 
 The exFAT code is `common/exfat/exfat.c` (after the Microsoft exFAT file
 system specification), shared with the host test and the tools to come.
-Plans (writing, EXFMT, EXCHK): [future plans](../../docs/future-plans.md).
+Plans (writing, EXFMT): [future plans](../../docs/future-plans.md).
 
 Tests: `build/host/test_exfat` (8.3 names; with an image it lists and reads
 it), `tests/exfat_image.sh` makes images through the Linux exFAT driver,

@@ -36,6 +36,7 @@ DGROUP  group _HDR, _TEXT, CONST, CONST2, _DATA, _BSS, _STK, INIT_TEXT, INIT_DAT
         public  _svc_call, _aspi_callback_off
 
         extern  _redir:near, _drv_init:near, _assign:near, _aspi_notify:near
+        extern  _exfat_info:near
 
 STACKSIZE equ   1024
 
@@ -46,6 +47,8 @@ _HDR    segment
         dw      offset DGROUP:strategy
         dw      offset DGROUP:interrupt
         db      '$EXFAT$ '
+        db      'EXI1'                  ; the volumes for the tools
+        dw      offset DGROUP:_exfat_info
 
 req     dd      0
 _old2f  dd      0

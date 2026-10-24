@@ -10,6 +10,7 @@
 #include <string.h>
 #include <i86.h>
 #include "openaspi/exfat.h"
+#include "openaspi/exfatsys.h"
 
 #define VERSION "0.2"
 #define MAXVOL 8
@@ -36,21 +37,20 @@ extern oa_u16 aspi_callback_off;      /* far procedure in exfatsys.asm */
 extern char bss_start[], resident_end[];
 
 struct drive {
+    struct oa_exfatsys_vol pub; /* for the tools; ASPIDSK/ASPIFDD units: the
+                                   letter is DOS's while the medium is FAT */
     struct oa_exfat v;
-    oa_u8 bios, ext, letter;    /* letter: 0 = A:, 0FFh none yet */
-    oa_u16 spt, heads;
     oa_u32 free_clusters;       /* 0FFFFFFFFh: not counted yet */
-    /* ASPIDSK/ASPIFDD units: the letter is DOS's while the medium is FAT */
-    oa_u8 aspi, unit, state;
-    oa_u16 svc_off, svc_seg;
     oa_u16 checked;             /* BIOS tick of the last media check */
 };
-#define ST_OURS    0            /* exFAT, the letter redirected */
-#define ST_DOS     1            /* another medium: DOS and the block driver */
-#define ST_PENDING 2            /* exFAT inserted: mount at the next use */
+#define ST_OURS    OA_EXFATSYS_OURS
+#define ST_DOS     OA_EXFATSYS_DOS
+#define ST_PENDING OA_EXFATSYS_PENDING
 
 static struct drive drv[MAXVOL];
 static unsigned ndrv;
+const struct { oa_u16 version; unsigned *count; struct drive *table; oa_u16 stride; }
+    exfat_info = { 1, &ndrv, drv, sizeof(struct drive) };
 static oa_u8 __far *sda;
 static oa_u8 first_letter;
 static const struct oa_exfat_cp *cp;
@@ -96,20 +96,20 @@ static int bios_read(void *dev, oa_u32 lba, void __far *buf)
     struct iregs r;
     struct dap p;
     unsigned tries;
-    oa_u16 cx = 0, dx = d->bios;
+    oa_u16 cx = 0, dx = d->pub.bios;
     oa_u32 t;
-    if (!d->ext) {
-        t = lba / d->spt;
-        cx = (oa_u16)(lba - t * d->spt + 1);
-        dx |= (oa_u16)(t % d->heads) << 8;
-        t /= d->heads;
+    if (!d->pub.ext) {
+        t = lba / d->pub.spt;
+        cx = (oa_u16)(lba - t * d->pub.spt + 1);
+        dx |= (oa_u16)(t % d->pub.heads) << 8;
+        t /= d->pub.heads;
         if (t > 1023) return -1;
         cx |= (oa_u16)((t & 0xFF) << 8 | (t >> 2 & 0xC0));
     }
     for (tries = 0; tries < 3; ++tries) {
         memset(&r, 0, sizeof(r));
         r.dx = dx;
-        if (d->ext) {
+        if (d->pub.ext) {
             p.size = 16; p.res = 0; p.count = 1; p.buf = buf; p.lba = lba; p.lba_hi = 0;
             r.ax = 0x4200; r.si = (oa_u16)&p; r.ds = DS_SEG();
             if (!int13(&r)) return 0;
@@ -125,7 +125,7 @@ static int bios_read(void *dev, oa_u32 lba, void __far *buf)
             }
         }
         memset(&r, 0, sizeof(r));
-        r.dx = d->bios;
+        r.dx = d->pub.bios;
         int13(&r);                              /* reset */
     }
     return -1;
@@ -136,8 +136,8 @@ static int aspi_read(void *dev, oa_u32 lba, void __far *buf)
     struct drive *d = dev;
     struct packet k;
     memset(&k, 0, sizeof(k));
-    k.func = SVC_READ; k.unit = d->unit; k.lba = lba; k.count = 1; k.buf = buf;
-    return svc_call(d->svc_off, d->svc_seg, &k) ? -1 : 0;
+    k.func = SVC_READ; k.unit = d->pub.unit; k.lba = lba; k.count = 1; k.buf = buf;
+    return svc_call(d->pub.svc_off, d->pub.svc_seg, &k) ? -1 : 0;
 }
 
 static int mount(struct drive *d)
@@ -152,10 +152,10 @@ static int mount(struct drive *d)
 /* The drive letter to EXFAT.SYS: the DOS entry is kept for give_back. */
 static void take_letter(struct drive *d)
 {
-    oa_u8 __far *e = cds + 0x58 * d->letter;
-    if (d->state == ST_DOS) _fmemcpy(saved_cds[d - drv], e + 0x43, 12);
+    oa_u8 __far *e = cds + 0x58 * d->pub.letter;
+    if (d->pub.state == ST_DOS) _fmemcpy(saved_cds[d - drv], e + 0x43, 12);
     _fmemset(e, 0, 0x58);
-    e[0] = (oa_u8)('A' + d->letter); e[1] = ':'; e[2] = '\\';
+    e[0] = (oa_u8)('A' + d->pub.letter); e[1] = ':'; e[2] = '\\';
     W(e, 0x43) = 0xC080;
     W(e, 0x4F) = 2;
 }
@@ -164,13 +164,13 @@ static void take_letter(struct drive *d)
    been changed. */
 static void give_back(struct drive *d)
 {
-    oa_u8 __far *e = cds + 0x58 * d->letter;
+    oa_u8 __far *e = cds + 0x58 * d->pub.letter;
     _fmemset(e, 0, 0x58);
-    e[0] = (oa_u8)('A' + d->letter); e[1] = ':'; e[2] = '\\';
+    e[0] = (oa_u8)('A' + d->pub.letter); e[1] = ':'; e[2] = '\\';
     _fmemcpy(e + 0x43, saved_cds[d - drv], 12);
     W(e, 0x49) = 0xFFFF;                        /* not looked up yet */
     W(e, 0x4F) = 2;
-    d->state = ST_DOS;
+    d->pub.state = ST_DOS;
 }
 
 /* Is the exFAT medium of an ASPI drive still in (checked at most once a
@@ -180,18 +180,18 @@ static int aspi_ready(struct drive *d)
 {
     struct packet k;
     oa_u16 now = *(oa_u16 __far *)MK_FP(0x40, 0x6C);
-    if (d->state == ST_OURS && (oa_u16)(now - d->checked) < 18) return 1;
+    if (d->pub.state == ST_OURS && (oa_u16)(now - d->checked) < 18) return 1;
     d->checked = now;
     memset(&k, 0, sizeof(k));
-    k.unit = d->unit;
-    if (d->state == ST_OURS) {
+    k.unit = d->pub.unit;
+    if (d->pub.state == ST_OURS) {
         k.func = SVC_CHECK;
-        if (svc_call(d->svc_off, d->svc_seg, &k)) return 1;
+        if (svc_call(d->pub.svc_off, d->pub.svc_seg, &k)) return 1;
         if (!k.result) return 1;
         k.func = SVC_INFO;
     }
-    if (!svc_call(d->svc_off, d->svc_seg, &k) && (k.count & UF_EXFAT) && !mount(d)) {
-        d->state = ST_OURS;
+    if (!svc_call(d->pub.svc_off, d->pub.svc_seg, &k) && (k.count & UF_EXFAT) && !mount(d)) {
+        d->pub.state = ST_OURS;
         return 1;
     }
     give_back(d);
@@ -208,9 +208,9 @@ static struct drive *drive_of(oa_u8 letter)
 {
     struct drive *d;
     for (d = drv; d < drv + ndrv; ++d) {
-        if (d->letter != letter || (d->aspi && d->state == ST_DOS)) continue;
+        if (d->pub.letter != letter || (d->pub.aspi && d->pub.state == ST_DOS)) continue;
         if (buf_owner != d) { d->v.buf_lba = 0xFFFFFFFFUL; buf_owner = d; }
-        if (d->aspi && !aspi_ready(d)) return 0;
+        if (d->pub.aspi && !aspi_ready(d)) return 0;
         return d;
     }
     return 0;
@@ -295,7 +295,7 @@ static int ok(struct regs *r)
 static void fill_sft(oa_u8 __far *sft, struct drive *d)
 {
     sft[4] = (oa_u8)ent.attr;
-    W(sft, 5) = 0x8040 | d->letter;
+    W(sft, 5) = 0x8040 | d->pub.letter;
     D(sft, 7) = ent.file.valid;
     W(sft, 0x0B) = (oa_u16)(ent.file.nofat | ent.file.big << 1);
     W(sft, 0x0D) = ent.time; W(sft, 0x0F) = ent.date;
@@ -390,7 +390,7 @@ static int find_first(struct regs *r, struct drive *d)
     oa_u16 info = 0;
     if (split_path(d, (const char __far *)(sda + SDA_FN1), &dir, fcb)) return error(r, E_PATH);
     if (fcb[0] == ' ') memset(fcb, '?', 11);
-    sdb[0] = (oa_u8)(d->letter | 0xC0);
+    sdb[0] = (oa_u8)(d->pub.letter | 0xC0);
     _fmemcpy(sdb + 1, fcb, 11);
     sdb[12] = sda[SDA_SATTR];
     W(sdb, 13) = 0;
@@ -464,9 +464,9 @@ void __cdecl aspi_notify(unsigned unit, unsigned seg)
 {
     struct drive *d;
     for (d = drv; d < drv + ndrv; ++d) {
-        if (!d->aspi || d->svc_seg != seg || d->unit != unit || d->state != ST_DOS) continue;
+        if (!d->pub.aspi || d->pub.svc_seg != seg || d->pub.unit != unit || d->pub.state != ST_DOS) continue;
         take_letter(d);
-        d->state = ST_PENDING;
+        d->pub.state = ST_PENDING;
     }
 }
 
@@ -571,17 +571,17 @@ static void find_aspi(oa_u8 __far *lol)
         for (u = 0; u < units && ndrv < MAXVOL; ++u) {
             d = &drv[ndrv];
             memset(d, 0, sizeof(*d));
-            d->aspi = 1; d->unit = (oa_u8)u; d->svc_off = W(dev, 0x0F); d->svc_seg = FP_SEG(dev);
-            d->letter = 0xFF; d->state = ST_DOS;
+            d->pub.aspi = 1; d->pub.unit = (oa_u8)u; d->pub.svc_off = W(dev, 0x0F); d->pub.svc_seg = FP_SEG(dev);
+            d->pub.letter = 0xFF; d->pub.state = ST_DOS;
             for (dpb = *(oa_u8 __far * __far *)lol; FP_OFF(dpb) != 0xFFFF; dpb = *(oa_u8 __far * __far *)(dpb + 0x19))
-                if (*(oa_u8 __far * __far *)(dpb + 0x13) == dev && dpb[1] == u) d->letter = dpb[0];
-            if (d->letter == 0xFF) continue;
+                if (*(oa_u8 __far * __far *)(dpb + 0x13) == dev && dpb[1] == u) d->pub.letter = dpb[0];
+            if (d->pub.letter == 0xFF) continue;
             ++ndrv;
             memset(&k, 0, sizeof(k));
             k.unit = (oa_u8)u;
-            if (svc_call(d->svc_off, d->svc_seg, &k) || !(k.count & UF_EXFAT) || mount(d)) continue;
+            if (svc_call(d->pub.svc_off, d->pub.svc_seg, &k) || !(k.count & UF_EXFAT) || mount(d)) continue;
             take_letter(d);
-            d->state = ST_OURS;
+            d->pub.state = ST_OURS;
         }
     }
 }
@@ -591,7 +591,7 @@ static int on_aspi(struct drive *b)
 {
     struct drive *d;
     for (d = drv; d < drv + ndrv; ++d)
-        if (d->aspi && d->state == ST_OURS && d->v.serial == b->v.serial && d->v.clusters == b->v.clusters) return 1;
+        if (d->pub.aspi && d->pub.state == ST_OURS && d->v.serial == b->v.serial && d->v.clusters == b->v.clusters) return 1;
     return 0;
 }
 
@@ -621,7 +621,7 @@ int __cdecl assign(void __far *unused)
         if (on_aspi(&drv[i])) continue;
         for (; l < last; ++l) if (!(W(cds + 0x58 * l, 0x43) & 0xC000)) break;
         if (l >= last) break;
-        drv[i].letter = (oa_u8)l;
+        drv[i].pub.letter = (oa_u8)l;
         e = cds + 0x58 * l;
         _fmemset(e, 0, 0x58);
         e[0] = (oa_u8)('A' + l); e[1] = ':'; e[2] = '\\';
@@ -653,7 +653,7 @@ static void add_volume(oa_u32 start)
     if (ndrv >= MAXVOL || read_sec(start) || !oa_exfat_probe(sec)) return;
     *d = *probe_disk;
     if (oa_exfat_mount(&d->v, bios_read, d, start, cp, secbuf)) return;
-    d->letter = 0xFF; d->free_clusters = 0xFFFFFFFFUL;
+    d->pub.letter = 0xFF; d->pub.start = start; d->free_clusters = 0xFFFFFFFFUL;
     ++ndrv;
 }
 
@@ -752,15 +752,15 @@ int __cdecl drv_init(void __far *req)
     disks = *(oa_u8 __far *)MK_FP(0x40, 0x75);
     for (i = 0; i < disks && i < 8; ++i) {
         memset(&probe, 0, sizeof(probe));
-        probe.bios = (oa_u8)(0x80 + i);
+        probe.pub.bios = (oa_u8)(0x80 + i);
         memset(&q, 0, sizeof(q));
-        q.ax = 0x4100; q.bx = 0x55AA; q.dx = probe.bios;
-        if (!chs && !int13(&q) && q.bx == 0xAA55 && (q.cx & 1)) probe.ext = 1;
+        q.ax = 0x4100; q.bx = 0x55AA; q.dx = probe.pub.bios;
+        if (!chs && !int13(&q) && q.bx == 0xAA55 && (q.cx & 1)) probe.pub.ext = 1;
         memset(&q, 0, sizeof(q));
-        q.ax = 0x0800; q.dx = probe.bios;
+        q.ax = 0x0800; q.dx = probe.pub.bios;
         if (int13(&q)) continue;
-        probe.spt = q.cx & 63; probe.heads = (q.dx >> 8) + 1;
-        if (!probe.spt) continue;
+        probe.pub.spt = q.cx & 63; probe.pub.heads = (q.dx >> 8) + 1;
+        if (!probe.pub.spt) continue;
         probe_disk = &probe;
         scan_disk();
     }
@@ -774,7 +774,7 @@ int __cdecl drv_init(void __far *req)
     if (!quiet) {
         for (i = 0; i < ndrv; ++i) {
             print(msg_bios);
-            print_hex(drv[i].bios);
+            print_hex(drv[i].pub.bios);
             print(msg_h);
         }
         if (aspi) print(msg_aspi);

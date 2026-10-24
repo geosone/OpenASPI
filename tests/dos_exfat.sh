@@ -9,6 +9,7 @@
 #   HIGH=DIR: MS-DOS with HIMEM.SYS, EMM386.EXE and MEM.EXE from DIR and
 #             DEVICEHIGH=EXFAT.SYS; MEM /C must show it in upper memory
 #   OPTS=/C: options for EXFAT.SYS (/C: CHS reads without INT 13h extensions)
+#   DAMAGE=bitmap-set: a lost cluster (tests/exchk_corrupt.py) EXCHK must find
 
 set -euo pipefail
 
@@ -20,9 +21,10 @@ SUPER=${SUPER:-0}
 SVARDOS=${SVARDOS:-0}
 HIGH=${HIGH:-}
 OPTS=${OPTS:-}
+DAMAGE=${DAMAGE:-}
 SVARDOS_ZIP=${SVARDOS_ZIP:-$HOME/Iso/Dos/svardos-20250427-floppy-1.44M.zip}
 
-make -C "$ROOT" build/dos/EXFAT.SYS >/dev/null
+make -C "$ROOT" build/dos/EXFAT.SYS build/dos/EXCHK.EXE >/dev/null
 rm -rf "$OUT"
 mkdir -p "$OUT"
 nasm -f bin -o "$OUT/QEXIT.COM" "$AHCIASPI_DIR/tools/qexit.asm"
@@ -55,12 +57,13 @@ printf '%s > AUX\r\n' \
     'ECHO === CD' 'D:' 'CD \UNTERO~1\TIEFER' 'CD' 'TYPE DATEI.DAT' 'CD ..' 'CD' 'CD \NIX' 'A:' \
     'ECHO === WRITE' 'COPY A:\QEXIT.COM D:\NEU.COM' 'MD D:\NEU' 'DEL D:\README.TXT' \
     'ECHO === COPY' 'MD C:\OUT' 'COPY D:\*.* C:\OUT' 'COPY D:\SUB\*.* C:\OUT' \
+    'ECHO === EXCHK' 'EXCHK D:' 'IF ERRORLEVEL 1 ECHO EXCHK FAILED' \
     'ECHO === END' > "$OUT/AUTOEXEC.BAT"
 if test -n "$HIGH"; then printf '%s > AUX\r\n' 'MEM /C' >> "$OUT/AUTOEXEC.BAT"; fi
 printf '%s\r\n' \
     'QEXIT' >> "$OUT/AUTOEXEC.BAT"
 mcopy -o -i "$OUT/boot.img" "$OUT/CONFIG.SYS" "$OUT/AUTOEXEC.BAT" \
-    "$ROOT/build/dos/EXFAT.SYS" "$OUT/QEXIT.COM" ::/
+    "$ROOT/build/dos/EXFAT.SYS" "$ROOT/build/dos/EXCHK.EXE" "$OUT/QEXIT.COM" ::/
 
 # C: FAT16 for the copies
 truncate -s 32M "$OUT/fat.img"
@@ -69,6 +72,7 @@ mkfs.fat -F16 -n FATDISK --offset 63 "$OUT/fat.img" $(( (32*2048 - 63) / 2 )) >/
 
 # the exFAT disk
 sh "$ROOT/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
+if test -n "$DAMAGE"; then python3 "$ROOT/tests/exchk_corrupt.py" "$OUT/x/exfat.img" "$DAMAGE"; fi
 if test "$SUPER" = 1; then
     cp "$OUT/x/exfat.img" "$OUT/exfat-disk.img"
 else
@@ -92,6 +96,14 @@ tr -d '\0' < "$OUT/serial.log" > "$OUT/serial.txt"
 fail=0
 check() { grep -q "$1" "$OUT/serial.txt" || { echo "missing: $1"; fail=1; }; }
 check '=== END'
+check '        21 files'
+if test -n "$DAMAGE"; then
+    check 'EXCHK FAILED'
+    check 'allocated, but not used (lost)'
+else
+    check 'No errors found'
+    grep -q 'EXCHK FAILED' "$OUT/serial.txt" && { echo "EXCHK failed"; fail=1; }
+fi
 check 'EINLA~11'
 check 'UNTERO~1'
 check 'Datei 11'

@@ -83,8 +83,11 @@ from the device header.
 
 DOS FORMAT and CHKDSK know FAT only, and they need a block device, which an
 exFAT drive of EXFAT.SYS is not.  So exFAT gets its own two tools.  They
-work like EXFAT.SYS without ASPI: they use the sector interface of
-EXFAT.SYS, so BIOS disks and ASPIDSK/ASPIFDD media are handled the same way.
+read the sectors themselves, as EXFAT.SYS does (INT 13h, the exFAT service
+of ASPIDSK/ASPIFDD), so that the resident driver does not grow; EXFAT.SYS
+tells them its volumes through a table its device header points to
+(`EXI1`, `include/openaspi/exfatsys.h`).  EXCHK 0.1 is done
+([EXCHK](../tools/exchk/README.md)).
 
 - **EXFMT**: creates exFAT (boot region with its backup and checksum,
   allocation bitmap, upcase table, root directory with volume label),

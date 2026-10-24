@@ -17,7 +17,7 @@ MSDOS_IMG=${MSDOS_IMG:-$ROOT/../msdosinst/out/DISK1.IMG}
 BLK=ASPIDSK; PRODUCT=STICK
 if test -n "${FDD:-}"; then BLK=ASPIFDD; PRODUCT='ZIP 100'; fi
 
-make -C "$ROOT" build/dos/EXFAT.SYS build/dos/$BLK.SYS >/dev/null
+make -C "$ROOT" build/dos/EXFAT.SYS build/dos/EXCHK.EXE build/dos/$BLK.SYS >/dev/null
 rm -rf "$OUT"
 mkdir -p "$OUT"
 nasm -f bin -o "$OUT/QEXIT.COM" "$AHCIASPI_DIR/tools/qexit.asm"
@@ -36,7 +36,7 @@ printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' 'DEVICE=A:\EUSBASPI.SYS' \
     "DEVICE=A:\\$BLK.SYS" 'DEVICE=A:\EXFAT.SYS' > "$OUT/CONFIG.SYS"
 printf '%s > AUX\r\n' \
     'ECHO === EXFAT1' 'DIR D:' 'TYPE D:\EINLA~11.TXT' 'MD C:\OUT' 'COPY D:\*.* C:\OUT' \
-    'ECHO === SWAP1' > "$OUT/AUTOEXEC.BAT"
+    'EXCHK D:' 'ECHO === SWAP1' > "$OUT/AUTOEXEC.BAT"
 printf '%s\r\n' 'WAIT' >> "$OUT/AUTOEXEC.BAT"
 printf '%s > AUX\r\n' \
     'ECHO === FAT' 'DIR D:' 'DIR D:' 'TYPE D:\FATTEST.TXT' \
@@ -47,7 +47,7 @@ printf '%s > AUX\r\n' \
     'ECHO === END' >> "$OUT/AUTOEXEC.BAT"
 printf '%s\r\n' 'QEXIT' >> "$OUT/AUTOEXEC.BAT"
 mcopy -o -i "$OUT/boot.img" "$OUT/CONFIG.SYS" "$OUT/AUTOEXEC.BAT" "$OUT/EUSBASPI.SYS" \
-    "$ROOT/build/dos/$BLK.SYS" "$ROOT/build/dos/EXFAT.SYS" "$OUT/QEXIT.COM" "$OUT/WAIT.COM" ::/
+    "$ROOT/build/dos/$BLK.SYS" "$ROOT/build/dos/EXFAT.SYS" "$ROOT/build/dos/EXCHK.EXE" "$OUT/QEXIT.COM" "$OUT/WAIT.COM" ::/
 
 # C: FAT16 for the copies
 truncate -s 32M "$OUT/fat.img"
@@ -99,6 +99,8 @@ section() { sed -n "/=== $1/,/=== $2/p" "$OUT/serial.txt"; }
 need() { section "$1" "$2" | grep -q "$3" || { echo "missing in $1: $3"; fail=1; }; }
 need EXFAT1 SWAP1 'EINLA~11'
 need EXFAT1 SWAP1 'Datei 11'
+need EXFAT1 SWAP1 'No errors found'
+need EXFAT1 SWAP1 'ASPI unit 0'
 need FAT SWAP2 'FAT stick read by'
 need FAT SWAP2 'FATSTICK'
 need EXFAT2 END 'OPENASPI'
