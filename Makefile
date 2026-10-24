@@ -57,7 +57,7 @@ include drivers/exfat/exfat.mk
 include tools/exchk/exchk.mk
 include tools/exfmt/exfmt.mk
 
-.PHONY: all tools test check dos-c-check dos-smoke dos-cda-smoke dos-media-smoke dos-disk-smoke dos-tape-smoke dos-mhvtl-smoke dos-mhvtl-roundtrip dos-mhvtl-write-protect gdi-install dist disksets clean
+.PHONY: exfat-dist all tools test check dos-c-check dos-smoke dos-cda-smoke dos-media-smoke dos-disk-smoke dos-tape-smoke dos-mhvtl-smoke dos-mhvtl-roundtrip dos-mhvtl-write-protect gdi-install dist disksets clean
 
 all: $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(DOSEXFAT) $(EXFATTESTBIN) $(DOSEXCHK) $(EXCHKTESTBIN) $(DOSEXFMT) $(EXFMTTESTBIN) $(DOSSHSUCDX) $(DOSCDAUDIO) $(DOSSCAN) $(DOSMGR) $(DOSCTL) $(DOSCTLALIASES) $(DOSFMT) $(DOSDD) $(DOSDDGUI) $(DOSTAPECTL) $(DOSAPIINFO) $(DOSWINCHECK) $(WIN16CHECK) $(TESTBIN) $(ASPITESTBIN)
 
@@ -134,11 +134,21 @@ dist: all gdi-install LICENSE tests/dist_layout.sh tools/package/localize.py ins
 	cp $(DOSCTL) $(DOSCTLALIASES) $(DISTDIR)/
 	cp $(DOSFMT) $(DOSDD) $(DISTDIR)/
 	cp $(DOSDDGUI) $(DISTDIR)/
+	cp $(DOSEXFAT) $(DOSEXFMT) $(DOSEXCHK) $(DISTDIR)/
 	mv $(DISTDIR)/LICENSE $(DISTDIR)/LICENSE.TXT
 	cp $(SHSUCD)/LICENSE.txt $(DISTDIR)/SHSUCD.LIC
 	cp $(SHSUCD)/readme.txt $(DISTDIR)/SHSUCD.TXT
 	python3 tools/package/localize.py $(MAXLANG) $(DISTDIR)
 	sh tests/dist_layout.sh $(DISTDIR) $(SHSUCD)
+
+# the exFAT package: the same files as the exFAT option of OpenASPI
+EXFATVERSION := $(shell sed -n 's/^\#define VERSION "\(.*\)"/\1/p' drivers/exfat/exfatsys.c)
+exfat-dist: $(DOSEXFAT) $(DOSEXFMT) $(DOSEXCHK) gdi-install LICENSE tools/package/localize.py installer/exfat/INSTALL.INI
+	rm -rf $(DISTDIR)
+	mkdir -p $(DISTDIR)
+	cp $(DOSEXFAT) $(DOSEXFMT) $(DOSEXCHK) $(GDIINSTALL) $(DISTDIR)/
+	cp LICENSE $(DISTDIR)/LICENSE.TXT
+	python3 tools/package/localize.py $(MAXLANG) $(DISTDIR) exfat
 
 gdi-install:
 	$(MAKE) -C $(GDI) OUT=$(GDI_OUT)
@@ -149,6 +159,10 @@ disksets: gdi-install
 	bash tools/package/mkdisks.sh US $(BUILD)/packages/US $(RELEASEDIR)/US
 	$(MAKE) -o gdi-install MAXLANG=GR DISTDIR=$(BUILD)/packages/GR dist
 	bash tools/package/mkdisks.sh GR $(BUILD)/packages/GR $(RELEASEDIR)/GR
+	$(MAKE) -o gdi-install MAXLANG=US DISTDIR=$(BUILD)/packages/exfat-US exfat-dist
+	bash tools/package/mkexfat.sh US $(BUILD)/packages/exfat-US $(RELEASEDIR)/US $(EXFATVERSION)
+	$(MAKE) -o gdi-install MAXLANG=GR DISTDIR=$(BUILD)/packages/exfat-GR exfat-dist
+	bash tools/package/mkexfat.sh GR $(BUILD)/packages/exfat-GR $(RELEASEDIR)/GR $(EXFATVERSION)
 
 $(DOSDRV): drivers/aspitap/aspitap.asm common/aspi/dos_aspi.inc common/aspi/tape_sense.inc \
 		common/aspi/native_tape.inc common/aspi/native_tape_defs.inc common/aspi/native_tape_read.inc common/aspi/native_tape_write.inc | $(JWASM)

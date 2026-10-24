@@ -27,6 +27,12 @@ checks and silently installs each set into a disposable QEMU DOS image.
 It also inspects the actual welcome page and its buttons, including forced
 German texts on the English DOS test system.
 
+The setup option "exFAT drives" installs EXFAT.SYS, EXFMT and EXCHK (see
+[EXFAT.SYS](../drivers/exfat/README.md)). The same files also come as a
+package of their own for systems without ASPI, from `installer/exfat`
+(`exfat-<version>-<lang>.zip` and `exfat-<lang>-disk1.img`); it warns when
+OpenASPI is installed, whose option is the way then.
+
 Install an ASPI manager before the OpenASPI drivers in `CONFIG.SYS`.
 Run `INSTALL.EXE` to install or update OpenASPI and `INSTALL /U` from the
 installation directory to remove it. Drivers absent from the package are

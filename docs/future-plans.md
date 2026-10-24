@@ -140,15 +140,18 @@ volume v" and "has the medium changed".
   specification (2019).  Check the exFAT patent situation for a DOS driver
   before a release.
 
-Release: EXFAT.SYS, EXFMT and EXCHK are part of the OpenASPI release, and
-the release files also get a separate exFAT package for systems without
-ASPI.  Like every package it comes with the GeosOne DOS Installer: an
-`exfat-<version>.zip` with INSTALL.EXE and its own INSTALL.INI (Id=EXFAT,
-default directory `%BOOT%\EXFAT`, the DEVICE line in CONFIG.SYS with `/L:x`
-and `/X` as options), plus the disk images as for OpenASPI.  In the
-OpenASPI installer exFAT is one more option (EXFAT.SYS after ASPIDSK and
-ASPIFDD in CONFIG.SYS); both installers install the same files, so the
-exFAT package can later be replaced by OpenASPI and the other way round.
+Release (done): EXFAT.SYS, EXFMT and EXCHK are part of the OpenASPI
+release, as its setup option "exFAT drives" (EXFAT.SYS after ASPIDSK and
+ASPIFDD in CONFIG.SYS), and `make disksets` also makes a separate exFAT
+package for systems without ASPI: `exfat-<version>-us.zip`/`-gr.zip` and
+the disks `exfat-us-disk1.img`/`exfat-gr-disk1.img`, with the GeosOne DOS
+Installer and its own INSTALL.INI (`installer/exfat`, Id=EXFAT, default
+directory `%BOOT%\EXFAT`).  Both install the same files.  The exFAT
+package conflicts with OpenASPI (`Conflicts=OPENASPI`: Setup asks, Cancel
+by default); OpenASPI installed over it replaces its EXFAT.SYS line.  GDI's
+`Remove=` is also applied by `INSTALL /U`, so removing either package
+removes every EXFAT.SYS line; the READMEs say to remove the exFAT package
+before going over to OpenASPI.
 
 Tests: QEMU with an exFAT disk image made by `mkfs.exfat` (MBR, GPT and
 superfloppy) as IDE disk and USB stick through the BIOS, without ASPI; then

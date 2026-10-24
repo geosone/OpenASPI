@@ -43,6 +43,14 @@ ASPIDD READ D: C:\DISK.IMG sichert das gesamte Medium in eine neue Datei.
 ASPIDD WRITE D: C:\DISK.IMG /YES schreibt ein genau passendes Abbild zurueck.
 Auch lange Dateinamen innerhalb des Abbilds bleiben bei der Sektorkopie erhalten.
 
+EXFAT.SYS (Option "exFAT-Laufwerke") gibt exFAT-Datentraegern Laufwerks-
+buchstaben: BIOS-Festplatten und die exFAT-Medien von ASPIDSK und ASPIFDD
+(USB-Sticks, ZIP). Es liest nur; Schreiben und Anlegen von Dateien melden
+"Zugriff verweigert". Es braucht etwa 14 KB und kann hoch geladen werden.
+EXFMT D: formatiert ein Laufwerk mit exFAT (ohne /YES nur der Aufbau;
+/TEXFAT haelt zwei FATs, sinnvoll fuer alte ZIP- und SuperDisk-Medien),
+EXCHK D: prueft es und EXCHK D: /F repariert es.
+
 /RESCUE setzt bei Lesefehlern fort, fuellt unlesbare Sektoren mit Nullen und
 schreibt eine separate CSV-Fehlerkarte. /MAP:C:\BAD.MAP waehlt eine neue Karte
 auf einem anderen Laufwerk. Rueckgabewert 3 bedeutet: beendet mit Leseluecken,

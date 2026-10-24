@@ -7,14 +7,19 @@ import sys
 # Generate package text into an existing destination; this does not build
 # the installer or copy driver payload. INSTALL.INI remains the single rule
 # source, with translation affecting visible prose and the selected text family.
-def localize(language, destination):
+# package: "openaspi" (installer/) or "exfat" (installer/exfat/, with its
+# GR.json and READMEs in the same directory).
+def localize(language, destination, package="openaspi"):
     root = Path(__file__).resolve().parents[2]
     if language not in ("US", "GR"):
         raise ValueError("language must be US or GR")
-    source = (root / "installer/INSTALL.INI").read_text(encoding="ascii")
+    if package not in ("openaspi", "exfat"):
+        raise ValueError("package must be openaspi or exfat")
+    base = root / "installer" / ("exfat" if package == "exfat" else "")
+    source = (base / "INSTALL.INI").read_text(encoding="ascii")
     translation = {}
     if language == "GR":
-        translation = json.loads((root / "installer/lang/GR.json").read_text())
+        translation = json.loads((base / ("GR.json" if package == "exfat" else "lang/GR.json")).read_text())
     lines = []
     section = ""
     option = 0
@@ -54,9 +59,9 @@ def localize(language, destination):
     # not an atomic package transaction; a failed run must not be published as a
     # complete language set. Caller owns the destination directory and payload.
     (destination / "INSTALL.INI").write_bytes(("\r\n".join(lines) + "\r\n").encode("ascii"))
-    readme = root / "installer" / ("README.GR.TXT" if language == "GR" else "README.TXT")
+    readme = base / ("README.GR.TXT" if language == "GR" else "README.TXT")
     (destination / "README.TXT").write_bytes((readme.read_text(encoding="ascii").replace("\r\n", "\n").replace("\n", "\r\n")).encode("ascii"))
 
 
 if __name__ == "__main__":
-    localize(sys.argv[1], Path(sys.argv[2]))
+    localize(sys.argv[1], Path(sys.argv[2]), *sys.argv[3:4])

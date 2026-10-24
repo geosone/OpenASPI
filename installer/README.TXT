@@ -42,6 +42,13 @@ prompts for exchange. /RESCUE records unreadable sectors and fills them with
 zeros (exit status 3). ASPIDDG adds the shared DOS progress/selection UI.
 See tools/aspifmt/README.md and tools/aspidd/README.md in the source tree.
 
+EXFAT.SYS (setup option "exFAT drives") gives exFAT volumes drive letters:
+BIOS disks, and the exFAT media of ASPIDSK and ASPIFDD (USB sticks, ZIP).
+It reads only; writing and creating files give "access denied". It needs
+about 14 KB and can load high. EXFMT D: formats a drive as exFAT (layout
+only without /YES; /TEXFAT keeps two FATs, worth it for old ZIP and
+SuperDisk media), EXCHK D: checks it and EXCHK D: /F repairs it.
+
 TAPECTL.COM opens NRMT0 in raw mode and reports the ASPITAPE-compatible status
 block. TAPECTL /READY additionally sends the non-destructive TEST UNIT READY
 command.
