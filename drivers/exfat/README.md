@@ -6,12 +6,18 @@ the drive gets its own letter and DOS sends every file request for it to
 EXFAT.SYS.  It needs no ASPI.
 
 ```dos
-DEVICE=C:\DOS\EXFAT.SYS [/L:x] [/Q]
+DEVICE=C:\DOS\EXFAT.SYS [/L:x] [/Q] [/C]
 LASTDRIVE=Z
 ```
 
 - `/L:x` first drive letter to use (default: the first free one)
 - `/Q` no messages
+- `/C` BIOS disks through CHS only, without the INT 13h extensions (for
+  BIOSes with faulty extensions; only the first 8 GB are reachable)
+
+EXFAT.SYS stays resident with about 13.5 KB; it loads high with
+`DEVICEHIGH`.  The initialisation code and the unused code page table are
+freed after loading.
 
 EXFAT.SYS finds exFAT volumes in two places:
 
@@ -51,7 +57,8 @@ Tests: `build/host/test_exfat` (8.3 names; with an image it lists and reads
 it), `tests/exfat_image.sh` makes images through the Linux exFAT driver,
 `tests/dos_exfat.sh` boots MS-DOS 7.1 (`SVARDOS=1`: SvarDOS) in QEMU with
 an MBR partition (`SUPER=1`: superfloppy, `HIGH=DIR`: DEVICEHIGH with
-HIMEM.SYS, EMM386.EXE and MEM.EXE from DIR) and compares DIR, CD, TYPE and
+HIMEM.SYS, EMM386.EXE and MEM.EXE from DIR, `OPTS=/C`: CHS reads) and
+compares DIR, CD, TYPE and
 COPY results.  `tests/dos_exfat_aspi.sh` uses EUSBASPI and ASPIDSK with a
 removable USB stick and changes the medium exFAT -> FAT16 -> exFAT.
 

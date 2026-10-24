@@ -28,14 +28,16 @@ _STK    segment word public 'STK'
 _STK    ends
 INIT_TEXT segment byte public 'INIT'
 INIT_TEXT ends
-DGROUP  group _HDR, _TEXT, CONST, CONST2, _DATA, _BSS, _STK, INIT_TEXT
+INIT_DATA segment word public 'INIT'
+INIT_DATA ends
+DGROUP  group _HDR, _TEXT, CONST, CONST2, _DATA, _BSS, _STK, INIT_TEXT, INIT_DATA
 
         public  _int13, _int21, _old2f, _old21, _bss_start, _resident_end
         public  _svc_call, _aspi_callback_off
 
         extern  _redir:near, _drv_init:near, _assign:near, _aspi_notify:near
 
-STACKSIZE equ   1536
+STACKSIZE equ   1024
 
 _HDR    segment
         assume  cs:DGROUP, ds:DGROUP

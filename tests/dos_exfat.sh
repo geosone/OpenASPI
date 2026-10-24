@@ -8,6 +8,7 @@
 #   SVARDOS=1: SvarDOS (EDR-DOS kernel) instead of MS-DOS 7.1
 #   HIGH=DIR: MS-DOS with HIMEM.SYS, EMM386.EXE and MEM.EXE from DIR and
 #             DEVICEHIGH=EXFAT.SYS; MEM /C must show it in upper memory
+#   OPTS=/C: options for EXFAT.SYS (/C: CHS reads without INT 13h extensions)
 
 set -euo pipefail
 
@@ -18,6 +19,7 @@ MSDOS_IMG=${MSDOS_IMG:-$ROOT/../msdosinst/out/DISK1.IMG}
 SUPER=${SUPER:-0}
 SVARDOS=${SVARDOS:-0}
 HIGH=${HIGH:-}
+OPTS=${OPTS:-}
 SVARDOS_ZIP=${SVARDOS_ZIP:-$HOME/Iso/Dos/svardos-20250427-floppy-1.44M.zip}
 
 make -C "$ROOT" build/dos/EXFAT.SYS >/dev/null
@@ -39,10 +41,10 @@ while IFS= read -r file; do
 done < <(mdir -b -i "$OUT/boot.img" ::/)
 if test -n "$HIGH"; then
     printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' 'DEVICE=A:\HIMEM.SYS' \
-        'DEVICE=A:\EMM386.EXE NOEMS' 'DOS=HIGH,UMB' 'DEVICEHIGH=A:\EXFAT.SYS' > "$OUT/CONFIG.SYS"
+        'DEVICE=A:\EMM386.EXE NOEMS' 'DOS=HIGH,UMB' "DEVICEHIGH=A:\\EXFAT.SYS $OPTS" > "$OUT/CONFIG.SYS"
     mcopy -o -i "$OUT/boot.img" "$HIGH/HIMEM.SYS" "$HIGH/EMM386.EXE" "$HIGH/MEM.EXE" ::/
 else
-    printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' 'DEVICE=A:\EXFAT.SYS' > "$OUT/CONFIG.SYS"
+    printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' "DEVICE=A:\\EXFAT.SYS $OPTS" > "$OUT/CONFIG.SYS"
 fi
 # every command with "> AUX": SvarCOM has no CTTY
 printf '%s > AUX\r\n' \

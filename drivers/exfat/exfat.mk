@@ -4,7 +4,7 @@ DOSEXFAT := $(BUILD)/dos/EXFAT.SYS
 EXFATTESTBIN := $(BUILD)/host/test_exfat
 EXFATCORE := common/exfat/exfat.c common/exfat/codepage.c
 EXFATHDR := include/openaspi/exfat.h include/openaspi/types.h
-EXFATOBJ := $(BUILD)/dos/exfatsys_a.obj $(BUILD)/dos/exfatsys.obj $(BUILD)/dos/exfat.obj $(BUILD)/dos/codepage.obj
+EXFATOBJ := $(BUILD)/dos/exfatsys_a.obj $(BUILD)/dos/exfatsys.obj $(BUILD)/dos/exfat.obj $(BUILD)/dos/cpinit.obj
 # small model, no stack checks, no C runtime start-up: CS = DS = SS
 EXFATWCC := $(WCC) -q -ms -0 -os -s -zl -zdp -wx -we -Iinclude -I$(WATCOM)/h
 
@@ -24,7 +24,7 @@ $(BUILD)/dos/exfat.obj: common/exfat/exfat.c $(EXFATHDR)
 	mkdir -p $(@D)
 	$(EXFATWCC) -fo=$@ $<
 
-$(BUILD)/dos/codepage.obj: common/exfat/codepage.c $(EXFATHDR)
+$(BUILD)/dos/cpinit.obj: drivers/exfat/cpinit.c common/exfat/codepage.c $(EXFATHDR)
 	mkdir -p $(@D)
 	$(EXFATWCC) -fo=$@ $<
 
