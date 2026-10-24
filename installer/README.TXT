@@ -49,6 +49,15 @@ about 14 KB and can load high. EXFMT D: formats a drive as exFAT (layout
 only without /YES; /TEXFAT keeps two FATs, worth it for old ZIP and
 SuperDisk media), EXCHK D: checks it and EXCHK D: /F repairs it.
 
+ASPICHK and DEFRAG (setup option "FAT tools") work on every FAT12, FAT16
+and FAT32 drive, and on ASPIDSK/ASPIFDD media also when DOS has not mounted
+them. ASPICHK D: checks a drive, ASPICHK D: /F repairs it. DEFRAG D:
+defragments it (files contiguous, directories first, free space at the
+end; /U only joins fragmented files, /A analyzes, /B without the screen).
+DEFRAG checks the drive first and moves whole files in an order that is
+safe against power loss: after an interruption ASPICHK D: /F repairs the
+drive without losing data.
+
 TAPECTL.COM opens NRMT0 in raw mode and reports the ASPITAPE-compatible status
 block. TAPECTL /READY additionally sends the non-destructive TEST UNIT READY
 command.

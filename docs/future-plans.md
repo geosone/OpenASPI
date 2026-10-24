@@ -204,5 +204,5 @@ and deleted in turns), checked by `fsck.fat` on the host after DEFRAG and
 after ASPICHK `/F`; power loss in the middle of a DEFRAG (QEMU stopped) and
 ASPICHK afterwards.
 
-Release: both in the OpenASPI release and its installer (options ASPICHK
-and DEFRAG, no CONFIG.SYS line).
+Release (done): both in the OpenASPI release and its installer (one option
+"FAT tools", on by default, no CONFIG.SYS line).

@@ -51,6 +51,16 @@ EXFMT D: formatiert ein Laufwerk mit exFAT (ohne /YES nur der Aufbau;
 /TEXFAT haelt zwei FATs, sinnvoll fuer alte ZIP- und SuperDisk-Medien),
 EXCHK D: prueft es und EXCHK D: /F repariert es.
 
+ASPICHK und DEFRAG (Option "FAT-Werkzeuge") arbeiten auf jedem FAT12-,
+FAT16- und FAT32-Laufwerk, auf ASPIDSK/ASPIFDD-Medien auch dann, wenn DOS
+sie nicht eingebunden hat. ASPICHK D: prueft ein Laufwerk, ASPICHK D: /F
+repariert es. DEFRAG D: defragmentiert es (Dateien zusammenhaengend,
+Verzeichnisse zuerst, freier Platz am Ende; /U fuegt nur zerstueckelte
+Dateien zusammen, /A analysiert nur, /B ohne Bildschirm). DEFRAG prueft das
+Laufwerk vorher und verschiebt ganze Dateien in einer Reihenfolge, die
+gegen Stromausfall sicher ist: nach einer Unterbrechung repariert
+ASPICHK D: /F das Laufwerk ohne Datenverlust.
+
 /RESCUE setzt bei Lesefehlern fort, fuellt unlesbare Sektoren mit Nullen und
 schreibt eine separate CSV-Fehlerkarte. /MAP:C:\BAD.MAP waehlt eine neue Karte
 auf einem anderen Laufwerk. Rueckgabewert 3 bedeutet: beendet mit Leseluecken,

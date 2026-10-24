@@ -137,6 +137,7 @@ dist: all gdi-install LICENSE tests/dist_layout.sh tools/package/localize.py ins
 	cp $(DOSFMT) $(DOSDD) $(DISTDIR)/
 	cp $(DOSDDGUI) $(DISTDIR)/
 	cp $(DOSEXFAT) $(DOSEXFMT) $(DOSEXCHK) $(DISTDIR)/
+	cp $(DOSASPICHK) $(DOSDEFRAG) $(DISTDIR)/
 	mv $(DISTDIR)/LICENSE $(DISTDIR)/LICENSE.TXT
 	cp $(SHSUCD)/LICENSE.txt $(DISTDIR)/SHSUCD.LIC
 	cp $(SHSUCD)/readme.txt $(DISTDIR)/SHSUCD.TXT
