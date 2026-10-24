@@ -31,8 +31,9 @@ INIT_TEXT ends
 DGROUP  group _HDR, _TEXT, CONST, CONST2, _DATA, _BSS, _STK, INIT_TEXT
 
         public  _int13, _int21, _old2f, _old21, _bss_start, _resident_end
+        public  _svc_call, _aspi_callback_off
 
-        extern  _redir:near, _drv_init:near, _assign:near
+        extern  _redir:near, _drv_init:near, _assign:near, _aspi_notify:near
 
 STACKSIZE equ   1536
 
@@ -277,6 +278,85 @@ int_ret:
         ret
 intno   db      0
 do_int  endp
+
+; int __cdecl svc_call(unsigned off, unsigned seg, void *packet): the
+; exFAT service of ASPIDSK/ASPIFDD (common/dos/exfat_svc.inc), ES:BX ->
+; packet; returns the packet status.
+_svc_call proc near
+        push    bp
+        mov     bp, sp
+        push    si
+        push    di
+        push    es
+        mov     ax, [bp+4]
+        mov     word ptr svc_entry, ax
+        mov     ax, [bp+6]
+        mov     word ptr svc_entry+2, ax
+        push    ds
+        pop     es
+        mov     bx, [bp+8]
+        push    bx
+        call    dword ptr svc_entry
+        pop     bx
+        mov     ax, [bx+2]
+        pop     es
+        pop     di
+        pop     si
+        pop     bp
+        ret
+svc_entry dd    0
+_aspi_callback_off dw offset DGROUP:aspi_callback
+_svc_call endp
+
+; Far callback for ASPIDSK/ASPIFDD: BUILD BPB found a new exFAT medium,
+; AL = unit, DX = the driver's segment.  Runs inside DOS on the block
+; driver's stack: to aspi_notify(unit, seg) on the own stack, unless the
+; driver is busy (then the medium is found at the next media check).
+aspi_callback proc far
+        cmp     cs:busy, 0
+        jne     cb_done
+        mov     cs:busy, 1
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    bp
+        push    ds
+        push    es
+        mov     cs:save_ss, ss
+        mov     cs:save_sp, sp
+        mov     bx, cs
+        cli
+        mov     ss, bx
+        mov     sp, offset DGROUP:stack_top
+        sti
+        mov     ds, bx
+        mov     es, bx
+        cld
+        xor     ah, ah
+        push    dx
+        push    ax
+        call    _aspi_notify
+        add     sp, 4
+        cli
+        mov     ss, cs:save_ss
+        mov     sp, cs:save_sp
+        sti
+        pop     es
+        pop     ds
+        pop     bp
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        mov     cs:busy, 0
+cb_done:
+        ret
+aspi_callback endp
 
         public  _hook
 ; void __cdecl hook(void): INT 2Fh and INT 21h to the driver.

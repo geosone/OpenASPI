@@ -1,7 +1,9 @@
 /* EXFAT.SYS: exFAT drives for DOS through the network redirector interface
    (INT 2Fh AH=11h), read-only.  The volumes are found on the BIOS disks
    (INT 13h): superfloppies, MBR partitions of type 07h (also logical ones)
-   and GPT basic data partitions.  The exFAT part is common/exfat/exfat.c.
+   and GPT basic data partitions; and on the units of ASPIDSK and ASPIFDD,
+   whose drive letters EXFAT.SYS takes over while an exFAT medium is in
+   (common/dos/exfat_svc.inc).  The exFAT part is common/exfat/exfat.c.
 
    DOS structures as SHSUCDX uses them (DOS 4 and later): SDA from INT 21h
    AX=5D06h, CDS entries of 58h bytes, SFT, search data block. */
@@ -9,7 +11,7 @@
 #include <i86.h>
 #include "openaspi/exfat.h"
 
-#define VERSION "0.1"
+#define VERSION "0.2"
 #define MAXVOL 8
 #define STACKSIZE 1536                  /* as in exfatsys.asm */
 
@@ -17,11 +19,20 @@
 struct regs { oa_u16 es, ds, bp, di, si, dx, cx, bx, ax, sp, ss, flags; };
 struct iregs { oa_u16 ax, bx, cx, dx, si, di, ds, es; };
 struct dap { oa_u8 size, res; oa_u16 count; void __far *buf; oa_u32 lba, lba_hi; };
+struct packet { oa_u8 func, unit; oa_u16 status; oa_u32 lba; oa_u16 count; void __far *buf; oa_u16 result; };
 #pragma pack()
+
+#define SVC_INFO     0
+#define SVC_READ     1
+#define SVC_CHECK    2
+#define SVC_CALLBACK 3
+#define UF_EXFAT     0x80
 
 extern int __cdecl int13(struct iregs *);
 extern int __cdecl int21(struct iregs *);
 extern void __cdecl hook(void);
+extern int __cdecl svc_call(oa_u16 off, oa_u16 seg, struct packet *);
+extern oa_u16 aspi_callback_off;      /* far procedure in exfatsys.asm */
 extern char bss_start[], resident_end[];
 
 struct drive {
@@ -29,7 +40,14 @@ struct drive {
     oa_u8 bios, ext, letter;    /* letter: 0 = A:, 0FFh none yet */
     oa_u16 spt, heads;
     oa_u32 free_clusters;       /* 0FFFFFFFFh: not counted yet */
+    /* ASPIDSK/ASPIFDD units: the letter is DOS's while the medium is FAT */
+    oa_u8 aspi, unit, state;
+    oa_u16 svc_off, svc_seg;
+    oa_u16 checked;             /* BIOS tick of the last media check */
 };
+#define ST_OURS    0            /* exFAT, the letter redirected */
+#define ST_DOS     1            /* another medium: DOS and the block driver */
+#define ST_PENDING 2            /* exFAT inserted: mount at the next use */
 
 static struct drive drv[MAXVOL];
 static unsigned ndrv;
@@ -40,9 +58,12 @@ static struct oa_exfat_ent ent;
 static oa_u8 bounce[512];
 static oa_u8 secbuf[OA_EXFAT_MAXSECT];     /* the sector cache of all volumes */
 static struct drive *buf_owner;
+static oa_u8 __far *cds;
+static oa_u8 saved_cds[MAXVOL][0x58];  /* the CDS entries taken over */
+static int gone;                        /* the medium of a drive was taken out */
 
 /* walk cache of open files: the cluster last read of a FAT chain */
-static struct { oa_u32 first, idx, clu; } walks[4];
+static struct { struct drive *d; oa_u32 first, idx, clu; } walks[4];
 static unsigned next_walk;
 
 #define DS_SEG() FP_SEG((void __far *)&ndrv)
@@ -103,6 +124,67 @@ static int bios_read(void *dev, oa_u32 lba, void __far *buf)
     return -1;
 }
 
+static int aspi_read(void *dev, oa_u32 lba, void __far *buf)
+{
+    struct drive *d = dev;
+    struct packet k;
+    memset(&k, 0, sizeof(k));
+    k.func = SVC_READ; k.unit = d->unit; k.lba = lba; k.count = 1; k.buf = buf;
+    return svc_call(d->svc_off, d->svc_seg, &k) ? -1 : 0;
+}
+
+static int mount(struct drive *d)
+{
+    unsigned i;
+    for (i = 0; i < 4; ++i) if (walks[i].d == d) walks[i].d = 0;
+    d->free_clusters = 0xFFFFFFFFUL;
+    buf_owner = d;
+    return oa_exfat_mount(&d->v, aspi_read, d, 0, cp, secbuf);
+}
+
+/* The drive letter to EXFAT.SYS: the DOS entry is kept for give_back. */
+static void take_letter(struct drive *d)
+{
+    oa_u8 __far *e = cds + 0x58 * d->letter;
+    if (d->state == ST_DOS) _fmemcpy(saved_cds[d - drv], e, 0x58);
+    _fmemset(e, 0, 0x58);
+    e[0] = (oa_u8)('A' + d->letter); e[1] = ':'; e[2] = '\\';
+    W(e, 0x43) = 0xC080;
+    W(e, 0x4F) = 2;
+}
+
+static void give_back(struct drive *d)
+{
+    _fmemcpy(cds + 0x58 * d->letter, saved_cds[d - drv], 0x58);
+    d->state = ST_DOS;
+}
+
+/* Is the exFAT medium of an ASPI drive still in (checked at most once a
+   second)?  A new exFAT medium is mounted; another one gives the letter
+   back to DOS. */
+static int aspi_ready(struct drive *d)
+{
+    struct packet k;
+    oa_u16 now = *(oa_u16 __far *)MK_FP(0x40, 0x6C);
+    if (d->state == ST_OURS && (oa_u16)(now - d->checked) < 18) return 1;
+    d->checked = now;
+    memset(&k, 0, sizeof(k));
+    k.unit = d->unit;
+    if (d->state == ST_OURS) {
+        k.func = SVC_CHECK;
+        if (svc_call(d->svc_off, d->svc_seg, &k)) return 1;
+        if (!k.result) return 1;
+        k.func = SVC_INFO;
+    }
+    if (!svc_call(d->svc_off, d->svc_seg, &k) && (k.count & UF_EXFAT) && !mount(d)) {
+        d->state = ST_OURS;
+        return 1;
+    }
+    give_back(d);
+    gone = 1;
+    return 0;
+}
+
 static oa_u16 rd16(const oa_u8 *p) { return (oa_u16)(p[0] | p[1] << 8); }
 static oa_u32 rd32(const oa_u8 *p) { return rd16(p) | (oa_u32)rd16(p+2) << 16; }
 
@@ -110,11 +192,12 @@ static oa_u32 rd32(const oa_u8 *p) { return rd16(p) | (oa_u32)rd16(p+2) << 16; }
 
 static struct drive *drive_of(oa_u8 letter)
 {
-    unsigned i;
-    for (i = 0; i < ndrv; ++i) {
-        if (drv[i].letter != letter) continue;
-        if (buf_owner != &drv[i]) { drv[i].v.buf_lba = 0xFFFFFFFFUL; buf_owner = &drv[i]; }
-        return &drv[i];
+    struct drive *d;
+    for (d = drv; d < drv + ndrv; ++d) {
+        if (d->letter != letter || (d->aspi && d->state == ST_DOS)) continue;
+        if (buf_owner != d) { d->v.buf_lba = 0xFFFFFFFFUL; buf_owner = d; }
+        if (d->aspi && !aspi_ready(d)) return 0;
+        return d;
     }
     return 0;
 }
@@ -210,21 +293,22 @@ static void fill_sft(oa_u8 __far *sft, struct drive *d)
     _fmemcpy(sft + 0x20, last_fcb, 11);
 }
 
-static void sft_file(const oa_u8 __far *sft, struct oa_exfat_file *f)
+static void sft_file(struct drive *d, const oa_u8 __far *sft, struct oa_exfat_file *f)
 {
     unsigned i;
     memset(f, 0, sizeof(*f));
     f->first = D(sft, 0x1B); f->size = D(sft, 0x11); f->valid = D(sft, 7);
     f->nofat = (oa_u8)(W(sft, 0x0B) & 1);
-    for (i = 0; i < 4; ++i) if (walks[i].first == f->first) { f->idx = walks[i].idx; f->clu = walks[i].clu; }
+    for (i = 0; i < 4; ++i)
+        if (walks[i].d == d && walks[i].first == f->first) { f->idx = walks[i].idx; f->clu = walks[i].clu; }
 }
 
-static void sft_walk(const struct oa_exfat_file *f)
+static void sft_walk(struct drive *d, const struct oa_exfat_file *f)
 {
     unsigned i;
-    for (i = 0; i < 4 && walks[i].first != f->first; ++i) ;
+    for (i = 0; i < 4 && (walks[i].d != d || walks[i].first != f->first); ++i) ;
     if (i == 4) { i = next_walk; next_walk = (next_walk + 1) & 3; }
-    walks[i].first = f->first; walks[i].idx = f->idx; walks[i].clu = f->clu;
+    walks[i].d = d; walks[i].first = f->first; walks[i].idx = f->idx; walks[i].clu = f->clu;
 }
 
 static int match(const char *name, const oa_u8 __far *tpl)
@@ -342,7 +426,31 @@ static int do_open(struct regs *r, struct drive *d, oa_u16 mode)
     return ok(r);
 }
 
+static int redir2(struct regs *r);
+
 int __cdecl redir(struct regs *r)
+{
+    int rc = redir2(r);
+    if (gone) {                                 /* the medium was changed */
+        gone = 0;
+        return error(r, E_NOTREADY);
+    }
+    return rc;
+}
+
+/* BUILD BPB of ASPIDSK/ASPIFDD found a new exFAT medium on a unit whose
+   letter DOS has: take the letter, mount at the next use. */
+void __cdecl aspi_notify(unsigned unit, unsigned seg)
+{
+    struct drive *d;
+    for (d = drv; d < drv + ndrv; ++d) {
+        if (!d->aspi || d->svc_seg != seg || d->unit != unit || d->state != ST_DOS) continue;
+        take_letter(d);
+        d->state = ST_PENDING;
+    }
+}
+
+static int redir2(struct regs *r)
 {
     oa_u8 fn = (oa_u8)r->ax;
     oa_u8 __far *sft = (oa_u8 __far *)MK_FP(r->es, r->di);
@@ -374,10 +482,10 @@ int __cdecl redir(struct regs *r)
         return ok(r);
     case 0x08:                                  /* read */
         if (!(W(sft, 5) & 0x8000) || !(d = drive_of((oa_u8)(W(sft, 5) & 0x3F)))) return 1;
-        sft_file(sft, &f);
+        sft_file(d, sft, &f);
         pos = D(sft, 0x15);
         rc = oa_exfat_read(&d->v, &f, pos, *(void __far * __far *)(sda + SDA_DTA), r->cx, &done);
-        sft_walk(&f);
+        sft_walk(d, &f);
         if (rc) return error(r, E_NOTREADY);
         D(sft, 0x15) = pos + done;
         r->cx = done;
@@ -426,11 +534,52 @@ int __cdecl redir(struct regs *r)
 }
 
 /* Called at the first program start: drive letters for the volumes. */
+/* The units of ASPIDSK and ASPIFDD ("EXF1" in the device header) and their
+   DOS drive letters. */
+static void find_aspi(oa_u8 __far *lol)
+{
+    oa_u8 __far *dev = lol + 0x22, __far *dpb;
+    struct packet k;
+    struct drive *d;
+    unsigned u, units;
+    for (; FP_OFF(dev) != 0xFFFF; dev = *(oa_u8 __far * __far *)dev) {
+        if ((W(dev, 4) & 0x8000) || _fmemcmp(dev + 0x0B, "EXF1", 4)) continue;
+        units = dev[0x0A];
+        memset(&k, 0, sizeof(k));
+        k.func = SVC_CALLBACK; k.buf = MK_FP(DS_SEG(), aspi_callback_off);
+        svc_call(W(dev, 0x0F), FP_SEG(dev), &k);
+        for (u = 0; u < units && ndrv < MAXVOL; ++u) {
+            d = &drv[ndrv];
+            memset(d, 0, sizeof(*d));
+            d->aspi = 1; d->unit = (oa_u8)u; d->svc_off = W(dev, 0x0F); d->svc_seg = FP_SEG(dev);
+            d->letter = 0xFF; d->state = ST_DOS;
+            for (dpb = *(oa_u8 __far * __far *)lol; FP_OFF(dpb) != 0xFFFF; dpb = *(oa_u8 __far * __far *)(dpb + 0x19))
+                if (*(oa_u8 __far * __far *)(dpb + 0x13) == dev && dpb[1] == u) d->letter = dpb[0];
+            if (d->letter == 0xFF) continue;
+            ++ndrv;
+            memset(&k, 0, sizeof(k));
+            k.unit = (oa_u8)u;
+            if (svc_call(d->svc_off, d->svc_seg, &k) || !(k.count & UF_EXFAT) || mount(d)) continue;
+            take_letter(d);
+            d->state = ST_OURS;
+        }
+    }
+}
+
+/* A BIOS volume that is also an ASPI unit (the BIOS of a USB stick). */
+static int on_aspi(struct drive *b)
+{
+    struct drive *d;
+    for (d = drv; d < drv + ndrv; ++d)
+        if (d->aspi && d->state == ST_OURS && d->v.serial == b->v.serial && d->v.clusters == b->v.clusters) return 1;
+    return 0;
+}
+
 int __cdecl assign(void __far *unused)
 {
     struct iregs q;
-    oa_u8 __far *lol, __far *cds, __far *e;
-    unsigned i, l, last;
+    oa_u8 __far *lol, __far *e;
+    unsigned i, l, last, nbios;
     (void)unused;
     /* the SDA only now: DR-DOS and EDR-DOS move the DOS data segment
        after CONFIG.SYS */
@@ -445,8 +594,11 @@ int __cdecl assign(void __far *unused)
     cds = *(oa_u8 __far * __far *)(lol + 0x16);
     last = lol[0x21];
     if (!cds || FP_OFF(cds) == 0xFFFF) return 0;
+    nbios = ndrv;
+    find_aspi(lol);
     l = first_letter;
-    for (i = 0; i < ndrv; ++i) {
+    for (i = 0; i < nbios; ++i) {
+        if (on_aspi(&drv[i])) continue;
         for (; l < last; ++l) if (!(W(cds + 0x58 * l, 0x43) & 0xC000)) break;
         if (l >= last) break;
         drv[i].letter = (oa_u8)l;
@@ -519,6 +671,20 @@ static void scan_disk(void)
     }
 }
 
+/* ASPIDSK or ASPIFDD loaded before EXFAT.SYS? */
+static int aspi_drivers(void)
+{
+    struct iregs q;
+    oa_u8 __far *dev;
+    unsigned n = 0;
+    memset(&q, 0, sizeof(q));
+    q.ax = 0x5200;
+    int21(&q);
+    for (dev = (oa_u8 __far *)MK_FP(q.es, q.bx + 0x22); FP_OFF(dev) != 0xFFFF; dev = *(oa_u8 __far * __far *)dev)
+        if (!(W(dev, 4) & 0x8000) && !_fmemcmp(dev + 0x0B, "EXF1", 4)) ++n;
+    return n;
+}
+
 static void print(const char *s)
 {
     struct iregs q;
@@ -539,7 +705,7 @@ int __cdecl drv_init(void __far *req)
     oa_u8 __far *rq = req;
     const char __far *p = *(const char __far * __far *)(rq + 18);
     struct iregs q;
-    unsigned i, disks, quiet = 0;
+    unsigned i, disks, aspi, quiet = 0;
     struct drive probe;
     memset(bss_start, 0, resident_end - bss_start - STACKSIZE);
     /* the command line after the file name: /L:x and /Q */
@@ -569,8 +735,9 @@ int __cdecl drv_init(void __far *req)
         probe_disk = &probe;
         scan_disk();
     }
-    if (!ndrv) {
-        if (!quiet) print("No exFAT volumes found - EXFAT not installed\r\n$");
+    aspi = aspi_drivers();
+    if (!ndrv && !aspi) {
+        if (!quiet) print("No exFAT volumes and no ASPIDSK/ASPIFDD - EXFAT not installed\r\n$");
         W(rq, 14) = 0; W(rq, 16) = DS_SEG();
         W(rq, 3) = 0x0100;
         return 0;
@@ -581,6 +748,7 @@ int __cdecl drv_init(void __far *req)
             print_hex(drv[i].bios);
             print("h\r\n$");
         }
+        if (aspi) print("  exFAT media on the drives of ASPIDSK/ASPIFDD\r\n$");
     }
     buf_owner = 0;
     hook();

@@ -45,7 +45,9 @@ U_DEFAULT_BPB   equ     61              ; installation-time extended BPB
 U_LOCKS         equ     114
 U_CAPACITY      equ     115
 U_RAW_TOKEN     equ     119
-UNIT_SIZE       equ     121
+U_XLEN          equ     121             ; dword: sectors of an exFAT volume
+U_XFLAGS        equ     125
+UNIT_SIZE       equ     126
 
 UF_REMOVABLE    equ     01h
 UF_MEDIA        equ     02h
@@ -54,6 +56,9 @@ UF_RAW_WRITE    equ     08h
 UF_FAT32        equ     10h
 UF_NOACCESS     equ     20h            ; DOS block data I/O disabled by 47h
 UF_BPB_OVERRIDE equ     40h            ; explicitly selected current DOS BPB
+UF_EXFAT        equ     80h            ; exFAT volume for EXFAT.SYS, no DOS I/O
+
+XF_CHANGED      equ     01h            ; EXFAT.SYS saw a media change first
 
 ; BPB offsets (from the boot sector offset 0Bh)
 BPB_BYTES       equ     0
@@ -80,7 +85,9 @@ driver_start:
         dw      strategy
         dw      interrupt
 unit_count      db      0
-        db      7 dup (0)
+        db      'EXF1'                  ; exFAT service for EXFAT.SYS
+        dw      exfat_service
+        db      0
 
 request_ptr     dd      0
 bpb_pointers    dw      MAX_UNITS dup (0)
@@ -693,6 +700,12 @@ validate_fat32_aux endp
 ; because a successful readiness test alone does not identify the inserted disk.
 media_check proc near
         mov     di, word ptr [unit_ptr]
+        mov     ah, 0FFh
+        test    byte ptr [di+U_XFLAGS], XF_CHANGED
+        jz      media_check_dos
+        and     byte ptr [di+U_XFLAGS], not XF_CHANGED
+        jmp     short media_check_done
+media_check_dos:
         mov     ah, 1
         test    byte ptr [di+U_FLAGS], UF_REMOVABLE
         jnz     media_check_removable
@@ -738,10 +751,22 @@ build_bpb_refresh:
 build_bpb_read:
         push    es
         push    bx
-        call    load_volume
+        call    load_volume_x
         pop     bx
         pop     es
-        jnc     build_bpb_ready
+        jc      build_bpb_failed
+        test    byte ptr [di+U_FLAGS], UF_EXFAT
+        jz      build_bpb_ready
+        ; exFAT: EXFAT.SYS takes the drive letter over; DOS cannot use it.
+        ; With EXFAT.SYS the current DOS operation sees an empty disk.
+        call    exfat_notify
+        mov     ax, word ptr [exfat_callback]
+        or      ax, word ptr [exfat_callback+2]
+        jnz     build_bpb_ready
+        mov     al, ERR_UNKNOWN_MEDIA
+        stc
+        ret
+build_bpb_failed:
 ifdef FDD_DRIVER
         cmp     al, ERR_UNKNOWN_MEDIA
         jne     build_bpb_not_ready
@@ -810,8 +835,29 @@ read_header_ready:
         mov     al, ERR_GENERAL
         jmp     read_error
 read_access_allowed:
+        test    byte ptr [di+U_FLAGS], UF_EXFAT
+        jz      read_not_exfat
+        jmp     exfat_rw                        ; empty and write-protected
+read_not_exfat:
         test    byte ptr [di+U_FLAGS], UF_MEDIA
         jnz     read_have_media
+        ; after MEDIA CHECK reported a change DOS reads the FAT before it
+        ; asks for the BPB: load the new medium here
+        test    byte ptr [di+U_FLAGS], UF_REMOVABLE
+        jz      read_no_media
+        push    es
+        push    bx
+        call    load_volume_x
+        pop     bx
+        pop     es
+        jnc     read_loaded
+        jmp     read_error
+read_loaded:
+        test    byte ptr [di+U_FLAGS], UF_EXFAT
+        jz      read_have_media
+        call    exfat_notify
+        jmp     exfat_rw
+read_no_media:
         mov     al, ERR_NOT_READY
         jmp     read_error
 read_have_media:
@@ -1549,7 +1595,10 @@ medium_control_result endp
         include common/aspi/media_control.inc
 ifdef FDD_DRIVER
         include common/dos/raw_media.inc
-; Resident placeholder: also needed after runtime blank-media exchanges.
+endif
+        include common/dos/exfat_svc.inc
+; Resident placeholder: also needed after runtime blank-media exchanges, and
+; the BPB of exFAT units.
 default_bpb     dw      512
                 db      1
                 dw      1
@@ -1560,7 +1609,6 @@ default_bpb     dw      512
                 dw      9,18,2
                 dd      0,0
                 db      BPB_STORE_SIZE-BPB_SIZE dup (0)
-endif
 
 caller_ss       dw      0
 caller_sp       dw      0
@@ -1639,7 +1687,7 @@ endif
         mov     byte ptr [di+U_FLAGS], UF_REMOVABLE
 init_flags_ready:
         call    test_unit_ready                 ; clear UNIT ATTENTION
-        call    load_volume
+        call    load_volume_x
         jnc     init_add_unit
 ifdef FDD_DRIVER
         ; no disk in the drive: a placeholder BPB until BUILD BPB
