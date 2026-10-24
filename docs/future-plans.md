@@ -86,8 +86,15 @@ exFAT drive of EXFAT.SYS is not.  So exFAT gets its own two tools.  They
 read the sectors themselves, as EXFAT.SYS does (INT 13h, the exFAT service
 of ASPIDSK/ASPIFDD), so that the resident driver does not grow; EXFAT.SYS
 tells them its volumes through a table its device header points to
-(`EXI1`, `include/openaspi/exfatsys.h`).  EXCHK 0.1 is done
-([EXCHK](../tools/exchk/README.md)).
+(`EXI1`, `include/openaspi/exfatsys.h`).  EXCHK with `/F` is done
+([EXCHK](../tools/exchk/README.md)), also for TexFAT.
+
+TexFAT (two FATs and allocation bitmaps, ActiveFat in the boot sector) is
+worth it for aging removable media such as ZIP and SuperDisk: EXFAT.SYS
+reads it, EXCHK repairs one FAT from the other.  Still to come: EXFMT
+`/TEXFAT` creates it, and the writing of EXFAT.SYS keeps both copies (write
+the inactive one, then switch ActiveFat, then bring the other one up to
+date).
 
 - **EXFMT**: creates exFAT (boot region with its backup and checksum,
   allocation bitmap, upcase table, root directory with volume label),

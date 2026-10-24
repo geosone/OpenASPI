@@ -43,6 +43,8 @@ Up to eight volumes.
   fit stay as they are (`README.TXT`, `klein.txt` as `KLEIN.TXT`), others
   get `~n` in the order of the directory (`EINLAN~1.TXT`, `EINLA~10.TXT`).
 - Subdirectories show `.` and `..` as on FAT.
+- TexFAT volumes (two FATs and allocation bitmaps) are read through the
+  active FAT and bitmap (ActiveFat of the boot sector).
 - Writing, creating, deleting and renaming give "access denied".
 - Files of 4 GB and more are shown with the size FFFFFFFFh; only their
   first 4 GB can be read.

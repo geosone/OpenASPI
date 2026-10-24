@@ -8,6 +8,8 @@
 #   SVARDOS=1: SvarDOS (EDR-DOS kernel) instead of MS-DOS 7.1
 #   HIGH=DIR: MS-DOS with HIMEM.SYS, EMM386.EXE and MEM.EXE from DIR and
 #             DEVICEHIGH=EXFAT.SYS; MEM /C must show it in upper memory
+#   TEXFAT=0|1: the exFAT disk as TexFAT (tests/exfat_texfat.py), 1: the
+#             second FAT and bitmap active
 #   OPTS=/C: options for EXFAT.SYS (/C: CHS reads without INT 13h extensions)
 #   DAMAGE=bitmap-set: damage of tests/exchk_corrupt.py EXCHK must find and
 #             EXCHK /F repair (fsck.exfat checks the result); only damage
@@ -24,6 +26,7 @@ SVARDOS=${SVARDOS:-0}
 HIGH=${HIGH:-}
 OPTS=${OPTS:-}
 DAMAGE=${DAMAGE:-}
+TEXFAT=${TEXFAT:-}
 SVARDOS_ZIP=${SVARDOS_ZIP:-$HOME/Iso/Dos/svardos-20250427-floppy-1.44M.zip}
 
 make -C "$ROOT" build/dos/EXFAT.SYS build/dos/EXCHK.EXE >/dev/null
@@ -75,6 +78,7 @@ mkfs.fat -F16 -n FATDISK --offset 63 "$OUT/fat.img" $(( (32*2048 - 63) / 2 )) >/
 
 # the exFAT disk
 sh "$ROOT/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
+if test -n "$TEXFAT"; then python3 "$ROOT/tests/exfat_texfat.py" "$OUT/x/exfat.img" "$TEXFAT"; fi
 if test -n "$DAMAGE"; then python3 "$ROOT/tests/exchk_corrupt.py" "$OUT/x/exfat.img" "$DAMAGE"; fi
 if test "$SUPER" = 1; then
     cp "$OUT/x/exfat.img" "$OUT/exfat-disk.img"
@@ -107,7 +111,9 @@ if test -n "$DAMAGE"; then
     grep -q 'AFTER FIX FAILED' "$OUT/serial.txt" && { echo "EXCHK /F did not repair"; fail=1; }
     if test "$SUPER" = 1; then cp "$OUT/exfat-disk.img" "$OUT/fixed.img"
     else dd if="$OUT/exfat-disk.img" of="$OUT/fixed.img" bs=512 skip=2048 status=none; fi
-    fsck.exfat -n "$OUT/fixed.img" >/dev/null 2>&1 || { echo "fsck.exfat finds errors after EXCHK /F"; fail=1; }
+    if test -z "$TEXFAT"; then
+        fsck.exfat -n "$OUT/fixed.img" >/dev/null 2>&1 || { echo "fsck.exfat finds errors after EXCHK /F"; fail=1; }
+    fi
 else
     check 'No errors found'
     grep -q 'EXCHK FAILED' "$OUT/serial.txt" && { echo "EXCHK failed"; fail=1; }

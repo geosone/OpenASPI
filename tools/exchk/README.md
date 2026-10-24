@@ -15,8 +15,9 @@ Checked:
   boot sectors, the backup boot region (sectors 12-23) against the main one;
   VolumeDirty and MediaFailure flags (warnings)
 - FAT entries 0 and 1
-- root directory: exactly one allocation bitmap and one up-case table, the
+- root directory: one allocation bitmap per FAT and one up-case table, the
   up-case table checksum
+- TexFAT: the two FATs along the chains, the two allocation bitmaps
 - every entry set of all directories: number of secondary entries, stream
   entry, name length and characters, set checksum, name hash (through the
   volume's up-case table), valid data length, directory sizes
@@ -56,14 +57,22 @@ EXFAT.SYS, 3 read error in the boot region.
 
 Not repaired: cross-linked clusters (copy the files named and delete the
 originals), invalid characters in names, a damaged allocation bitmap or
-up-case table entry.  exFAT has one FAT and one allocation bitmap (two only
-with TexFAT), so lost FAT data cannot be taken from a second copy as on
-FAT.  Afterwards EXFAT.SYS reads the volume again (the `changed` flag of its
+up-case table entry.
+
+TexFAT (NumberOfFats 2, as on old ZIP and SuperDisk media worth the extra
+safety): both FATs are compared along every cluster chain.  Where they
+differ, a valid entry wins over a broken one, and an entry that continues
+the chain to the file's size over an early end; `/F` writes it to both
+FATs, so a chain damaged in one FAT comes back whole from the other.  The
+second allocation bitmap is compared with the active one and written from
+it.  Normal exFAT has one FAT and one bitmap, so there a damaged chain can
+only be ended.  Afterwards EXFAT.SYS reads the volume again (the `changed` flag of its
 volume table).  For ASPIDSK/ASPIFDD media EXCHK writes through the WRITE
 function of their exFAT service.
 
 The check is `common/exfat/exfat_check.c`.  Tests: `tests/exchk_host.sh`
-damages images in nine ways (`tests/exchk_corrupt.py`), checks the
+damages images in nine ways (`tests/exchk_corrupt.py`), on normal and on
+TexFAT copies (`tests/exfat_texfat.py`, three more kinds of damage), checks the
 messages of `build/host/test_exchk`, also in passes of 100 clusters, and
 repairs them; afterwards the check and `fsck.exfat` must find no error.
 `tests/dos_exfat.sh` and `tests/dos_exfat_aspi.sh` run EXCHK under DOS
