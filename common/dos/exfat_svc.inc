@@ -7,13 +7,13 @@
 ; the device header: "EXF1" and the entry offset after the unit count.
 ;
 ; exfat_service: ES:BX -> 16-byte packet, all registers kept.
-;   00h byte  function: 0 INFO, 1 READ, 2 CHECK, 3 CALLBACK
+;   00h byte  function: 0 INFO, 1 READ, 2 CHECK, 3 CALLBACK, 4 WRITE (EXCHK /F)
 ;   01h byte  unit
 ;   02h word  out: 0 done, else 8000h | DOS driver error
-;   04h dword READ: sector, relative to the exFAT volume
+;   04h dword READ/WRITE: sector, relative to the exFAT volume
 ;             INFO out: first sector of the volume (U_START)
-;   08h word  READ: count, 1-64; INFO out: U_FLAGS (UF_EXFAT: exFAT volume)
-;   0Ah dword READ: far buffer; INFO out: sectors of the exFAT volume;
+;   08h word  READ/WRITE: count, 1-64; INFO out: U_FLAGS (UF_EXFAT: exFAT volume)
+;   0Ah dword READ/WRITE: far buffer; INFO out: sectors of the exFAT volume;
 ;             CALLBACK: far procedure, called with AL = unit and DX = the
 ;             driver's segment when BUILD BPB or a READ after a media
 ;             change finds a new exFAT medium (inside DOS: it must not
@@ -312,6 +312,8 @@ svc_unit_ok:
 svc_free:
         cmp     al, 1
         je      svc_read
+        cmp     al, 4
+        je      svc_read
         cmp     al, 2
         je      svc_check
         mov     al, ERR_UNKNOWN_CMD
@@ -376,7 +378,12 @@ svc_in_range:
         add     ax, word ptr [di+U_START]
         adc     dx, word ptr [di+U_START+2]
         jc      svc_range
-        call    read_sectors
+        mov     byte ptr [xfer_opcode], 28h     ; READ(10)
+        cmp     byte ptr es:[bx+PK_FUNC], 4
+        jne     svc_xfer
+        mov     byte ptr [xfer_opcode], 2Ah     ; WRITE(10)
+svc_xfer:
+        call    xfer_sectors
         jnc     svc_done
         jmp     short svc_error
 svc_bad_count:

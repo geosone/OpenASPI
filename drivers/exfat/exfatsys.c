@@ -146,7 +146,7 @@ static int mount(struct drive *d)
     for (i = 0; i < 4; ++i) if (walks[i].d == d) walks[i].d = 0;
     d->free_clusters = 0xFFFFFFFFUL;
     buf_owner = d;
-    return oa_exfat_mount(&d->v, aspi_read, d, 0, cp, secbuf);
+    return oa_exfat_mount(&d->v, d->pub.aspi ? aspi_read : bios_read, d, d->pub.aspi ? 0 : d->pub.start, cp, secbuf);
 }
 
 /* The drive letter to EXFAT.SYS: the DOS entry is kept for give_back. */
@@ -211,6 +211,10 @@ static struct drive *drive_of(oa_u8 letter)
         if (d->pub.letter != letter || (d->pub.aspi && d->pub.state == ST_DOS)) continue;
         if (buf_owner != d) { d->v.buf_lba = 0xFFFFFFFFUL; buf_owner = d; }
         if (d->pub.aspi && !aspi_ready(d)) return 0;
+        if (d->pub.changed) {                   /* written by EXCHK /F */
+            d->pub.changed = 0;
+            if (mount(d)) return 0;
+        }
         return d;
     }
     return 0;

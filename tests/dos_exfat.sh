@@ -9,7 +9,9 @@
 #   HIGH=DIR: MS-DOS with HIMEM.SYS, EMM386.EXE and MEM.EXE from DIR and
 #             DEVICEHIGH=EXFAT.SYS; MEM /C must show it in upper memory
 #   OPTS=/C: options for EXFAT.SYS (/C: CHS reads without INT 13h extensions)
-#   DAMAGE=bitmap-set: a lost cluster (tests/exchk_corrupt.py) EXCHK must find
+#   DAMAGE=bitmap-set: damage of tests/exchk_corrupt.py EXCHK must find and
+#             EXCHK /F repair (fsck.exfat checks the result); only damage
+#             that keeps the file data: bitmap-set, bitmap-clear, hash
 
 set -euo pipefail
 
@@ -58,6 +60,7 @@ printf '%s > AUX\r\n' \
     'ECHO === WRITE' 'COPY A:\QEXIT.COM D:\NEU.COM' 'MD D:\NEU' 'DEL D:\README.TXT' \
     'ECHO === COPY' 'MD C:\OUT' 'COPY D:\*.* C:\OUT' 'COPY D:\SUB\*.* C:\OUT' \
     'ECHO === EXCHK' 'EXCHK D:' 'IF ERRORLEVEL 1 ECHO EXCHK FAILED' \
+    'ECHO === EXCHK /F' 'EXCHK D: /F' 'EXCHK D:' 'IF ERRORLEVEL 1 ECHO AFTER FIX FAILED' 'DIR D:\SUB' \
     'ECHO === END' > "$OUT/AUTOEXEC.BAT"
 if test -n "$HIGH"; then printf '%s > AUX\r\n' 'MEM /C' >> "$OUT/AUTOEXEC.BAT"; fi
 printf '%s\r\n' \
@@ -99,7 +102,12 @@ check '=== END'
 check '        21 files'
 if test -n "$DAMAGE"; then
     check 'EXCHK FAILED'
-    check 'allocated, but not used (lost)'
+    check 'Corrected: '
+    check 'A        B'
+    grep -q 'AFTER FIX FAILED' "$OUT/serial.txt" && { echo "EXCHK /F did not repair"; fail=1; }
+    if test "$SUPER" = 1; then cp "$OUT/exfat-disk.img" "$OUT/fixed.img"
+    else dd if="$OUT/exfat-disk.img" of="$OUT/fixed.img" bs=512 skip=2048 status=none; fi
+    fsck.exfat -n "$OUT/fixed.img" >/dev/null 2>&1 || { echo "fsck.exfat finds errors after EXCHK /F"; fail=1; }
 else
     check 'No errors found'
     grep -q 'EXCHK FAILED' "$OUT/serial.txt" && { echo "EXCHK failed"; fail=1; }

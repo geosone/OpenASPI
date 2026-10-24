@@ -20,6 +20,8 @@ struct oa_exfatsys_vol {
     oa_u32 start;               /* BIOS: first sector of the volume */
     oa_u8 unit, state;          /* ASPI: unit and OA_EXFATSYS_* */
     oa_u16 svc_off, svc_seg;    /* ASPI: the driver's exFAT service */
+    oa_u8 changed;              /* set by a tool that wrote the volume:
+                                   EXFAT.SYS reads it again at the next use */
 };
 struct oa_exfatsys_info {
     oa_u16 version;             /* 1 */

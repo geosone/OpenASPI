@@ -6,6 +6,8 @@
 #   2. the host changes the medium to a FAT16 stick: D: back to DOS/ASPIDSK
 #   3. and back to the exFAT stick: D: again EXFAT.SYS's
 # FDD=1: ASPIFDD instead of ASPIDSK, the stick named as a ZIP drive
+# DAMAGE=hash: damage of tests/exchk_corrupt.py, repaired by EXCHK D: /F
+#   through the WRITE function of the exFAT service
 
 set -euo pipefail
 
@@ -16,6 +18,8 @@ AHCIASPI_DIR=${AHCIASPI_DIR:-$ROOT/../ahciaspi}
 MSDOS_IMG=${MSDOS_IMG:-$ROOT/../msdosinst/out/DISK1.IMG}
 BLK=ASPIDSK; PRODUCT=STICK
 if test -n "${FDD:-}"; then BLK=ASPIFDD; PRODUCT='ZIP 100'; fi
+DAMAGE=${DAMAGE:-}
+FIX=; test -z "$DAMAGE" || FIX=' /F'
 
 make -C "$ROOT" build/dos/EXFAT.SYS build/dos/EXCHK.EXE build/dos/$BLK.SYS >/dev/null
 rm -rf "$OUT"
@@ -36,7 +40,7 @@ printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' 'DEVICE=A:\EUSBASPI.SYS' \
     "DEVICE=A:\\$BLK.SYS" 'DEVICE=A:\EXFAT.SYS' > "$OUT/CONFIG.SYS"
 printf '%s > AUX\r\n' \
     'ECHO === EXFAT1' 'DIR D:' 'TYPE D:\EINLA~11.TXT' 'MD C:\OUT' 'COPY D:\*.* C:\OUT' \
-    'EXCHK D:' 'ECHO === SWAP1' > "$OUT/AUTOEXEC.BAT"
+    "EXCHK D:$FIX" 'EXCHK D:' 'ECHO === SWAP1' > "$OUT/AUTOEXEC.BAT"
 printf '%s\r\n' 'WAIT' >> "$OUT/AUTOEXEC.BAT"
 printf '%s > AUX\r\n' \
     'ECHO === FAT' 'DIR D:' 'DIR D:' 'TYPE D:\FATTEST.TXT' \
@@ -56,6 +60,7 @@ mkfs.fat -F16 -n FATDISK --offset 63 "$OUT/fat.img" $(( (32*2048 - 63) / 2 )) >/
 
 # the exFAT stick (MBR, type 07h) and a FAT16 stick
 sh "$ROOT/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
+if test -n "$DAMAGE"; then python3 "$ROOT/tests/exchk_corrupt.py" "$OUT/x/exfat.img" "$DAMAGE"; fi
 truncate -s 65M "$OUT/exstick.img"
 echo 'start=2048, type=7' | sfdisk -q "$OUT/exstick.img"
 dd if="$OUT/x/exfat.img" of="$OUT/exstick.img" bs=512 seek=2048 conv=notrunc status=none
@@ -100,6 +105,11 @@ need() { section "$1" "$2" | grep -q "$3" || { echo "missing in $1: $3"; fail=1;
 need EXFAT1 SWAP1 'EINLA~11'
 need EXFAT1 SWAP1 'Datei 11'
 need EXFAT1 SWAP1 'No errors found'
+if test -n "$DAMAGE"; then
+    need EXFAT1 SWAP1 'Corrected: '
+    dd if="$OUT/exstick.img" of="$OUT/fixed.img" bs=512 skip=2048 status=none
+    fsck.exfat -n "$OUT/fixed.img" >/dev/null 2>&1 || { echo "fsck.exfat finds errors after EXCHK /F"; fail=1; }
+fi
 need EXFAT1 SWAP1 'ASPI unit 0'
 need FAT SWAP2 'FAT stick read by'
 need FAT SWAP2 'FATSTICK'

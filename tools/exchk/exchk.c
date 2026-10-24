@@ -1,6 +1,6 @@
 /* EXCHK: checks an exFAT drive of EXFAT.SYS, on a BIOS disk or an
-   ASPIDSK/ASPIFDD medium.  It only reads and reports.
-   EXCHK D:
+   ASPIDSK/ASPIFDD medium, and repairs it with /F.
+   EXCHK D: [/F]
    Exit codes: 0 no errors (warnings possible), 1 errors found, 2 wrong use
    or no exFAT drive of EXFAT.SYS, 3 read error in the boot region. */
 #include <stdio.h>
@@ -10,6 +10,7 @@
 #include <dos.h>
 #include <i86.h>
 #include <malloc.h>
+#include <stddef.h>
 #include "openaspi/exfat_check.h"
 #include "openaspi/exfatsys.h"
 
@@ -29,6 +30,7 @@ void svc(void __far *entry, struct packet __far *p);
     parm [dx ax] [es bx] modify [ax bx cx dx si di es];
 
 static struct oa_exfatsys_vol vol;
+static oa_u8 __far *vol_in_driver;      /* EXFAT.SYS's copy, for "changed" */
 static oa_u8 __far *chunks[MAXCHUNKS];
 static unsigned nchunks;
 static oa_u8 bounce_area[1024];
@@ -39,14 +41,14 @@ static oa_u8 __far *bounce(void)
     return (lin & 0xFFFF) > 0xFE00 ? bounce_area + 512 : bounce_area;
 }
 
-static int bios_read(void *dev, oa_u32 lba, void __far *buf)
+/* one sector through INT 13h: AH 42h/43h (extensions) or 02h/03h (CHS) */
+static int bios_io(int write, oa_u32 lba, void __far *buf)
 {
     union REGS r;
     struct SREGS s;
     struct dap p;
     oa_u32 t;
     unsigned tries, cx = 0, dh = 0;
-    (void)dev;
     if (!vol.ext) {
         t = lba / vol.spt;
         cx = (unsigned)(lba - t * vol.spt + 1);
@@ -61,20 +63,21 @@ static int bios_read(void *dev, oa_u32 lba, void __far *buf)
         r.h.dl = vol.bios;
         if (vol.ext) {
             p.size = 16; p.res = 0; p.count = 1; p.buf = buf; p.lba = lba; p.lba_hi = 0;
-            r.h.ah = 0x42; r.x.si = FP_OFF((void __far *)&p); s.ds = FP_SEG((void __far *)&p);
+            r.h.ah = write ? 0x43 : 0x42; r.x.si = FP_OFF((void __far *)&p); s.ds = FP_SEG((void __far *)&p);
             int86x(0x13, &r, &r, &s);
             if (!r.x.cflag) return 0;
         } else {
-            r.x.ax = 0x0201; r.x.cx = cx; r.h.dh = (oa_u8)dh;
+            r.x.ax = write ? 0x0301 : 0x0201; r.x.cx = cx; r.h.dh = (oa_u8)dh;
             r.x.bx = FP_OFF(buf); s.es = FP_SEG(buf);
             int86x(0x13, &r, &r, &s);
             if (!r.x.cflag) return 0;
             if (r.h.ah == 0x09) {               /* DMA boundary */
+                if (write) _fmemcpy(bounce(), buf, 512);
                 memset(&r, 0, sizeof(r));
-                r.x.ax = 0x0201; r.x.cx = cx; r.h.dh = (oa_u8)dh; r.h.dl = vol.bios;
+                r.x.ax = write ? 0x0301 : 0x0201; r.x.cx = cx; r.h.dh = (oa_u8)dh; r.h.dl = vol.bios;
                 r.x.bx = FP_OFF(bounce()); s.es = FP_SEG(bounce());
                 int86x(0x13, &r, &r, &s);
-                if (!r.x.cflag) { _fmemcpy(buf, bounce(), 512); return 0; }
+                if (!r.x.cflag) { if (!write) _fmemcpy(buf, bounce(), 512); return 0; }
             }
         }
         memset(&r, 0, sizeof(r));
@@ -84,15 +87,20 @@ static int bios_read(void *dev, oa_u32 lba, void __far *buf)
     return -1;
 }
 
-static int aspi_read(void *dev, oa_u32 lba, void __far *buf)
+static int bios_read(void *dev, oa_u32 lba, void __far *buf) { (void)dev; return bios_io(0, lba, buf); }
+static int bios_write(void *dev, oa_u32 lba, const void __far *buf) { (void)dev; return bios_io(1, lba, (void __far *)buf); }
+
+static int aspi_io(int write, oa_u32 lba, void __far *buf)
 {
     struct packet k;
-    (void)dev;
     memset(&k, 0, sizeof(k));
-    k.func = 1; k.unit = vol.unit; k.lba = lba; k.count = 1; k.buf = buf;
+    k.func = write ? 4 : 1; k.unit = vol.unit; k.lba = lba; k.count = 1; k.buf = buf;
     svc(MK_FP(vol.svc_seg, vol.svc_off), &k);
     return k.status ? -1 : 0;
 }
+
+static int aspi_read(void *dev, oa_u32 lba, void __far *buf) { (void)dev; return aspi_io(0, lba, buf); }
+static int aspi_write(void *dev, oa_u32 lba, const void __far *buf) { (void)dev; return aspi_io(1, lba, (void __far *)buf); }
 
 /* EXFAT.SYS's volume of drive letter (0 = A:) */
 static int find_volume(unsigned letter)
@@ -113,17 +121,26 @@ static int find_volume(unsigned letter)
         for (i = 0; i < n; ++i) {
             v = (oa_u8 __far *)MK_FP(FP_SEG(dev), info->table + i * info->stride);
             _fmemcpy(&vol, v, sizeof(vol));
-            if (vol.letter == letter) return 0;
+            if (vol.letter == letter) { vol_in_driver = v; return 0; }
         }
         return -3;
     }
     return -1;
 }
 
+/* DOS's buffers of other drives stay; ours are not in DOS */
+static void oa_flush(void)
+{
+    union REGS r;
+    r.h.ah = 0x0D;
+    intdos(&r, &r);
+}
+
 static void msg(void *ctx, int level, const char *text)
 {
     (void)ctx;
-    printf("%s%s\n", level == OA_EXCHK_ERROR ? "Error: " : level == OA_EXCHK_WARN ? "Warning: " : "", text);
+    printf("%s%s\n", level == OA_EXCHK_ERROR ? "Error: " : level == OA_EXCHK_WARN ? "Warning: " :
+           level == OA_EXCHK_FIXED ? "    Corrected: " : "", text);
 }
 
 static int mark(void *ctx, oa_u32 bit)
@@ -150,10 +167,11 @@ int main(int argc, char **argv)
     union REGS r;
     oa_u32 need;
     unsigned letter;
-    int rc;
-    printf("EXCHK " VERSION " - exFAT check, reports only\n");
-    if (argc != 2 || strlen(argv[1]) != 2 || argv[1][1] != ':' || !isalpha((unsigned char)argv[1][0])) {
-        printf("EXCHK d:   checks the exFAT drive d: of EXFAT.SYS\n");
+    int rc, fix = 0;
+    printf("EXCHK " VERSION " - exFAT check and repair\n");
+    if (argc == 3 && (!strcmp(argv[2], "/F") || !strcmp(argv[2], "/f"))) fix = 1;
+    if (argc != 2 + fix || strlen(argv[1]) != 2 || argv[1][1] != ':' || !isalpha((unsigned char)argv[1][0])) {
+        printf("EXCHK d: [/F]   checks the exFAT drive d: of EXFAT.SYS, /F repairs it\n");
         return 2;
     }
     letter = toupper((unsigned char)argv[1][0]) - 'A';
@@ -165,9 +183,11 @@ int main(int argc, char **argv)
     memset(&c, 0, sizeof(c));
     if (vol.aspi) {
         c.read = aspi_read;
+        if (fix) c.write = aspi_write;
         printf("Checking %c: (ASPI unit %u)\n", 'A' + letter, vol.unit);
     } else {
         c.read = bios_read; c.start = vol.start;
+        if (fix) c.write = bios_write;
         printf("Checking %c: (BIOS disk %02Xh, sector %lu)\n", 'A' + letter, vol.bios, (unsigned long)vol.start);
     }
     memset(&r, 0, sizeof(r));
@@ -183,6 +203,10 @@ int main(int argc, char **argv)
     c.window = nchunks * CHUNK * 8UL;
     if (c.window / 8 < need) printf("(%lu passes)\n", (unsigned long)((need + c.window / 8 - 1) / (c.window / 8)));
     rc = oa_exchk_run(&c);
+    if (fix) {                                  /* EXFAT.SYS reads the volume again */
+        vol_in_driver[(unsigned)offsetof(struct oa_exfatsys_vol, changed)] = 1;
+        oa_flush();
+    }
     if (rc) {
         printf(rc == OA_EXFAT_EIO ? "Read error in the boot region.\n" : "%c: has no valid exFAT boot sector.\n", 'A' + letter);
         return rc == OA_EXFAT_EIO ? 3 : 2;
@@ -192,6 +216,7 @@ int main(int argc, char **argv)
     printf("%10lu clusters of %lu bytes\n%10lu used\n%10lu free\n",
            (unsigned long)c.clusters, (unsigned long)c.cluster_size, (unsigned long)c.used, (unsigned long)c.free);
     if (c.bad) printf("%10lu bad\n", (unsigned long)c.bad);
+    if (c.fixed) printf("%lu repairs written.\n", (unsigned long)c.fixed);
     if (!c.errors) printf("No errors found.\n");
     else printf("%lu errors found (lost %lu, unmarked %lu, cross-linked %lu clusters).\n",
                 (unsigned long)c.errors, (unsigned long)c.lost, (unsigned long)c.unmarked, (unsigned long)c.cross);
