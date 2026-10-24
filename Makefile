@@ -55,11 +55,12 @@ CPPFLAGS += -Iinclude
 
 include drivers/exfat/exfat.mk
 include tools/exchk/exchk.mk
+include tools/aspichk/aspichk.mk
 include tools/exfmt/exfmt.mk
 
 .PHONY: exfat-dist all tools test check dos-c-check dos-smoke dos-cda-smoke dos-media-smoke dos-disk-smoke dos-tape-smoke dos-mhvtl-smoke dos-mhvtl-roundtrip dos-mhvtl-write-protect gdi-install dist disksets clean
 
-all: $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(DOSEXFAT) $(EXFATTESTBIN) $(DOSEXCHK) $(EXCHKTESTBIN) $(DOSEXFMT) $(EXFMTTESTBIN) $(DOSSHSUCDX) $(DOSCDAUDIO) $(DOSSCAN) $(DOSMGR) $(DOSCTL) $(DOSCTLALIASES) $(DOSFMT) $(DOSDD) $(DOSDDGUI) $(DOSTAPECTL) $(DOSAPIINFO) $(DOSWINCHECK) $(WIN16CHECK) $(TESTBIN) $(ASPITESTBIN)
+all: $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(DOSEXFAT) $(EXFATTESTBIN) $(DOSEXCHK) $(EXCHKTESTBIN) $(DOSASPICHK) $(FATCHKTESTBIN) $(DOSEXFMT) $(EXFMTTESTBIN) $(DOSSHSUCDX) $(DOSCDAUDIO) $(DOSSCAN) $(DOSMGR) $(DOSCTL) $(DOSCTLALIASES) $(DOSFMT) $(DOSDD) $(DOSDDGUI) $(DOSTAPECTL) $(DOSAPIINFO) $(DOSWINCHECK) $(WIN16CHECK) $(TESTBIN) $(ASPITESTBIN)
 
 test: $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(EXFATTESTBIN) $(TESTBIN) $(ASPITESTBIN) $(FATTESTBIN) $(RESCUETESTBIN) $(NATIVEAPITESTBIN)
 	$(TESTBIN)

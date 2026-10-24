@@ -165,13 +165,14 @@ Windows 98 runs in Windows only), and the DOS tools stop at the limits of
 their DOS version.  OpenASPI gets its own two tools, even though DOS has a
 checker:
 
-- **ASPICHK**: checks FAT12, FAT16 and FAT32: boot sector and BPB, both FAT
-  copies against each other, cluster chains (lost, cross linked, loops),
-  directory entries and VFAT long name entries (checksums, orphans), file
-  sizes against chains, FAT32 FSInfo free counts.  Reports first, repairs
-  with `/F`.  Works on every DOS drive (absolute disk read/write, INT 25h/
-  26h and INT 21h 7305h for FAT32), and on ASPIDSK/ASPIFDD media through
-  their raw-media service, also when DOS has not mounted them.
+- **ASPICHK** (done, [README](../tools/aspichk/README.md)): checks FAT12,
+  FAT16 and FAT32: boot sector and BPB, the FAT32 backup boot sector and
+  FSInfo, the FAT copies against each other, cluster chains (lost, cross
+  linked, loops), directory entries and VFAT long name entries, file sizes
+  against chains.  Reports first, repairs with `/F`.  Works on every DOS
+  drive (INT 21h 7305h, INT 25h/26h), and on ASPIDSK/ASPIFDD media through
+  the physical sector functions of their exFAT service, also when DOS has
+  not mounted them.
 - **DEFRAG**: defragments FAT12, FAT16 and FAT32 (and exFAT through the
   sector interface of EXFAT.SYS once that can write): files contiguous,
   directories first, free space at the end, optionally sorted directories.
@@ -179,18 +180,21 @@ checker:
   entry are changed after, both FAT copies, a journal of the current move.
   Text UI like MS DEFRAG (cluster map).
 
-Both are adapted from existing free code instead of written new:
+The plan was to adapt existing free code.  The license check of the
+source archives (FreeDOS 1.3 legacy CD) changed that:
 
-| Source | License | Use |
+| Source | License found | Use |
 |---|---|---|
-| FreeDOS DEFRAG 1.3.1 (Imre Leber), with its FAT transformation engine | GPL | DEFRAG; the engine is shared with FreeDOS CHKDSK and RECOVER |
-| FreeDOS CHKDSK (Imre Leber) | GPL | ASPICHK, same engine |
-| dosfsck 2.11 (FreeDOS port, Eric Auer) / fsck.fat of dosfstools 4.x | GPL v2 / GPL v3 or later | ASPICHK checks and repairs, FAT32 |
+| FreeDOS DEFRAG 1.3.2a and CHKDSK 0.9.2 (Imre Leber) | GPL v2 in the LSM files, only about half of the source files say "or later" | DEFRAG's text UI as a model only |
+| dosfsck 2.11 (FreeDOS port) | GPL v2, mostly without "or later" | none |
+| fsck.fat of dosfstools 4.2 | GPL v3 or later | the check and repair rules of ASPICHK |
 | exfatprogs (mkfs.exfat, fsck.exfat) | GPL v2 or later | EXFMT and EXCHK |
 
-OpenASPI is GPL version 3: code under "GPL v2 only" cannot be taken over,
-"v2 or later" can.  The license text in each source archive has to be
-checked before anything is copied (the project pages are not enough).
+OpenASPI is GPL version 3: code under "GPL v2 only" cannot be taken over.
+So ASPICHK has its own check core (`common/fat/fat_check.c`, Watcom C, the
+multi-pass walk of EXCHK) with the rules of `fsck.fat`, and DEFRAG is
+written new as well, with a move order of its own that is safe against
+power loss.
 
 Tests: QEMU disk images made by `mkfs.fat` with fragmented files (written
 and deleted in turns), checked by `fsck.fat` on the host after DEFRAG and

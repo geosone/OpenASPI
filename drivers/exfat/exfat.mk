@@ -4,6 +4,7 @@ DOSEXFAT := $(BUILD)/dos/EXFAT.SYS
 EXFATTESTBIN := $(BUILD)/host/test_exfat
 EXCHKTESTBIN := $(BUILD)/host/test_exchk
 EXFMTTESTBIN := $(BUILD)/host/test_exfmt
+FATCHKTESTBIN := $(BUILD)/host/test_fatchk
 EXFATCORE := common/exfat/exfat.c common/exfat/codepage.c
 EXFATHDR := include/openaspi/exfat.h include/openaspi/exfatsys.h include/openaspi/exfat_check.h include/openaspi/exfat_format.h include/openaspi/types.h
 EXFATOBJ := $(BUILD)/dos/exfatsys_a.obj $(BUILD)/dos/exfatsys.obj $(BUILD)/dos/exfat.obj $(BUILD)/dos/cpinit.obj
@@ -21,6 +22,10 @@ $(EXCHKTESTBIN): tests/exchk_test.c common/exfat/exfat_check.c $(EXFATCORE) $(EX
 $(EXFMTTESTBIN): tests/exfmt_test.c common/exfat/exfat_format.c common/exfat/upcase.c $(EXFATHDR)
 	mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/exfmt_test.c common/exfat/exfat_format.c common/exfat/upcase.c
+
+$(FATCHKTESTBIN): tests/fatchk_test.c common/fat/fat_check.c common/exfat/codepage.c include/openaspi/fat_check.h $(EXFATHDR)
+	mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/fatchk_test.c common/fat/fat_check.c common/exfat/codepage.c
 
 $(BUILD)/dos/exfatsys_a.obj: drivers/exfat/exfatsys.asm | $(JWASM)
 	mkdir -p $(@D)
