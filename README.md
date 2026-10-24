@@ -53,6 +53,7 @@ layout. See [installation media](installer/README.md).
   [ASPIFMT formatting](tools/aspifmt/README.md),
   [ASPIDD copying and DOS GUI](tools/aspidd/README.md),
   [ASPICHK FAT check](tools/aspichk/README.md),
+  [DEFRAG](tools/defrag/README.md),
   [TAPECTL](tools/tapectl/README.md), [WINCHECK](tools/wincheck/README.md).
 - [Reference material](docs/reference-material.md) and
   [mhVTL integration](docs/qemu-mhvtl.md).

@@ -173,12 +173,14 @@ checker:
   drive (INT 21h 7305h, INT 25h/26h), and on ASPIDSK/ASPIFDD media through
   the physical sector functions of their exFAT service, also when DOS has
   not mounted them.
-- **DEFRAG**: defragments FAT12, FAT16 and FAT32 (and exFAT through the
-  sector interface of EXFAT.SYS once that can write): files contiguous,
-  directories first, free space at the end, optionally sorted directories.
-  Safe against power loss: data is copied first, the FAT and the directory
-  entry are changed after, both FAT copies, a journal of the current move.
-  Text UI like MS DEFRAG (cluster map).
+- **DEFRAG** (done, [README](../tools/defrag/README.md)): defragments
+  FAT12, FAT16 and FAT32: files contiguous, directories first, free space
+  at the end, or only the fragmented files joined (`/U`).  Safe against
+  power loss: files are moved whole, data first, then the new chain in all
+  FATs, then the directory entry (one sector), the old chain freed last;
+  an interruption leaves only what ASPICHK `/F` repairs (lost clusters,
+  stale `..` entries).  Text UI with a cluster map.  exFAT later, once
+  EXFAT.SYS can write.
 
 The plan was to adapt existing free code.  The license check of the
 source archives (FreeDOS 1.3 legacy CD) changed that:
@@ -194,7 +196,8 @@ OpenASPI is GPL version 3: code under "GPL v2 only" cannot be taken over.
 So ASPICHK has its own check core (`common/fat/fat_check.c`, Watcom C, the
 multi-pass walk of EXCHK) with the rules of `fsck.fat`, and DEFRAG is
 written new as well, with a move order of its own that is safe against
-power loss.
+power loss (instead of a journal: every intermediate state is one that
+ASPICHK repairs without losing data).
 
 Tests: QEMU disk images made by `mkfs.fat` with fragmented files (written
 and deleted in turns), checked by `fsck.fat` on the host after DEFRAG and
