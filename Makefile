@@ -113,6 +113,8 @@ dos-disk-smoke: all
 	bash tests/dos_block_ownership.sh
 	bash tests/dos_disk.sh
 	DETECT_ONLY=1 bash tests/dos_disk.sh
+	bash tests/dos_disk_protect.sh
+	FDD=1 bash tests/dos_disk_protect.sh
 
 dos-media-smoke: all
 	bash tests/dos_media_control.sh

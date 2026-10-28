@@ -124,10 +124,14 @@ not capabilities established merely by reading a specification.
 
 - [x] ASPIDSK/ASPIFDD: basic `41h`/`61h`/`62h` track-I/O milestone, including
   addressing, transfer bounds, partial failure and live DOS tests.
+- [x] Live write protection: `tests/dos_disk_protect.sh` (ASPIDSK and ASPIFDD,
+  MS-DOS 7.1, EUSBASPI, read-only QEMU USB disk answering DATA PROTECT).
+  Absolute writes fail with DOS error 00h, DOS writes reach INT 24h with
+  error 00h, the unit stays readable and the medium unchanged.
 - [ ] Qualify MS-DOS track/verify conventions and standard formatting/track
-  tables and media profiles independently. Probe
-  live capacity/protection and unsupported commands without inferring complete
-  device behavior from a name or a successful INQUIRY alone.
+  tables and media profiles independently. Probe live capacity and
+  unsupported commands without inferring complete device behavior from a
+  name or a successful INQUIRY alone.
 - [x] ASPICDA: reset drive sends ASPI Reset Device once; rejected requests keep
   state, accepted ones invalidate audio/lock state and latch a disc change on
   every unit of the target. The TOC is never cached. Resident tests, and
