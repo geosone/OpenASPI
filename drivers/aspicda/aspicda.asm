@@ -53,6 +53,7 @@ CAP_KNOWN       equ     80h             ; page 2Ah was read
 CAP_ANALOG      equ     01h             ; plays audio (analog output)
 CAP_CDDA        equ     02h             ; reads audio sectors (READ CD)
 CAP_ACCURATE    equ     04h             ; CD-DA stream is accurate
+UNIT_RESIDUAL   equ     40h             ; adapter returns residual counts
 U_AUDIO_STATE   equ     4              ; 0 idle, 1 playing, 2 paused
 U_AUDIO_RANGE   equ     5              ; a successful PLAY supplied the range
 U_AUDIO_START   equ     6              ; packed binary MSF DWORD
@@ -845,6 +846,7 @@ read_sub_channel proc near
         pop     si
         pop     cx
         pop     ax
+        call    cd_want_residual
         mov     byte ptr [srb+SRB_CDB], 42h
         mov     byte ptr [srb+SRB_CDB+1], al
         mov     byte ptr [srb+SRB_CDB+2], 40h    ; SUBQ
@@ -853,8 +855,21 @@ read_sub_channel proc near
         mov     word ptr [srb+SRB_BufLen], cx
         mov     word ptr [srb+SRB_BufPointer], si
         mov     word ptr [srb+SRB_BufPointer+2], cs
+        push    cx
         call    call_aspi
-        jmp     scsi_failed
+        pop     cx
+        call    scsi_failed
+        jc      sub_channel_done
+        mov     ax, word ptr [si+2]             ; sub-channel data length
+        xchg    al, ah
+        add     ax, 4
+        jc      sub_channel_bad
+        jmp     cd_check_transfer
+sub_channel_bad:
+        mov     al, ERR_GENERAL
+        stc
+sub_channel_done:
+        ret
 read_sub_channel endp
 
 ; Transport success is insufficient for Q-channel data: require the expected
@@ -1080,6 +1095,7 @@ read_capacity proc near
         mov     al, SRB_DIR_IN
         mov     cl, 10
         call    aspi_prepare
+        call    cd_want_residual
         mov     byte ptr [srb+SRB_CDB], 25h     ; READ CAPACITY
         mov     word ptr [srb+SRB_BufLen], 8
         mov     word ptr [srb+SRB_BufPointer], offset capacity_data
@@ -1092,6 +1108,10 @@ read_capacity proc near
         pop     di
         pop     es
         call    scsi_failed
+        jc      capacity_done
+        mov     ax, 8
+        mov     cx, 8
+        call    cd_check_transfer
         jc      capacity_done
         mov     ax, word ptr [capacity_data+2]   ; last LBA, big-endian
         xchg    al, ah
@@ -1192,6 +1212,7 @@ read_toc proc near
         mov     al, SRB_DIR_IN
         mov     cl, 10
         call    aspi_prepare
+        call    cd_want_residual
         mov     byte ptr [srb+SRB_CDB], 43h     ; READ TOC
         mov     byte ptr [srb+SRB_CDB+1], 02h   ; MSF
         mov     byte ptr [srb+SRB_CDB+7], high TOC_SIZE
@@ -1228,7 +1249,11 @@ read_toc proc near
         ja      toc_bad
         cmp     al, ah
         ja      toc_bad
-        clc
+        mov     ax, word ptr [toc_data]
+        xchg    al, ah
+        add     ax, 2                           ; the whole declared TOC
+        mov     cx, TOC_SIZE
+        jmp     cd_check_transfer
 toc_done:
         ret
 toc_bad:
@@ -1249,6 +1274,51 @@ poison_buffer proc near
         pop     ax
         ret
 poison_buffer endp
+
+; After aspi_prepare: ask for the residual count when the unit's adapter
+; reports it (HA_EXT_RESIDUAL at INIT). Keeps all registers.
+cd_want_residual proc near
+        push    si
+        mov     si, word ptr [current_unit]
+        test    byte ptr [si+3], UNIT_RESIDUAL
+        jz      want_residual_done
+        or      byte ptr [srb+SRB_Flags], SRB_RESIDUAL
+want_residual_done:
+        pop     si
+        ret
+cd_want_residual endp
+
+; After a successful data-in command. AX = bytes the reply declares, CX = bytes
+; requested. With a residual count, fewer than min(AX, CX) transferred bytes
+; (or a malformed residual) fail with AL = ERR_GENERAL; without one, the
+; poisoned buffer is all the protection there is. Keeps other registers.
+cd_check_transfer proc near
+        test    byte ptr [srb+SRB_Flags], SRB_RESIDUAL
+        jz      transfer_ok
+        push    ax
+        push    cx
+        cmp     ax, cx
+        jbe     transfer_need
+        mov     ax, cx
+transfer_need:
+        cmp     word ptr [srb+SRB_BufLen+2], 0
+        jne     transfer_short
+        sub     cx, word ptr [srb+SRB_BufLen]   ; bytes actually transferred
+        jb      transfer_short
+        cmp     cx, ax
+        jb      transfer_short
+        pop     cx
+        pop     ax
+transfer_ok:
+        clc
+        ret
+transfer_short:
+        pop     cx
+        pop     ax
+        mov     al, ERR_GENERAL
+        stc
+        ret
+cd_check_transfer endp
 
 ; AL = track -> SI = offset of its descriptor in toc_data; CF if missing
 ; Search eight-byte format-0 descriptors for the requested track (AAh is
@@ -1569,6 +1639,7 @@ read_audio_page proc near
         call    aspi_prepare
         pop     ax
         or      al, 0Eh
+        call    cd_want_residual
         mov     byte ptr [srb+SRB_CDB], 5Ah
         mov     byte ptr [srb+SRB_CDB+1], 08h   ; DBD
         mov     byte ptr [srb+SRB_CDB+2], al
@@ -1586,6 +1657,10 @@ read_audio_page proc near
         add     dx, 2                          ; total response length
         cmp     dx, 24
         jb      audio_page_bad
+        mov     ax, dx
+        mov     cx, AUDIO_MODE_SIZE
+        call    cd_check_transfer
+        jc      audio_page_done
         mov     bx, word ptr [audio_mode+6]
         xchg    bl, bh
         cmp     bx, AUDIO_MODE_SIZE-24
@@ -2014,6 +2089,10 @@ init_next_device:
         push    di
         call    cd_capabilities
         pop     di
+        test    word ptr [scan_ext_flags], HA_EXT_RESIDUAL
+        jz      init_caps_store
+        or      al, UNIT_RESIDUAL
+init_caps_store:
         mov     byte ptr [unit_table+di+3], al
         inc     byte ptr [unit_count]
         test    byte ptr [options], OPT_VERBOSE
@@ -2134,6 +2213,10 @@ cd_capabilities proc near
         mov     al, SRB_DIR_IN
         mov     cl, 10
         call    aspi_prepare
+        test    word ptr [scan_ext_flags], HA_EXT_RESIDUAL
+        jz      cd_caps_request
+        or      byte ptr [srb+SRB_Flags], SRB_RESIDUAL
+cd_caps_request:
         mov     byte ptr [srb+SRB_CDB], 5Ah     ; MODE SENSE(10)
         mov     byte ptr [srb+SRB_CDB+1], 08h   ; no block descriptors
         mov     byte ptr [srb+SRB_CDB+2], 2Ah   ; CD capabilities page
@@ -2147,6 +2230,13 @@ cd_capabilities proc near
         call    poison_buffer
         call    call_aspi
         call    aspi_result
+        mov     al, 0
+        jc      cd_caps_done
+        mov     ax, word ptr [toc_data]         ; mode data length
+        xchg    al, ah
+        add     ax, 2
+        mov     cx, 40
+        call    cd_check_transfer
         mov     al, 0
         jc      cd_caps_done
         mov     bx, word ptr [toc_data+6]       ; block descriptor length

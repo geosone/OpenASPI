@@ -103,9 +103,12 @@ not capabilities established merely by reading a specification.
   descriptors within the buffer, at least the lead-out and tracks 1..99 with
   first <= last. Sub-channel and the audio mode page were already poisoned and
   length-checked. `tests/cda_toc.asm`.
-- [ ] Residual counts for the CD replies where the manager supports them.
-  Without them a truncated transfer whose own header claims full length is
-  only caught by the poisoned bytes it leaves.
+- [x] Residual counts for the CD replies (TOC, capacity, sub-channel, mode
+  pages) where the manager supports them.
+- [x] Host inquiry extension handshake: drivers, ASPITAP and ASPISCAN request
+  HA_ExtFlags with signature AA55h and trust them only after the manager's
+  55AAh acknowledgement. Before, no real manager was ever asked, so residual
+  checking was active only against the test mocks.
 - [ ] Add pending-completion/abort/reset fault tests around the shared client.
   IRQ-driven completion must remain possible; SRBs and buffers cannot be
   reused or released while a manager still owns them. Driver/app cancellation

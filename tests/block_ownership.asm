@@ -222,9 +222,19 @@ fake_aspi proc far
         mov ax,cs
         cmp word ptr ss:[bp+8],ax
         BRANCH je, fake_bad
-        cmp word ptr [srb+SRB_Hdr_Rsvd],0
+        ; reserved header zero, except the host inquiry's extension request
+        mov ax,0
+        mov dx,0
+        cmp byte ptr [srb+SRB_Cmd],SC_HA_INQUIRY
+        jne fake_header
+        cmp word ptr [srb+SRB_Hdr_Rsvd],HA_EXT_REQUEST
+        jne fake_header
+        mov ax,HA_EXT_REQUEST
+        mov dx,2
+fake_header:
+        cmp word ptr [srb+SRB_Hdr_Rsvd],ax
         BRANCH je, fake_bad
-        cmp word ptr [srb+SRB_Hdr_Rsvd+2],0
+        cmp word ptr [srb+SRB_Hdr_Rsvd+2],dx
         BRANCH je, fake_bad
         mov byte ptr [srb+SRB_Status],SS_COMP
         mov al,byte ptr [srb+SRB_Cmd]

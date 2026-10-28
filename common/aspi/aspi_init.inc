@@ -113,11 +113,7 @@ scan_adapter:
 ; advertisement of a full target range. These are manager addresses, not drive
 ; letters, and the initiator's own target is excluded from candidate probing.
 scan_adapter_inquiry:
-        call    clear_srb
-        mov     byte ptr [srb+SRB_Cmd], SC_HA_INQUIRY
-        mov     al, byte ptr [scan_ha]
-        mov     byte ptr [srb+SRB_HaId], al
-        call    call_aspi
+        call    scan_ha_inquiry
         mov     al, byte ptr [srb+HA_SCSI_ID]
         mov     byte ptr [scan_own_id], al
         mov     al, byte ptr [srb+HA_Unique+3]  ; targets per adapter, 0 = 8
@@ -128,14 +124,12 @@ scan_adapter_inquiry:
 scan_eight:
         mov     al, 8
 scan_targets_ready:
-        mov     dx, word ptr [srb+HA_ExtFlags]
         cmp     byte ptr [srb+SRB_Status], SS_COMP
         je      scan_adapter_ok
         mov     al, 1                           ; skip a failing adapter
         mov     byte ptr [scan_own_id], 0FFh
-        xor     dx, dx
+        mov     word ptr [scan_ext_flags], 0
 scan_adapter_ok:
-        mov     word ptr [scan_ext_flags], dx
         mov     byte ptr [scan_targets], al
         mov     byte ptr [scan_target], 0
 scan_target_ok:
@@ -167,6 +161,20 @@ scan_found:
         clc
         ret
 aspi_scan_next endp
+
+; Host inquiry of scan_ha with the extension request; scan_ext_flags gets the
+; acknowledged HA_ExtFlags (0 without the manager's acknowledgement).
+scan_ha_inquiry proc near
+        call    clear_srb
+        mov     byte ptr [srb+SRB_Cmd], SC_HA_INQUIRY
+        mov     al, byte ptr [scan_ha]
+        mov     byte ptr [srb+SRB_HaId], al
+        HA_EXT_ASK
+        call    call_aspi
+        HA_EXT_GET dx
+        mov     word ptr [scan_ext_flags], dx
+        ret
+scan_ha_inquiry endp
 
 ; Copy scan_* into runtime unit_* and read 36-byte standard identity. This
 ; selects the shared SRB address as a side effect; callers retain scan_* if they

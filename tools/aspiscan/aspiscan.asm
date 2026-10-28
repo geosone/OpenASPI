@@ -68,6 +68,7 @@ adapter_loop:
         mov     byte ptr [srb+SRB_Cmd], SC_HA_INQUIRY
         mov     al, byte ptr [adapter]
         mov     byte ptr [srb+SRB_HaId], al
+        HA_EXT_ASK
         call    call_aspi
         cmp     byte ptr [srb+SRB_Status], SS_COMP
         je      adapter_ready
@@ -101,7 +102,7 @@ targets_known:
         call    print_fixed
         mov     dx, offset msg_extensions
         call    print_string
-        mov     ax, word ptr [srb+HA_ExtFlags]
+        HA_EXT_GET ax
         mov     word ptr [adapter_ext_flags], ax
         call    print_hex16
         call    print_crlf

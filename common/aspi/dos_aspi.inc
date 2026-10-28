@@ -20,6 +20,32 @@ HA_Identifier           equ     1Ah
 HA_Unique               equ     2Ah
 HA_ExtFlags             equ     3Ah
 HA_EXT_RESIDUAL         equ     0002h
+; A host inquiry asks for HA_ExtFlags with signature AA55h and the wanted
+; byte count in its header; a manager that fills them answers 55AAh and the
+; count it returned. Anything else means no extensions, whatever 3Ah holds.
+HA_EXT_REQUEST          equ     0AA55h
+HA_EXT_REPLY            equ     055AAh
+
+; Before a host inquiry on srb: request the two-byte extension flags.
+HA_EXT_ASK macro
+        mov     word ptr [srb+SRB_Hdr_Rsvd], HA_EXT_REQUEST
+        mov     word ptr [srb+SRB_Hdr_Rsvd+2], 2
+endm
+
+; After a completed host inquiry: reg = HA_ExtFlags when the manager
+; acknowledged the request, else 0. Changes flags only.
+HA_EXT_GET macro reg
+        local none, done
+        cmp     word ptr [srb+SRB_Hdr_Rsvd], HA_EXT_REPLY
+        jne     none
+        cmp     byte ptr [srb+SRB_Hdr_Rsvd+2], 2
+        jb      none
+        mov     reg, word ptr [srb+HA_ExtFlags]
+        jmp     short done
+none:
+        xor     reg, reg
+done:
+endm
 
 SRB_Target              equ     08h
 SRB_Lun                 equ     09h

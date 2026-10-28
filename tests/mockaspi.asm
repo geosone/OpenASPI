@@ -211,10 +211,17 @@ else
 endif
         mov     byte ptr es:[bx+HA_SCSI_ID], 7
         mov     byte ptr es:[bx+HA_Unique+3], 1
-ifdef NO_RESIDUAL
         mov     word ptr es:[bx+HA_ExtFlags], 0
-else
+ifndef NO_RESIDUAL
+        ; extension flags only on request, as AHCIASPI answers
+        cmp     word ptr es:[bx+SRB_Hdr_Rsvd], HA_EXT_REQUEST
+        jne     host_inquiry_done
+        cmp     byte ptr es:[bx+SRB_Hdr_Rsvd+2], 2
+        jb      host_inquiry_done
+        mov     word ptr es:[bx+SRB_Hdr_Rsvd], HA_EXT_REPLY
+        mov     byte ptr es:[bx+SRB_Hdr_Rsvd+2], 2
         mov     word ptr es:[bx+HA_ExtFlags], HA_EXT_RESIDUAL
+host_inquiry_done:
 endif
         mov     byte ptr es:[bx+SRB_Status], SS_COMP
         jmp     aspi_done

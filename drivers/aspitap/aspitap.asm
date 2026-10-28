@@ -2027,14 +2027,15 @@ scan_adapter:
         mov     byte ptr [srb+SRB_Cmd], SC_HA_INQUIRY
         mov     al, byte ptr [scan_ha]
         mov     byte ptr [srb+SRB_HaId], al
+        HA_EXT_ASK
         call    call_aspi
         cmp     byte ptr [srb+SRB_Status], SS_COMP
         je      adapter_inquiry_ready
         jmp     next_adapter
 adapter_inquiry_ready:
-        call    report_adapter
-        mov     ax, word ptr [srb+HA_ExtFlags]
+        HA_EXT_GET ax
         mov     word ptr [adapter_ext_flags], ax
+        call    report_adapter
         mov     al, byte ptr [srb+HA_SCSI_ID]
         mov     byte ptr [adapter_scsi_id], al
         mov     al, byte ptr [srb+HA_Unique+3]
@@ -2459,7 +2460,7 @@ report_adapter proc near
         mov     dx, offset msg_extensions
         mov     ah, 09h
         int     21h
-        mov     ax, word ptr [srb+HA_ExtFlags]
+        mov     ax, word ptr [adapter_ext_flags]
         call    print_hex16
         mov     dx, offset msg_manager
         mov     ah, 09h

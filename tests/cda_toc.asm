@@ -41,6 +41,9 @@ step dw 0
 toc_src dw 0
 toc_len dw 0
 cap_len dw 8
+reported dw 0                           ; bytes the residual says arrived
+resid_hi dw 0
+srb_flags db 0
 ; disc A: tracks 1 and 2, lead-out at 10:00:00
 toc_a   db 0, 26, 1, 2
         db 0, 14h, 1, 0, 0, 0, 2, 0
@@ -104,6 +107,29 @@ test_start:
         CHECK_EQ
         mov word ptr [cap_len], 0
         QUERY 8, 5, ST_DONE or ST_ERROR or ERR_NOT_FOUND
+        ; without the adapter's residual support none is requested
+        test byte ptr [srb_flags], SRB_RESIDUAL
+        CHECK_EQ
+        ; residual counts: the transferred length must cover the declared one
+        or byte ptr [unit_table+3], UNIT_RESIDUAL
+        mov word ptr [cap_len], 8
+        REPLY toc_a, 28
+        mov word ptr [reported], 28
+        QUERY 10, 7, ST_DONE
+        test byte ptr [srb_flags], SRB_RESIDUAL
+        jnz residual_requested
+        jmp failed
+residual_requested:
+        mov word ptr [reported], 20              ; all bytes there, 20 reported
+        QUERY 10, 7, ST_DONE or ST_ERROR or ERR_GENERAL
+        mov word ptr [reported], 8
+        QUERY 8, 5, ST_DONE
+        mov word ptr [reported], 6
+        QUERY 8, 5, ST_DONE or ST_ERROR or ERR_GENERAL
+        mov word ptr [reported], 8
+        mov word ptr [resid_hi], 1               ; malformed residual
+        QUERY 8, 5, ST_DONE or ST_ERROR or ERR_GENERAL
+        mov word ptr [resid_hi], 0
         mov dx, offset ok
         mov ah, 9
         int 21h
@@ -141,6 +167,8 @@ fake_aspi proc far
         push cx
         push es
         mov byte ptr cs:[srb+SRB_Status], SS_COMP
+        mov cl, byte ptr cs:[srb+SRB_Flags]
+        mov byte ptr cs:[srb_flags], cl
         les di, dword ptr cs:[srb+SRB_BufPointer]
         cmp byte ptr cs:[srb+SRB_CDB], 43h
         je fake_toc
@@ -154,6 +182,13 @@ fake_toc:
         mov cx, word ptr cs:[toc_len]
 fake_copy:
         rep movsb
+        test byte ptr cs:[srb+SRB_Flags], SRB_RESIDUAL
+        jz fake_done
+        mov cx, word ptr cs:[srb+SRB_BufLen]
+        sub cx, word ptr cs:[reported]
+        mov word ptr cs:[srb+SRB_BufLen], cx
+        mov cx, word ptr cs:[resid_hi]
+        mov word ptr cs:[srb+SRB_BufLen+2], cx
 fake_done:
         pop es
         pop cx
