@@ -98,9 +98,14 @@ not capabilities established merely by reading a specification.
   cuts the reply to its additional length and rejects untouched, too short,
   qualified or type-mismatched replies; missing identification reads as
   blanks. `tests/aspi_inquiry.asm`. READ CAPACITY already poisons its reply.
-- [ ] Other short command replies (MODE SENSE, READ TOC, sub-channel) with
-  the residual count where the manager supports it. Without it, a truncated
-  transfer whose own header claims full length stays undetectable.
+- [x] ASPICDA short replies: READ TOC, READ CAPACITY and the INIT
+  capabilities page poison their buffers; the TOC header must describe whole
+  descriptors within the buffer, at least the lead-out and tracks 1..99 with
+  first <= last. Sub-channel and the audio mode page were already poisoned and
+  length-checked. `tests/cda_toc.asm`.
+- [ ] Residual counts for the CD replies where the manager supports them.
+  Without them a truncated transfer whose own header claims full length is
+  only caught by the poisoned bytes it leaves.
 - [ ] Add pending-completion/abort/reset fault tests around the shared client.
   IRQ-driven completion must remain possible; SRBs and buffers cannot be
   reused or released while a manager still owns them. Driver/app cancellation

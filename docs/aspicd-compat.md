@@ -438,7 +438,7 @@ exports every slot, including unsupported ones, so coverage is auditable.
 | Area | Current ASPICDA | Before claiming full ASPICD compatibility |
 |---|---|---|
 | MMC cooked/raw reads | Implemented and QEMU tested | Count-zero behavior, bounds, overflow, residual/error cases and diverse disc layouts |
-| TOC / media-change / capacity | Basic implementation | Per-unit caches, replacement media, malformed/short responses, empty-drive behavior |
+| TOC / media-change / capacity | Poisoned, header-checked TOC and capacity replies (`tests/cda_toc.asm`); media-change latch and QEMU exchange test | Residual counts, multi-session discs, empty-drive behavior on real drives |
 | Play / pause / resume / audio status | MMC paths, per-unit state/MSF range, polling, busy/error tests | Disc/track ranges, physical/player qualification and legacy command sets |
 | Head/Q | MMC queries and packet/error/guard tests implemented | Physical audio/data-disc and legacy-command-set qualification |
 | UPC | MMC MCN/CONTROL queries, BCD, error/guard tests and SHSUCDX negative forwarding checks | Catalog-bearing physical discs, diverse drives and legacy paths |

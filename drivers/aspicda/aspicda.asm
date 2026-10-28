@@ -1084,6 +1084,10 @@ read_capacity proc near
         mov     word ptr [srb+SRB_BufLen], 8
         mov     word ptr [srb+SRB_BufPointer], offset capacity_data
         mov     word ptr [srb+SRB_BufPointer+2], cs
+        ; untouched reply = FFFFFFFFh, rejected below, never an old disc's
+        mov     di, offset capacity_data
+        mov     cx, 8
+        call    poison_buffer
         call    call_aspi
         pop     di
         pop     es
@@ -1195,11 +1199,56 @@ read_toc proc near
         mov     word ptr [srb+SRB_BufLen], TOC_SIZE
         mov     word ptr [srb+SRB_BufPointer], offset toc_data
         mov     word ptr [srb+SRB_BufPointer+2], cs
+        mov     di, offset toc_data
+        mov     cx, TOC_SIZE
+        call    poison_buffer
         call    call_aspi
         pop     di
         pop     es
-        jmp     scsi_failed
+        call    scsi_failed
+        jc      toc_done
+; A short or untouched reply must not reuse an earlier disc's TOC. The buffer
+; was poisoned (unwritten descriptors carry track FFh, which never matches).
+; Require a header within the buffer, whole eight-byte descriptors including
+; at least the lead-out, and tracks 1..99 with first <= last.
+        mov     cx, word ptr [toc_data]         ; data length, big-endian
+        xchg    cl, ch
+        cmp     cx, TOC_SIZE-2
+        ja      toc_bad
+        sub     cx, 2
+        jb      toc_bad
+        test    cl, 7
+        jnz     toc_bad
+        jcxz    toc_bad
+        mov     al, byte ptr [toc_data+2]
+        mov     ah, byte ptr [toc_data+3]
+        cmp     al, 1
+        jb      toc_bad
+        cmp     ah, 99
+        ja      toc_bad
+        cmp     al, ah
+        ja      toc_bad
+        clc
+toc_done:
+        ret
+toc_bad:
+        mov     al, ERR_GENERAL
+        stc
+        ret
 read_toc endp
+
+; Fill CS:DI..DI+CX-1 with FFh before a data-in command. Keeps ES and AX.
+poison_buffer proc near
+        push    ax
+        push    es
+        push    cs
+        pop     es
+        mov     al, 0FFh
+        rep     stosb
+        pop     es
+        pop     ax
+        ret
+poison_buffer endp
 
 ; AL = track -> SI = offset of its descriptor in toc_data; CF if missing
 ; Search eight-byte format-0 descriptors for the requested track (AAh is
@@ -1213,6 +1262,8 @@ find_toc_track proc near
         jbe     toc_missing
         mov     si, 4
 toc_search:
+        cmp     cx, 8                           ; whole descriptors only
+        jb      toc_missing
         cmp     byte ptr [toc_data+si+2], al
         je      toc_found
         add     si, 8
@@ -2090,6 +2141,10 @@ cd_capabilities proc near
         mov     word ptr [srb+SRB_BufLen], 40
         mov     word ptr [srb+SRB_BufPointer], offset toc_data
         mov     word ptr [srb+SRB_BufPointer+2], cs
+        ; the previous drive's page must not answer for this one
+        mov     di, offset toc_data
+        mov     cx, 40
+        call    poison_buffer
         call    call_aspi
         call    aspi_result
         mov     al, 0
@@ -2103,6 +2158,8 @@ cd_capabilities proc near
         and     ah, 3Fh
         cmp     ah, 2Ah
         jne     cd_caps_done
+        cmp     byte ptr [bx+1], 4              ; page reaches byte 5
+        jb      cd_caps_done
         mov     al, CAP_KNOWN
         test    byte ptr [bx+4], 01h            ; Audio Play
         jz      cd_caps_cdda
