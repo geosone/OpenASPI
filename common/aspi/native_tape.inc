@@ -35,7 +35,7 @@ native_control_flags dw 0
 native_control_count dd 0
 native_writer_block dw 0
 
-; Select the native QUERY/CONTROL/READ/WRITE function from the DOS request.
+; Select native QUERY/CONTROL/READ/WRITE/POSITION/LOCATE/PARTITIONS.
 ; Return CF set only for a rejected delivery/envelope; operation errors in a
 ; well-formed reply stay in its result/diagnostic fields and return CF clear.
 ; The selected handler validates the function-specific packet before processing.
@@ -55,8 +55,24 @@ native_dispatch_read:
         jmp     native_tape_read
 native_dispatch_write:
         cmp     byte ptr es:[bx+REQ_FUNCTION], 3
-        jne     native_dispatch_bad
+        jne     native_dispatch_position
         jmp     native_tape_write
+native_dispatch_position:
+        cmp     byte ptr es:[bx+REQ_FUNCTION], 4
+        jne     native_dispatch_locate
+        jmp     native_tape_position
+native_dispatch_locate:
+        cmp     byte ptr es:[bx+REQ_FUNCTION], 5
+        jne     native_dispatch_partitions
+        jmp     native_tape_locate
+native_dispatch_partitions:
+        cmp     byte ptr es:[bx+REQ_FUNCTION], 6
+        jne     native_dispatch_alerts
+        jmp     native_tape_partitions
+native_dispatch_alerts:
+        cmp     byte ptr es:[bx+REQ_FUNCTION], 7
+        jne     native_dispatch_bad
+        jmp     native_tape_alerts
 native_dispatch_bad:
         stc
         ret
@@ -130,6 +146,7 @@ native_header_valid:
         mov     word ptr [native_info+6], NT_VERSION
         mov     word ptr [native_info+NT_VALID], 20h ; session only, no cached guesses
         mov     word ptr [native_info+NT_OPERATIONS], 0FFFFh
+        mov     word ptr [native_info+NT_OPERATIONS+2], 1FFFh
         mov     al, byte ptr [tape_ha]
         mov     byte ptr [native_info+NT_ADDRESS], al
         mov     al, byte ptr [tape_target]
@@ -380,56 +397,69 @@ native_parse_limits endp
 ; MODE SENSE parsing must honor the returned header, block-descriptor length
 ; and each page's declared extent. Optional absence means unknown capability;
 ; it must not become an inferred disabled/unsupported setting.
-native_parse_mode proc near
+native_find_mode_page proc near
         cmp     word ptr [native_actual], 4
-        NT_JUMP jb, native_malformed
+        NT_JUMP jb, native_find_bad
         xor     dx, dx
         mov     dl, byte ptr [native_reply]
         inc     dx
         cmp     dx, word ptr [native_actual]
-        NT_JUMP ja, native_malformed
+        NT_JUMP ja, native_find_bad
         cmp     dx, 4
-        NT_JUMP jb, native_malformed
+        NT_JUMP jb, native_find_bad
         xor     bx, bx
         mov     bl, byte ptr [native_reply+3]
         test    bl, 7
-        NT_JUMP jnz, native_malformed
+        NT_JUMP jnz, native_find_bad
         add     bx, 4
         cmp     bx, dx
-        NT_JUMP ja, native_malformed
+        NT_JUMP ja, native_find_bad
         mov     word ptr [native_page_ptr], 0
-native_mode_next:
+native_find_next:
         cmp     bx, dx
-        je      native_mode_checked
+        je      native_find_checked
         mov     ax, dx
         sub     ax, bx
         cmp     ax, 2
-        NT_JUMP jb, native_malformed
+        NT_JUMP jb, native_find_bad
         mov     si, offset native_reply
         add     si, bx
         test    byte ptr [si], 40h        ; subpage form is not this binding's request
-        NT_JUMP jnz, native_malformed
+        NT_JUMP jnz, native_find_bad
         xor     cx, cx
         mov     cl, byte ptr [si+1]
         add     cx, 2
         cmp     cx, ax
-        NT_JUMP ja, native_malformed
+        NT_JUMP ja, native_find_bad
         mov     al, byte ptr [si]
         and     al, 3Fh                   ; PS is not part of the page code
         cmp     al, byte ptr [native_page]
-        jne     native_mode_skip
+        jne     native_find_skip
         cmp     word ptr [native_page_ptr], 0
-        NT_JUMP jne, native_malformed    ; conflicting duplicate page
-        cmp     cx, 16
-        NT_JUMP jb, native_malformed
+        NT_JUMP jne, native_find_bad    ; conflicting duplicate page
         mov     word ptr [native_page_ptr], si
-native_mode_skip:
+native_find_skip:
         add     bx, cx
-        jmp     native_mode_next
-native_mode_checked:
+        jmp     native_find_next
+native_find_checked:
         mov     si, word ptr [native_page_ptr]
         or      si, si
-        NT_JUMP jz, native_malformed
+        NT_JUMP jz, native_find_bad
+        xor cx,cx
+        mov cl,byte ptr [si+1]
+        add cx,2
+        clc
+        ret
+native_find_bad:
+        stc
+        ret
+native_find_mode_page endp
+
+native_parse_mode proc near
+        call native_find_mode_page
+        NT_JUMP jc,native_malformed
+        cmp cx,16
+        NT_JUMP jb,native_malformed
         cmp     byte ptr [native_page], 0Fh
         jne     native_config_page
         test    byte ptr [si+2], 3Fh      ; compression page reserved bits
@@ -569,14 +599,19 @@ native_control_variable:
         jne     native_control_bad
 native_control_mode_valid:
         mov     ax, word ptr es:[di+NC_OPERATION]
-        cmp     ax, 11
+        cmp     ax, 17
         ja      native_control_bad
         mov     dx, word ptr es:[di+NC_COUNT]
         mov     cx, word ptr es:[di+NC_COUNT+2]
+        cmp     ax, 17
+        je      native_control_zero_count
+        cmp     ax, 14
+        jae     native_control_signed_count
         cmp     ax, 7
         jb      native_control_zero_count
         cmp     ax, 9
         jae     native_control_zero_count
+native_control_signed_count:
         cmp     cx, 007Fh                ; canonical signed 24-bit count
         jbe     native_control_count_valid
         cmp     cx, 0FF80h
@@ -617,21 +652,29 @@ native_control_valid:
         mov     word ptr [native_info+6], NT_VERSION
         call    native_session_state
         mov     word ptr [native_info+NC_SESSION], ax
+        ; Enum 17 is an owned write, despite following the motion enums.
+        cmp     word ptr [native_info+NC_OPERATION], 17
+        jne     native_control_select_motion
+        jmp     native_write_control
+native_control_select_motion:
         cmp     word ptr [native_info+NC_OPERATION], 7
         jae     native_control_motion
         cmp     word ptr [native_info+NC_OPERATION], 2
         jb      native_control_ordinary
         jmp     native_write_control
 ; Ordinary/movement commands may not interfere with native or legacy writes.
-; LOAD/UNLOAD permit explicit recovery but preserve abandoned DIRTY/FAILED;
+; LOAD/UNLOAD and removal controls preserve abandoned DIRTY/FAILED;
 ; SPACE requires a clean native session. Only successful REWIND clears it.
 ; READY/REWIND may not interfere with a native writer, buffered/legacy writes
 ; or saved failures. READY can inspect pending rewind, whereas another REWIND
 ; cannot. Claim/alias/buffer guards apply before submission, so BUSY reports
 ; no command completion facts. Session bits are public flags, not private state.
 native_control_motion:
+        cmp     word ptr [native_info+NC_OPERATION], 14
+        jae     native_control_space_guard
         cmp     word ptr [native_info+NC_OPERATION], 10
         jae     native_control_ordinary  ; explicit media recovery preserves FAILED
+native_control_space_guard:
         test    al, 60h                  ; DIRTY/FAILED needs explicit rewind
         NT_JUMP jnz, native_control_busy
 native_control_ordinary:
@@ -660,11 +703,23 @@ native_control_submit:
         mov     ax, word ptr [native_info+NC_OPERATION]
         or      ax, ax
         je      native_control_cdb_ready
+        cmp     ax, 14
+        jae     native_control_space
+        cmp     ax, 12
+        jae     native_control_removal
         cmp     ax, 10
         jae     native_control_media
         cmp     ax, 7
         jae     native_control_space
         mov     byte ptr [srb+SRB_CDB], SCSI_REWIND ; IMMED remains zero
+        jmp     short native_control_cdb_ready
+native_control_removal:
+        ; Non-moving PREVENT/ALLOW: no persistent-prevent or reserved bits.
+        ; Failure must not turn a previously clean position into uncertainty.
+        mov     byte ptr [srb+SRB_CDB], SCSI_PREVENT
+        cmp     ax, 12
+        jne     native_control_cdb_ready
+        mov     byte ptr [srb+SRB_CDB+4], 1
         jmp     short native_control_cdb_ready
 native_control_media:
         ; Sequential-access LOAD/UNLOAD: byte 4 LOAD=1/0, RETEN/IMMED=0.
@@ -676,6 +731,14 @@ native_control_media:
         jmp     short native_control_cdb_ready
 native_control_space:
         mov     byte ptr [srb+SRB_CDB], SCSI_SPACE
+        cmp     ax, 14
+        jb      native_control_space_base
+        sub     ax, 12                   ; sequential filemarks=2, setmarks=4/5
+        cmp     al, 2
+        je      native_control_space_code
+        inc     al
+        jmp     short native_control_space_code
+native_control_space_base:
         sub     ax, 7                    ; RECORDS=0, FILEMARKS=1, EOD=3
         cmp     al, 2
         jne     native_control_space_code
@@ -706,25 +769,14 @@ native_control_bot:
         or      word ptr [native_info+NC_COMPLETION], 8
         jmp     short native_control_finished
 native_control_failed:
-        call    record_driver_error
-        mov     word ptr [native_info+NC_RESULT], 3
-        call    native_classify_error
-        xor     ah, ah
-        mov     word ptr [native_info+NC_DIAG], ax
-        mov     al, byte ptr [srb+SRB_HaStat]
-        mov     byte ptr [native_info+NC_HOST], al
-        mov     al, byte ptr [srb+SRB_TargStat]
-        mov     byte ptr [native_info+NC_TARGET], al
-        mov     al, byte ptr [last_sense_key]
-        mov     byte ptr [native_info+NC_KEY], al
-        mov     al, byte ptr [sense_response]
-        mov     byte ptr [native_info+NC_RESPONSE], al
-        mov     al, byte ptr [sense_asc]
-        mov     byte ptr [native_info+NC_ASC], al
-        mov     al, byte ptr [sense_ascq]
-        mov     byte ptr [native_info+NC_ASCQ], al
+        call    native_control_diagnostics
         cmp     word ptr [native_info+NC_OPERATION], 0
         je      native_control_finished
+        cmp     word ptr [native_info+NC_OPERATION], 12
+        jb      native_control_failed_motion
+        cmp     word ptr [native_info+NC_OPERATION], 14
+        jb      native_control_finished  ; only removal policy is non-moving
+native_control_failed_motion:
         or      word ptr [native_info+NC_COMPLETION], 4
         cmp     word ptr [native_info+NC_OPERATION], 7
         jb      native_control_finished
@@ -744,3 +796,45 @@ native_tape_control endp
         include common/aspi/native_tape_read.inc
 
         include common/aspi/native_tape_write.inc
+
+        include common/aspi/native_tape_position.inc
+
+; Shared CONTROL/LOCATE diagnostic prefix. Capture command error only; each
+; operation decides independently whether failure changes position/session.
+native_control_diagnostics proc near
+        call record_driver_error
+        call native_copy_diagnostics
+        ret
+native_control_diagnostics endp
+
+; Read-only callers save/restore legacy diagnostics around the whole probe.
+native_read_diagnostics proc near
+        call remember_sense_key
+        call native_copy_diagnostics
+        ret
+native_read_diagnostics endp
+native_copy_diagnostics proc near
+        mov     word ptr [native_info+NC_RESULT], 3
+        call    native_classify_error
+        xor     ah, ah
+        mov     word ptr [native_info+NC_DIAG], ax
+        mov     al, byte ptr [srb+SRB_HaStat]
+        mov     byte ptr [native_info+NC_HOST], al
+        mov     al, byte ptr [srb+SRB_TargStat]
+        mov     byte ptr [native_info+NC_TARGET], al
+        mov     al, byte ptr [last_sense_key]
+        mov     byte ptr [native_info+NC_KEY], al
+        mov     al, byte ptr [sense_response]
+        mov     byte ptr [native_info+NC_RESPONSE], al
+        mov     al, byte ptr [sense_asc]
+        mov     byte ptr [native_info+NC_ASC], al
+        mov     al, byte ptr [sense_ascq]
+        mov     byte ptr [native_info+NC_ASCQ], al
+        ret
+native_copy_diagnostics endp
+
+        include common/aspi/native_tape_locate.inc
+
+        include common/aspi/native_tape_partitions.inc
+
+        include common/aspi/native_tape_alerts.inc

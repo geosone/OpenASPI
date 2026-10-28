@@ -2,7 +2,7 @@
 
 Category `80h`, function `02h` reads one variable-length tape record. QUERY
 advertises READ as operation bit `8`; the full current operation mask is
-`0000FFFFh` (including the separate writer operations). This bit describes a provider entry
+`1FFFFFFFh` (including the separate writer operations). This bit describes a provider entry
 point. Variable-mode requests on driver-detected fixed-only devices return
 UNSUPPORTED without submission; explicit [fixed-block requests](native-tape-fixed.md)
 are now supported. [Native writes](native-tape-write.md)
@@ -65,8 +65,9 @@ diagnostics; applications must retain the error rather than consume the bytes
 as an ordinary successful record.
 
 Stream flags are FILEMARK=`1`, EOM=`2`, ILI=`4`, SHORT=`8`, TRUNCATED=`10h`
-and EOD=`20h`. SHORT means the validated count is below requested capacity.
-FILEMARK and data can coexist in the same response. No extra zero-byte read
+EOD=`20h` and [SETMARK=`40h`](native-tape-setmarks.md). SHORT means the validated count is below requested capacity.
+FILEMARK or SETMARK can coexist with data in the same response. A positively
+identified setmark is not a filemark or archive EOF. No extra zero-byte read
 is queued: the next native read submits the next command. EOM is reported
 independently of the legacy ignore-EOT option. EOD requires current BLANK CHECK
 sense, ASC/ASCQ `00/05` and a known zero transfer; it is distinct from FILEMARK.

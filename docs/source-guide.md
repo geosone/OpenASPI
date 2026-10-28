@@ -211,3 +211,24 @@ listing one here does not mean `make check` runs every DOS integration scenario.
 | Native packet consistency and driver behavior | [`native_tape_api_test.c`](../tests/native_tape_api_test.c), [`tape_native_api.asm`](../tests/tape_native_api.asm) |
 | Portable FAT layout and rescue | [`fat_format_test.c`](../tests/fat_format_test.c), [`rescue_test.c`](../tests/rescue_test.c) |
 | Tools, medium swap and rescue in DOS | [`dos_removable_tools.sh`](../tests/dos_removable_tools.sh), [`dos_diskcopy_swap.sh`](../tests/dos_diskcopy_swap.sh), [`dos_rescue.sh`](../tests/dos_rescue.sh) |
+
+Native [position observation](native-tape-position.md) has its own resident
+binding in `common/aspi/native_tape_position.inc`. Its packet is distinct
+from CONTROL and record counts; coordinate validity does not imply recovery.
+
+See [reported partition layout](native-tape-partitions.md) for the read-only page `11h` binding, pending-layout limits and memory-only DOS qualification.
+
+The native READ mark classifier in `common/aspi/native_tape_read.inc` keeps
+[setmarks](native-tape-setmarks.md) separate from filemarks using qualified
+current sense. `common/tape/tape_api.c` checks that typed result; OpenTape's
+archive transport applies the archive-specific boundary policy.
+
+The owned [SETMARK writer](native-tape-setmark-write.md) routes operation 17
+from `native_tape.inc` into `native_tape_write.inc`. It shares writer ownership
+and error retention while selecting WSMK in the one submitted mark CDB. The
+packet validator checks its exact claimed/dirty success and failure states.
+
+Explicit [TapeAlert retrieval](native-tape-alerts.md) lives in
+`common/aspi/native_tape_alerts.inc`. It uses its own bounded resident log
+buffer and staged masks, preserves observation diagnostics/state, and requires
+acknowledgment because reading the log can clear device warnings.

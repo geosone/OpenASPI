@@ -95,6 +95,8 @@ start:
         EQCHECK
         cmp word ptr [info+NT_OPERATIONS],0FFFFh
         EQCHECK
+        cmp word ptr [info+NT_OPERATIONS+2],1FFFh
+        EQCHECK
         call zero_calls
         inc word ptr [step]
 
@@ -112,7 +114,7 @@ start:
         mov byte ptr [info],'X'
         call rejected
         call prepare
-        mov cx,8004h
+        mov cx,80FFh
         mov dx,offset info
         mov bx,[handle]
         mov ax,440Ch

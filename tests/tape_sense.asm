@@ -141,6 +141,38 @@ start:
         mov byte ptr [srb+TAPE_SENSE],73h
         DECODE 73h,0,0,0,1
 
+        ; Autosense starts after a ten-byte CDB, not at the legacy +6 slot.
+        ; Stale bytes in the shorter slot must not win over current sense.
+        mov byte ptr [srb+SRB_CDBLen],10
+        mov byte ptr [srb+SRB_SenseLen],32
+        mov word ptr [srb+SRB_CDB+10],70h
+        mov word ptr [srb+SRB_CDB+12],5
+        mov word ptr [srb+SRB_CDB+14],0
+        mov word ptr [srb+SRB_CDB+16],0600h
+        mov word ptr [srb+SRB_CDB+22],20h
+        mov di,1234h
+        DECODE 70h,0,0,0,1
+        cmp di,1234h
+        EQCHECK
+        cmp byte ptr [last_sense_key],5
+        EQCHECK
+        cmp byte ptr [sense_asc],20h
+        EQCHECK
+        mov word ptr [srb+SRB_CDB+10],0572h
+        mov word ptr [srb+SRB_CDB+12],24h
+        mov byte ptr [srb+SRB_CDB+17],0
+        DECODE 72h,0,0,0,1
+        cmp byte ptr [sense_asc],24h
+        EQCHECK
+        mov byte ptr [srb+SRB_CDBLen],16
+        mov word ptr [srb+SRB_CDB+16],0572h
+        mov word ptr [srb+SRB_CDB+18],24h
+        mov byte ptr [srb+SRB_CDB+23],0
+        DECODE 72h,0,0,0,1
+        cmp byte ptr [last_sense_key],5
+        EQCHECK
+        mov byte ptr [srb+SRB_CDBLen],8
+        INVALID
         mov byte ptr [srb+SRB_Status],SS_COMP
         mov byte ptr [srb+SRB_TargStat],0
         call check_tape_completion

@@ -476,3 +476,57 @@ memory-only `tests/mockmedia.inc` manager in disposable DOS images. It checks
 LOAD/UNLOAD CDBs, empty-drive errors, ownership, clean/dirty abandoned writers,
 retained uncertainty, explicit recovery and exact submissions without hidden
 filemarks/flushes. See [media contract](../../docs/native-tape-media.md).
+
+## Native removal controls
+
+OpenTape's `dos-native-lock-smoke` exercises PREVENT/ALLOW MEDIUM REMOVAL
+with the memory-only `tests/mocklock.inc` manager. It checks high-WORD
+capabilities, ownership, exact CDBs/counts, non-moving failure semantics,
+prevented UNLOAD, clean/dirty abandoned sessions and queued legacy EOF.
+See [removal control contract](../../docs/native-tape-removal.md).
+
+## Native position observation
+
+OpenTape's `dos-native-position-smoke` uses the installed provider and
+`tests/mockposition.inc`. It checks exact ten-byte CDBs, full-width logical
+locations, unknown/overflow and short/unverified data, diagnostic precedence,
+preserved native state and legacy diagnostics/EOF. See the
+[position contract](../../docs/native-tape-position.md).
+
+## Native LOCATE
+
+OpenTape's `dos-native-locate-smoke` uses the production provider with
+`tests/mocklocate.inc` and independent READ POSITION cursor readback. It covers
+current/explicit partition selection, full unsigned addresses, target echo,
+ownership, uncertain failure/recovery, legacy EOF, error classification and
+exact submissions. See [LOCATE contract](../../docs/native-tape-locate.md).
+
+## Native wide positioning
+
+OpenTape's `dos-native-wide-smoke` checks format-1 long READ POSITION and
+LOCATE(16) with full low/high cursor readback, independent LONU/MPU validity,
+unsigned decimal boundaries, guarded state and sense after the actual CDB.
+See [wide positioning](../../docs/native-tape-wide.md). No host tape is used.
+
+See [reported partition layout](../../docs/native-tape-partitions.md) for the read-only page `11h` binding, pending-layout limits and memory-only DOS qualification.
+
+The [native setmark tests](../../docs/native-tape-setmarks.md) cover shared-FM-bit
+classification, byte/block residual consistency and strict archive boundaries
+with a memory-only manager and installed DOS consumers.
+
+The [owned SETMARK writer tests](../../docs/native-tape-setmark-write.md)
+count setmark attempts independently of filemarks, flushes and data writes;
+fixed/variable modes, failure retention and close/abort semantics are checked
+against the installed provider in memory-only DOS fixtures.
+
+[TapeAlert qualification](../../docs/native-tape-alerts.md) uses a memory-only
+LOG SENSE manager, installed DOS consumers, exact command counts and actual
+QUILIB keyboard/VGA tests. No status refresh may issue this acknowledged read.
+
+OpenTape's DOS backup-dialog regressions also use the resident memory archive
+fixture. `ARCHIVE_LEGACY_FINISH` admits the historical close sequence of two
+filemarks followed by SPACE filemarks -1 and models both stored marks and the
+resulting cursor. This is isolated from the native explicit-finish profile;
+it changes no resident-driver finalization behavior. Exact command counts and
+an independent archive/disk comparison qualify both client paths without a
+physical tape. Successful client output still reports separate readback pending.

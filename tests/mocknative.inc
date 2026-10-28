@@ -18,10 +18,32 @@ native_mode db 64 dup (0)
 native_length dw 0
 
 native_test_command proc near
+ifdef ARCHIVE_READ_PROGRESS_PAUSE
+ifndef ARCHIVE_READ_PROGRESS_START
+ARCHIVE_READ_PROGRESS_START equ 3
+endif
+        cmp byte ptr es:[bx+SRB_CDB],8
+        jne native_read_progress_ready
+        cmp word ptr cs:[archive_ui_rewinds],ARCHIVE_READ_PROGRESS_START
+        jb native_read_progress_ready
+        call native_archive_pause
+native_read_progress_ready:
+endif
+ifdef ARCHIVE_PROGRESS_PAUSE
+        cmp byte ptr es:[bx+SRB_CDB],0Ah
+        je native_progress_pause
+        cmp byte ptr es:[bx+SRB_CDB],10h
+        jne native_progress_ready
+native_progress_pause:
+        call native_archive_pause
+native_progress_ready:
+endif
         inc word ptr cs:[native_calls]
         cmp byte ptr es:[bx+SRB_CDB],8
         jne native_not_record
-ifdef NATIVE_MEDIA_TEST
+ifdef NATIVE_SETMARK_TEST
+        jmp native_setmark_read
+elseifdef NATIVE_MEDIA_TEST
         jmp native_media_read
 elseifdef NATIVE_FIXED_IO_TEST
         jmp native_fixed_read
@@ -31,6 +53,12 @@ else
         jmp native_record_command
 endif
 native_not_record:
+ifdef NATIVE_ALERTS_TEST
+        cmp byte ptr es:[bx+SRB_CDB],4Dh
+        jne native_not_alerts
+        jmp native_alerts_reply
+native_not_alerts:
+endif
         cmp byte ptr es:[bx+SRB_CDB],0Ah
         jne native_not_write
 ifdef NATIVE_FIXED_IO_TEST
@@ -45,6 +73,36 @@ native_not_write:
         jne native_not_marks
         jmp native_marks_command
 native_not_marks:
+ifdef ARCHIVE_LEGACY_FINISH
+        cmp byte ptr es:[bx+SRB_CDB],11h
+        jne native_not_archive_backmark
+        jmp native_archive_backmark
+native_not_archive_backmark:
+endif
+ifdef NATIVE_WIDE_TEST
+        cmp byte ptr es:[bx+SRB_CDB],92h
+        jne native_not_wide
+        jmp native_wide_locate
+native_not_wide:
+endif
+ifdef NATIVE_LOCATE_TEST
+        cmp byte ptr es:[bx+SRB_CDB],2Bh
+        jne native_not_locate
+        jmp native_locate_command
+native_not_locate:
+endif
+ifdef NATIVE_POSITION_TEST
+        cmp byte ptr es:[bx+SRB_CDB],34h
+        jne native_not_position
+        jmp native_position_command
+native_not_position:
+endif
+ifdef NATIVE_LOCK_TEST
+        cmp byte ptr es:[bx+SRB_CDB],1Eh
+        jne native_not_removal
+        jmp native_lock_command
+native_not_removal:
+endif
 ifdef NATIVE_MEDIA_TEST
         cmp byte ptr es:[bx+SRB_CDB],1Bh
         jne native_not_media
@@ -126,6 +184,12 @@ native_test_mode:
         cmp byte ptr es:[bx+SRB_CDB+4],64
         jne native_test_bad
         mov al,byte ptr es:[bx+SRB_CDB+2]
+ifdef NATIVE_PARTITIONS_TEST
+        cmp al,11h
+        jne native_not_partitions
+        jmp native_partitions_reply
+native_not_partitions:
+endif
         cmp al,0Fh
         je native_test_compression
         cmp al,10h
@@ -270,6 +334,31 @@ elseif NATIVE_CONTROL_FAULT eq 5
 endif
 endif
 native_control_return:
+ifdef ARCHIVE_UI_FAULT
+        cmp byte ptr es:[bx+SRB_CDB],1
+        jne archive_ui_control_done
+        inc word ptr cs:[archive_ui_rewinds]
+if ARCHIVE_UI_FAULT eq 1
+        cmp word ptr cs:[archive_ui_rewinds],3
+        jne archive_ui_control_done
+        mov byte ptr es:[bx+SRB_Status],SS_ERR
+        mov byte ptr es:[bx+SRB_HaStat],11h
+endif
+archive_ui_control_done:
+endif
+ifdef NATIVE_LOCATE_TEST
+        cmp byte ptr es:[bx+SRB_CDB],1
+        jne native_locate_not_rewind
+        cmp byte ptr es:[bx+SRB_Status],SS_COMP
+        jne native_locate_not_rewind
+        mov word ptr cs:[locate_bytes],0
+        mov word ptr cs:[locate_bytes+2],0
+ifdef NATIVE_WIDE_TEST
+        mov word ptr cs:[locate_high],0
+        mov word ptr cs:[locate_high+2],0
+endif
+native_locate_not_rewind:
+endif
 ifdef NATIVE_ARCHIVE_TEST
         cmp byte ptr es:[bx+SRB_CDB],1
         jne native_archive_not_rewind
@@ -456,13 +545,23 @@ endif
 native_write_command endp
 
 native_marks_command proc near
+ifdef NATIVE_WRITE_SETMARK_TEST
+        cmp byte ptr es:[bx+SRB_CDB+1],2
+        jne native_marks_ordinary
+        jmp native_write_setmark_command
+native_marks_ordinary:
+endif
         cmp byte ptr es:[bx+SRB_CDBLen],6
         jne native_marks_bad
         cmp byte ptr es:[bx+SRB_CDB+1],0 ; no IMMED or setmarks
         jne native_marks_bad
         cmp word ptr es:[bx+SRB_CDB+2],0
         jne native_marks_bad
+ifdef ARCHIVE_LEGACY_FINISH
+        cmp byte ptr es:[bx+SRB_CDB+4],2
+else
         cmp byte ptr es:[bx+SRB_CDB+4],1
+endif
         ja native_marks_bad
         cmp byte ptr es:[bx+SRB_CDB+5],0
         jne native_marks_bad
@@ -485,6 +584,14 @@ ifdef NATIVE_ARCHIVE_TEST
         jnc native_archive_mark_ready
         ret
 native_archive_mark_ready:
+ifdef ARCHIVE_LEGACY_FINISH
+        cmp byte ptr es:[bx+SRB_CDB+4],2
+        jne native_archive_two_marks_done
+        call native_archive_mark
+        jnc native_archive_two_marks_done
+        ret
+native_archive_two_marks_done:
+endif
 endif
 ifdef NATIVE_FINISH_FAULT
 if NATIVE_FINISH_FAULT eq 2
@@ -533,4 +640,36 @@ endif
 
 ifdef NATIVE_MEDIA_TEST
         include tests/mockmedia.inc
+endif
+
+ifdef NATIVE_LOCK_TEST
+        include tests/mocklock.inc
+endif
+
+ifdef NATIVE_POSITION_TEST
+        include tests/mockposition.inc
+endif
+
+ifdef NATIVE_LOCATE_TEST
+        include tests/mocklocate.inc
+endif
+
+ifdef NATIVE_WIDE_TEST
+        include tests/mockwide.inc
+endif
+
+ifdef NATIVE_PARTITIONS_TEST
+        include tests/mockpartitions.inc
+endif
+
+ifdef NATIVE_SETMARK_TEST
+        include tests/mocksetmark.inc
+endif
+
+ifdef NATIVE_WRITE_SETMARK_TEST
+        include tests/mocksetwrite.inc
+endif
+
+ifdef NATIVE_ALERTS_TEST
+        include tests/mockalerts.inc
 endif

@@ -146,7 +146,7 @@ disksets: gdi-install
 	bash tools/package/mkdisks.sh GR $(BUILD)/packages/GR $(RELEASEDIR)/GR
 
 $(DOSDRV): drivers/aspitap/aspitap.asm common/aspi/dos_aspi.inc common/aspi/tape_sense.inc \
-		common/aspi/native_tape.inc common/aspi/native_tape_defs.inc common/aspi/native_tape_read.inc common/aspi/native_tape_write.inc | $(JWASM)
+		common/aspi/native_tape.inc common/aspi/native_tape_defs.inc common/aspi/native_tape_read.inc common/aspi/native_tape_write.inc common/aspi/native_tape_position.inc common/aspi/native_tape_locate.inc common/aspi/native_tape_partitions.inc common/aspi/native_tape_alerts.inc | $(JWASM)
 	mkdir -p $(@D)
 	$(JWASM) -q -bin -0 -W4 -WX -Fl=$(BUILD)/dos/ASPITAP.lst -Fw$(BUILD)/dos/ASPITAP.err -Fo=$@ $<
 

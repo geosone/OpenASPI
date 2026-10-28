@@ -15,7 +15,8 @@ are rejected before submission without overwriting the caller's packet.
 | LOAD | 10 | `4000h` | `01h` |
 | UNLOAD | 11 | `8000h` | `00h` |
 
-The complete current operation mask is `0000FFFFh`. Capability bits describe
+The complete current operation mask, including [removal controls](native-tape-removal.md),
+is `1FFFFFFFh`. Capability bits describe
 provider entry points, not confirmed support by the attached drive. Each
 accepted operation issues exactly one six-byte `1Bh` CDB with no data buffer.
 IMMED, RETEN and remaining CDB fields are zero. Tape byte 4 uses LOAD, not

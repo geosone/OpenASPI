@@ -273,6 +273,30 @@ native_read_stream:
         NT_JUMP jne,native_read_malformed
 native_read_stream_flags:
         xor ax,ax
+        ; SCSI's mark bit covers both filemarks and setmarks. Only bounded,
+        ; current target sense reaches here; ASC/ASCQ 00/03 selects SETMARK.
+        ; A missing mandatory mark bit is contradictory, not an ordinary EOF.
+        cmp byte ptr [sense_asc_valid],0
+        je native_read_filemark_bit
+        cmp byte ptr [sense_asc],0
+        jne native_read_filemark_bit
+        cmp byte ptr [sense_ascq],3
+        jne native_read_filemark_bit
+        test byte ptr [sense_flags],SENSE_FILEMARK
+        NT_JUMP jz,native_read_malformed
+        cmp byte ptr [sense_info_valid],0
+        je native_read_setmark_flag
+        call native_record_sense_residual
+        NT_JUMP jc,native_read_malformed
+        test word ptr [native_info+NC_COMPLETION],20h
+        jz native_read_setmark_flag
+        cmp ax,word ptr [residual_bytes]
+        NT_JUMP jne,native_read_malformed
+native_read_setmark_flag:
+        xor ax,ax
+        or al,40h
+        jmp short native_read_no_filemark
+native_read_filemark_bit:
         test byte ptr [sense_flags],SENSE_FILEMARK
         jz native_read_no_filemark
         or al,1

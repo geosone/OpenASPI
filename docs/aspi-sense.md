@@ -36,7 +36,7 @@ This change adds no command replay or transport recovery.
 
 ASPITAP has its own fixed/descriptor decoder and stream semantics, including
 FILEMARK, EOM and ILI. Its resident decoder now checks the execute-SCSI command,
-completion envelope, six-byte CDB and 8..32-byte sense allocation before
+completion envelope, supported six-/ten-/sixteen-byte CDB and 8..32-byte sense allocation before
 interpreting any key, flags or information. It resets decoded state on every
 call. Descriptor traversal is bounded by both the allocation and additional
 length; incomplete descriptors do not contribute flags or residuals. Fixed
@@ -68,7 +68,7 @@ contracts; they are not interchangeable drop-in parsers.
 | Decoder | Inputs and outputs | Caller responsibility |
 | --- | --- | --- |
 | [`aspi_sense`](../common/aspi/aspi_client.inc) | Resident execute-SCSI SRB; carry, key and ASC. | Check operation policy; preserve original sense when DOS error conversion loses detail. |
-| [`remember_sense_key`](../common/aspi/tape_sense.inc) | Tape SRB with six-byte CDB; resident fields and separate validity flags. | Check current/deferred response and command-specific residual/stream rules; carry is not a decode result. |
+| [`remember_sense_key`](../common/aspi/tape_sense.inc) | Tape SRB with six-/ten-/sixteen-byte CDB; resident fields and separate validity flags. | Check current/deferred response and command-specific residual/stream rules; carry is not a decode result. |
 | [`oa_scsi_decode_sense`](../common/scsi/tape_sense.c) | Explicit byte buffer/length; decoded C structure and 0/-1. | Qualify transport independently, inspect information validity, and discard partial output on failure. |
 
 Portable decoding accepts a recognized four-byte header without requiring a
@@ -99,3 +99,11 @@ A DOS error is a compressed application-facing report and cannot reconstruct
 those distinctions. RAW1 therefore returns driver/sense diagnostics alongside
 the mapped DOS error; native OTAP keeps diagnostic, count and completion facts
 in separate fields.
+
+Ten-byte READ POSITION tests exercise autosense immediately after the actual
+CDB, including current/deferred/descriptor sense and stale data in the old
+six-byte slot. DI is preserved while the shared decoder walks descriptors.
+
+Native READ additionally distinguishes a current `00/03` setmark from the raw
+FM bit. See [native setmark classification](native-tape-setmarks.md) for count
+provenance, malformed-response checks and archive EOF policy.

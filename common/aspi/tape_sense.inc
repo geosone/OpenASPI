@@ -25,8 +25,10 @@ check_tape_completion endp
 ; Decode into resident sense_* / last_sense_key, clearing every field first.
 ; DS=CS; AX/BX/CX/SI are scratch, and carry is not a validity return. Consumers
 ; must inspect response/valid flags and qualify command completion separately.
-; This tape path expects a six-byte CDB, so TAPE_SENSE is its fixed autosense offset.
+; DOS autosense follows the actual six-, ten- or sixteen-byte CDB. DI holds that base
+; while SI walks descriptors; DI is preserved for existing driver callers.
 remember_sense_key proc near
+        push    di
         mov     byte ptr [last_sense_key], 0
         mov     byte ptr [sense_response], 0
         mov     byte ptr [sense_asc_valid], 0
@@ -44,16 +46,26 @@ remember_sense_key proc near
         jne     tape_sense_invalid
         cmp     byte ptr [srb+SRB_TargStat], 2
         jne     tape_sense_invalid
-        cmp     byte ptr [srb+SRB_CDBLen], 6
+        xor     ax, ax
+        mov     al, byte ptr [srb+SRB_CDBLen]
+        cmp     al, 6
+        je      tape_sense_cdb_valid
+        cmp     al, 10
+        je      tape_sense_cdb_valid
+        cmp     al, 16
         jne     tape_sense_invalid
+tape_sense_cdb_valid:
+        mov     di, offset srb+SRB_CDB
+        add     di, ax
         cmp     byte ptr [srb+SRB_SenseLen], 8
         jb      tape_sense_invalid
         cmp     byte ptr [srb+SRB_SenseLen], 32
         jbe     tape_sense_header
 tape_sense_invalid:
+        pop     di
         ret
 tape_sense_header:
-        mov     al, byte ptr [srb+TAPE_SENSE+0]
+        mov     al, byte ptr [di+0]
         cmp     al, 72h
         je      descriptor_sense
         cmp     al, 73h
@@ -71,15 +83,15 @@ sense_not_fixed_deferred:
 descriptor_sense:
         mov     byte ptr [sense_response], al
         mov     byte ptr [sense_asc_valid], 1
-        mov     al, byte ptr [srb+TAPE_SENSE+2]
+        mov     al, byte ptr [di+2]
         mov     byte ptr [sense_asc], al
-        mov     al, byte ptr [srb+TAPE_SENSE+3]
+        mov     al, byte ptr [di+3]
         mov     byte ptr [sense_ascq], al
-        mov     al, byte ptr [srb+TAPE_SENSE+1]
+        mov     al, byte ptr [di+1]
         and     al, 0Fh
         mov     byte ptr [last_sense_key], al
         xor     cx, cx
-        mov     cl, byte ptr [srb+TAPE_SENSE+7]
+        mov     cl, byte ptr [di+7]
         xor     bx, bx
         mov     bl, byte ptr [srb+SRB_SenseLen]
         sub     bx, 8
@@ -91,7 +103,8 @@ descriptor_sense:
 ; A truncated/unknown optional descriptor must not turn zero-filled fields into
 ; valid residual/stream information. Unknown complete descriptors are skipped.
 descriptor_length_ready:
-        mov     si, offset srb+TAPE_SENSE+8
+        mov     si, di
+        add     si, 8
 descriptor_loop:
         cmp     cx, 2
         jae     descriptor_header_ready
@@ -150,35 +163,36 @@ fixed_sense:
         mov     byte ptr [sense_response], al
         cmp     byte ptr [srb+SRB_SenseLen], 14
         jb      fixed_sense_information
-        cmp     byte ptr [srb+TAPE_SENSE+7], 6
+        cmp     byte ptr [di+7], 6
         jb      fixed_sense_information
         mov     byte ptr [sense_asc_valid], 1
-        mov     al, byte ptr [srb+TAPE_SENSE+12]
+        mov     al, byte ptr [di+12]
         mov     byte ptr [sense_asc], al
-        mov     al, byte ptr [srb+TAPE_SENSE+13]
+        mov     al, byte ptr [di+13]
         mov     byte ptr [sense_ascq], al
 ; Fixed VALID qualifies the four-byte INFORMATION field, not the entire
 ; reply. ASC/ASCQ have their own length validity. Preserve the raw 32-bit value;
 ; signed/positive residual interpretation and block-to-byte conversion belong
 ; to the command consumer, not this generic decode step.
 fixed_sense_information:
-        mov     al, byte ptr [srb+TAPE_SENSE+0]
+        mov     al, byte ptr [di+0]
         test    al, 80h
         jz      fixed_sense_flags
         mov     byte ptr [sense_info_valid], 1
-        mov     ah, byte ptr [srb+TAPE_SENSE+3]
-        mov     al, byte ptr [srb+TAPE_SENSE+4]
+        mov     ah, byte ptr [di+3]
+        mov     al, byte ptr [di+4]
         mov     word ptr [sense_info_high], ax
-        mov     ah, byte ptr [srb+TAPE_SENSE+5]
-        mov     al, byte ptr [srb+TAPE_SENSE+6]
+        mov     ah, byte ptr [di+5]
+        mov     al, byte ptr [di+6]
         mov     word ptr [sense_info_low], ax
 fixed_sense_flags:
-        mov     al, byte ptr [srb+TAPE_SENSE+2]
+        mov     al, byte ptr [di+2]
         mov     ah, al
         and     ah, SENSE_FILEMARK or SENSE_EOM or SENSE_ILI
         mov     byte ptr [sense_flags], ah
         and     al, 0Fh
         mov     byte ptr [last_sense_key], al
 sense_done:
+        pop     di
         ret
 remember_sense_key endp

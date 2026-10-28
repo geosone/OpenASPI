@@ -8,6 +8,10 @@ yes:
         jmp target
 no:
 endm
+; UI preview fault starts only after verification and catalogue each completed.
+ifdef ARCHIVE_UI_FAULT
+archive_ui_rewinds dw 0
+endif
 archive_records dw 0
 archive_used dw 0
 archive_cursor dw 0
@@ -19,6 +23,37 @@ archive_progress dw 0
 archive_request dw 0
 endif
 archive_lengths dw 64 dup (0)
+
+ifdef ARCHIVE_PROGRESS_PAUSE
+ARCHIVE_ANY_PROGRESS_PAUSE equ 1
+elseifdef ARCHIVE_READ_PROGRESS_PAUSE
+ARCHIVE_ANY_PROGRESS_PAUSE equ 1
+endif
+ifdef ARCHIVE_ANY_PROGRESS_PAUSE
+; Test-only media latency for capturing real progress screens between records.
+; Preserve caller registers/flags; BIOS ticks need IRQs while this fixture waits.
+native_archive_pause proc near
+        pushf
+        push ax
+        push dx
+        push ds
+        mov ax,0040h
+        mov ds,ax
+        mov dx,word ptr ds:[006Ch]
+        sti
+archive_progress_wait:
+        hlt
+        mov ax,word ptr ds:[006Ch]
+        sub ax,dx
+        cmp ax,18
+        jb archive_progress_wait
+        pop ds
+        pop dx
+        pop ax
+        popf
+        ret
+native_archive_pause endp
+endif
 
 native_archive_bad proc near
         mov word ptr cs:[native_bad],1
@@ -137,6 +172,42 @@ native_archive_mark proc near
         clc
         ret
 native_archive_mark endp
+ifdef ARCHIVE_LEGACY_FINISH
+; Legacy no-rewind close writes TWO filemarks and backs over the second.
+; Model that historical policy independently of native END's single-mark path.
+native_archive_backmark proc near
+        cmp byte ptr es:[bx+SRB_CDBLen],6
+        AM_JUMP jne,native_archive_bad
+        cmp byte ptr es:[bx+SRB_Flags],SRB_DIR_NONE
+        AM_JUMP jne,native_archive_bad
+        cmp word ptr es:[bx+SRB_BufLen],0
+        AM_JUMP jne,native_archive_bad
+        cmp word ptr es:[bx+SRB_BufLen+2],0
+        AM_JUMP jne,native_archive_bad
+        cmp word ptr es:[bx+SRB_BufPointer],0
+        AM_JUMP jne,native_archive_bad
+        cmp word ptr es:[bx+SRB_BufPointer+2],0
+        AM_JUMP jne,native_archive_bad
+        cmp byte ptr es:[bx+SRB_CDB+1],1
+        AM_JUMP jne,native_archive_bad
+        cmp word ptr es:[bx+SRB_CDB+2],0FFFFh
+        AM_JUMP jne,native_archive_bad
+        cmp byte ptr es:[bx+SRB_CDB+4],0FFh
+        AM_JUMP jne,native_archive_bad
+        cmp byte ptr es:[bx+SRB_CDB+5],0
+        AM_JUMP jne,native_archive_bad
+        mov di,word ptr cs:[archive_cursor]
+        or di,di
+        AM_JUMP jz,native_archive_bad
+        dec di
+        shl di,1
+        cmp word ptr cs:[di+archive_lengths],0FFFFh
+        AM_JUMP jne,native_archive_bad
+        dec word ptr cs:[archive_cursor]
+        mov byte ptr es:[bx+SRB_Status],SS_COMP
+        ret
+native_archive_backmark endp
+endif
 native_archive_read proc near
         call native_archive_header
         AM_JUMP jc,native_archive_bad
@@ -181,8 +252,33 @@ ifdef ARCHIVE_CORRUPT
         xor byte ptr es:[di],1
         pop es
 endif
+ifdef ARCHIVE_UI_FAULT
+if ARCHIVE_UI_FAULT eq 3
+        cmp word ptr cs:[archive_ui_rewinds],3
+        jb archive_ui_crc_ok
+        push ax
+        mov ax,word ptr cs:[archive_records]
+        dec ax                       ; last data record before stored filemark
+        cmp word ptr cs:[archive_cursor],ax
+        pop ax
+        jne archive_ui_crc_ok
+        push es
+        les di,dword ptr es:[bx+SRB_BufPointer]
+        xor byte ptr es:[di],1        ; fail session boundary after file publication
+        pop es
+archive_ui_crc_ok:
+endif
+endif
 ifdef ARCHIVE_READ_HARD
         mov byte ptr cs:[archive_sense_flags],3
+endif
+ifdef ARCHIVE_UI_FAULT
+if ARCHIVE_UI_FAULT eq 2
+        cmp word ptr cs:[archive_ui_rewinds],3
+        jb archive_ui_read_ok
+        mov byte ptr cs:[archive_sense_flags],3
+archive_ui_read_ok:
+endif
 endif
         jmp short archive_read_sense
 archive_read_mark:
@@ -215,6 +311,12 @@ archive_read_check:
         mov byte ptr es:[bx+TAPE_SENSE],0F0h
         mov byte ptr es:[bx+TAPE_SENSE+7],6
         mov al,byte ptr cs:[archive_sense_flags]
+ifdef ARCHIVE_SETMARK
+        test al,80h
+        jz archive_setmark_done
+        mov byte ptr es:[bx+TAPE_SENSE+13],3
+archive_setmark_done:
+endif
         mov byte ptr es:[bx+TAPE_SENSE+2],al
         mov ax,word ptr cs:[native_length]
 ifdef NATIVE_ARCHIVE_FIXED

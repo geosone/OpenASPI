@@ -32,7 +32,13 @@ Shared contracts:
   [generic IOCTLs](block-ioctl.md), [logical parameters](block-parameters.md),
   [track operations](block-track.md) and [raw-media sessions](raw-media.md).
 - Native tape [architecture](native-tape-api.md), [query](native-tape-query.md),
-  [control](native-tape-control.md), [positioning](native-tape-space.md), [media loading](native-tape-media.md), [read](native-tape-read.md),
+  [control](native-tape-control.md), [relative positioning](native-tape-space.md),
+  [logical position](native-tape-position.md), [LOCATE](native-tape-locate.md),
+  [64-bit positioning](native-tape-wide.md), [media loading](native-tape-media.md),
+  [removal control](native-tape-removal.md), [read](native-tape-read.md),
+  [setmark classification](native-tape-setmarks.md),
+  [explicit setmark writing](native-tape-setmark-write.md),
+  [TapeAlert retrieval](native-tape-alerts.md),
   [write](native-tape-write.md) and [fixed-block extension](native-tape-fixed.md).
 - [Tape device profiles](tape-device-profiles.md) and
   [Linux tape quirks/reference boundaries](linux-tape-quirks.md).
@@ -61,3 +67,5 @@ Reference manifests record provenance, not executable requirements:
 [`tape-reference-archives.json`](tape-reference-archives.json) and
 [`linux-tape-reference.json`](linux-tape-reference.json). Device-specific
 findings must be qualified before becoming capabilities, emulation or quirks.
+
+See [reported partition layout](native-tape-partitions.md) for the read-only page `11h` binding, pending-layout limits and memory-only DOS qualification.

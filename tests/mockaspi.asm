@@ -133,6 +133,10 @@ ifdef NATIVE_PROBE_TEST
         mov     word ptr es:[bx+10], ax
         mov     ax, word ptr cs:[native_flushes]
         mov     word ptr es:[bx+12], ax
+ifdef NATIVE_WRITE_SETMARK_TEST
+        mov     ax, word ptr cs:[native_setmarks]
+        mov     word ptr es:[bx+14], ax
+endif
         mov     byte ptr es:[bx+SRB_Status], SS_COMP
         jmp     aspi_done
 native_not_stats:
@@ -140,11 +144,23 @@ native_not_stats:
         jne     native_not_reset
         mov     word ptr cs:[native_calls], 0
         mov     word ptr cs:[native_bad], 0
+ifdef NATIVE_WRITE_SETMARK_TEST
+        mov     word ptr cs:[native_setmarks], 0
+endif
 ifdef NATIVE_SPACE_TEST
         mov     word ptr cs:[native_space_calls], 0
 endif
 ifdef NATIVE_MEDIA_TEST
         mov     word ptr cs:[native_media_calls], 0
+endif
+ifdef NATIVE_LOCK_TEST
+        mov     word ptr cs:[native_lock_calls], 0
+endif
+ifdef NATIVE_LOCATE_TEST
+        mov     word ptr cs:[locate_calls], 0
+endif
+ifdef NATIVE_WIDE_TEST
+        mov     word ptr cs:[wide_calls], 0
 endif
         mov     word ptr cs:[native_writes], 0
         mov     word ptr cs:[native_marks], 0

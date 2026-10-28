@@ -86,9 +86,19 @@ qualified by these tests.
 ## Further positioning
 
 The same CONTROL envelope now carries [signed SPACE](native-tape-space.md)
-operations 7..9 and a count DWORD at offset `20h`. READY/REWIND continue to use
+operations 7..9 and 14..16 and a count DWORD at offset `20h`. READY/REWIND continue to use
 zero there and keep their existing completion flags. A failed SPACE retains
 native uncertainty; READY does not clear it, while successful explicit REWIND
 confirms BOT and clears the native state. [Synchronous LOAD/UNLOAD](native-tape-media.md) now use operations 10/11 with
 zero count. They permit media recovery while preserving earlier native
-uncertainty. Absolute positioning remains open.
+uncertainty. [Logical position observation](native-tape-position.md) now uses
+its own function/packet. [Logical LOCATE(10)](native-tape-locate.md) uses function
+5 and a distinct target/partition packet; larger coordinate formats remain open.
+
+[Medium removal control](native-tape-removal.md) adds LOCK/UNLOCK (12/13).
+These non-moving commands preserve earlier native uncertainty and queued legacy
+EOF; a failed lock command does not introduce POSITION_UNKNOWN or FAILED.
+
+With partitioned media, the historical BOT completion flag does not force or
+prove partition 0. REWIND has no change-partition field; explicitly select a
+known partition with [LOCATE](native-tape-locate.md) when required.

@@ -119,6 +119,24 @@ operation model and adapters; we are not cloning every historical API.
   movement uncertainty and explicit rewind recovery. See [positioning](native-tape-space.md).
 - [x] Add synchronous [LOAD/UNLOAD](native-tape-media.md), including recovery
   while preserving earlier uncertainty; no inferred BOT/readiness or retries.
+- [x] Add native [LOCK/UNLOCK](native-tape-removal.md), with non-moving
+  failure semantics and preservation of native uncertainty and legacy EOF.
+- [x] Add non-moving [short logical READ POSITION](native-tape-position.md),
+  with address validity, transfer provenance and preserved session state.
+- [x] Add synchronous [LOCATE(10)](native-tape-locate.md) with current/explicit
+  partition selection, full-width addresses and retained failure state.
+- [x] Add [64-bit long READ POSITION and LOCATE(16)](native-tape-wide.md),
+  independent object/file validity, checked decimal conversion and old bindings.
+- [x] Add read-only [reported partition layout](native-tape-partitions.md),
+  with bounded page parsing, transfer proof and pending/stale provenance.
+- [x] Complete the [SPACE family](native-tape-space.md) with consecutive
+  filemarks, setmarks and consecutive setmarks; keep device mode unchanged.
+- [x] Distinguish [setmarks during native READ](native-tape-setmarks.md) from
+  filemarks using current sense and checked counts; reject them as OTB1 EOF.
+- [x] Add owned [explicit SETMARK writing](native-tape-setmark-write.md),
+  independent provider capability, dirty/failure state and no automatic marks.
+- [x] Add explicit acknowledged [TapeAlert retrieval](native-tape-alerts.md),
+  with reported/active masks, bounded parsing and no implicit health polling.
 - [ ] Add remaining common controls and qualify physical fixed-block devices.
 - [x] Define native close/flush/mark behavior without duplicating legacy
   finalization; keep explicit writer results through abort and close.
@@ -179,3 +197,8 @@ Linux-derived candidates and their qualification boundaries are recorded in
 The [fixed-block binding](native-tape-fixed.md) extends the provider and SDK
 without implicit mode changes; OpenTape now supplies explicit fixed archive
 adaptation with checked padding/reassembly. Device qualification remains open.
+
+OpenTape now also exposes the implemented native operations through its DOS
+QUILIB tape-controls subview (T in native mode). Full-width position/LOCATE,
+load/unload, removal policy and explicit rewind reuse the SDK contracts and
+retained failure gates; the interface adds no wire operation or automatic probe.

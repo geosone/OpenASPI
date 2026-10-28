@@ -1,6 +1,7 @@
 ; DOS wire ABI mirror, not an in-memory driver-state layout. NT_* describes
 ; the 128-byte QUERY packet; NC_* and NR_* describe distinct 64-byte CONTROL
-; and record packets. Equal offsets in those namespaces may mean different
+; and record packets; NP/NL describe position/locate extensions.
+; Equal offsets in those namespaces may mean different
 ; things. Keep packed C offsets, assembly definitions and ABI tests together;
 ; adding a field must not move the existing v1 fields or enlarge a reply.
 
@@ -62,3 +63,38 @@ NR_BLOCK equ 44
 
 ; CONTROL signed SPACE count; record byte 32 remains NR_ACTUAL.
 NC_COUNT equ 32
+
+; POSITION is a separate 64-byte packet sharing only the diagnostic prefix.
+NP_VALID equ 28
+NP_PARTITION equ 32
+NP_FIRST equ 36
+NP_LAST equ 40
+NP_DEVICE equ 44
+NP_PROBE equ 48
+
+; LOCATE has echoed input coordinates, not POSITION validity/output fields.
+NL_PARTITION equ 28
+NL_BLOCK equ 32
+
+; Long position format 1: low/high DWORDs, independent filemark validity.
+NP64_BLOCK equ 36
+NP64_FILE equ 44
+NP64_DEVICE equ 52
+NP64_PROBE equ 56
+NL64_HIGH equ 36
+
+; Partition report payload; metadata is not a position or a preparation request.
+NM_VALID equ 28
+NM_MAX equ 32
+NM_DEFINED equ 36
+NM_FLAGS equ 40
+NM_RECOGNITION equ 44
+NM_UNITS equ 48
+NM_DESCRIPTORS equ 52
+NM_PROBE equ 56
+
+; Explicit TapeAlert observation, with independent reported/active masks.
+NA_VALID equ 28
+NA_REPORTED equ 32
+NA_ACTIVE equ 40
+NA_PROBE equ 48

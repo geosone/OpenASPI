@@ -20,9 +20,11 @@ operations use category `80h`, function `01h`, the existing 64-byte
 | FILEMARK | 4 | WRITE FILEMARKS(6), count 1, IMMED=0 | `0003h` |
 | END_WRITE | 5 | WRITE FILEMARKS(6), count 0, IMMED=0; then release | `0083h` (SUBMITTED, DONE, RELEASED) |
 | ABORT_WRITE | 6 | None: release ownership | `0082h` (DONE, RELEASED) |
+| SETMARK | 17 | WRITE FILEMARKS(6), WSMK=1, count 1, IMMED=0 | `0003h` |
 
 FLUSH and END_WRITE append **zero** filemarks. Call FILEMARK explicitly for
-each desired mark. END_WRITE does not imply an archive delimiter or spacing.
+each desired filemark; [SETMARK](native-tape-setmark-write.md) explicitly writes
+a distinct setmark in the same claimed session. END_WRITE does not imply an archive delimiter or spacing.
 Every hardware operation is synchronous and submitted once. BEGIN/ABORT do
 not claim SUBMITTED. Failed flush/mark/end returns ERROR, completion `0005h`
 (SUBMITTED, POSITION_UNKNOWN), and retains ownership in a failed state.
@@ -36,7 +38,9 @@ and physical-overlap rejection is shared with READ and changes no caller bytes.
 
 QUERY advertises WRITE=`0010h`, BEGIN=`0020h`, FLUSH=`0040h`, FILEMARK=`0080h`,
 END=`0100h` and ABORT=`0200h`; FIXED_IO adds `0400h`.
-[SPACE](native-tape-space.md) adds `0800h`/`1000h`/`2000h`, and [LOAD/UNLOAD](native-tape-media.md) add `4000h`/`8000h`, bringing the complete mask to `FFFFh`.
+Optional [SETMARK](native-tape-setmark-write.md) adds `08000000h` independently
+of read-side setmark classification. The complete current provider mask is
+`1FFFFFFFh`; see [query negotiation](native-tape-query.md) for other operations.
 These are entry points, not proof of current media/mode compatibility. The
 command does not change block mode. Driver-detected fixed-only devices reject
 a variable-mode BEGIN without a CDB; fixed-mode BEGIN specifies the block size

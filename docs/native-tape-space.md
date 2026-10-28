@@ -1,7 +1,7 @@
 # Native tape positioning: SPACE
 
 The native DOS binding adds synchronous relative movement over data blocks or
-filemarks and positioning to end-of-data. These are common sequential-access
+filemarks/setmarks, consecutive mark sequences and positioning to end-of-data. These are common sequential-access
 operations, not device quirks. Unsupported hardware returns a checked error;
 there is no automatic retry or REWIND-plus-forward emulation.
 
@@ -18,9 +18,12 @@ zero for SPACE, even when the drive is in fixed-block data mode.
 | SPACE_RECORDS | 7 | `0800h` | 0 | signed -8388608..8388607 |
 | SPACE_FILEMARKS | 8 | `1000h` | 1 | signed -8388608..8388607 |
 | SPACE_EOD | 9 | `2000h` | 3 | zero |
+| SPACE_SEQ_FILEMARKS | 14 | `00800000h` | 2 | signed -8388608..8388607 |
+| SPACE_SETMARKS | 15 | `01000000h` | 4 | signed -8388608..8388607 |
+| SPACE_SEQ_SETMARKS | 16 | `02000000h` | 5 | signed -8388608..8388607 |
 
-The complete current provider operation mask is `FFFFh`. These bits advertise
-entry points, not proof that the drive supports reverse movement or EOD.
+The complete current provider operation mask is `1FFFFFFFh`. These bits advertise
+entry points, not proof that the drive supports a particular spacing code or direction.
 Check the particular bit before submission; an older provider without it is
 unsupported without issuing a movement CDB. Positive counts move forward,
 negative counts backward. Zero remains an explicit single SPACE command.
@@ -36,6 +39,29 @@ Data-block counts describe physical tape records/blocks, not files inside an
 OpenTape archive and not OTB1 logical block numbers. A fixed-mode logical OTB1
 block can span multiple physical blocks. The archive verifier still requires
 a valid starting label/sequence; arbitrary spacing does not resume its state.
+
+## Mark and sequence semantics
+
+Filemarks and setmarks are distinct tape objects. Ordinary mark spacing counts
+individual marks; consecutive spacing searches for a contiguous run of at least
+N matching marks and stops beyond the Nth in the requested direction. It does
+not mean N separate runs. Counts are signed in both cases; zero remains an
+explicit command. All operations act in the current partition. They do not
+write marks, select partitions or create an archive bookmark.
+
+The [HP C1533A OEM manual, SPACE section](https://www.bitsavers.org/pdf/hp/tape/dat/C1533A/C1533-90900_C1533A_DDS-2_OEM_Product_Manual_199305.pdf)
+defines codes 2/4/5 and signed sequence counts. It also requires setmark
+reporting mode for its setmark operations. The provider does not enable that
+mode automatically; mode/device requirements need separate qualification.
+The [Quantum DDS-4 interface manual](https://qsupport.quantum.com/freedownloads/Certance/manuals/misc/scsi_man_cdxxxxxx_stdxxxxxx_en.pdf)
+also distinguishes individual marks from consecutive runs. Modern drive
+support can differ: a provider capability is not evidence of device acceptance.
+
+Unsupported commands retain their checked diagnostic and native uncertainty;
+no read loop, backward emulation or mode change follows. [Explicit setmark writing](native-tape-setmark-write.md) is a separate owned
+writer operation.
+[Classified native READ](native-tape-setmarks.md) now exposes observed setmarks
+without promoting them into ordinary filemark/EOF success.
 
 ## Ownership and completion
 
@@ -69,6 +95,9 @@ OPENTAPE --native-space-records 1 --device NRMT0
 OPENTAPE --native-space-records -1 --device NRMT0
 OPENTAPE --native-space-filemarks -2 --device NRMT0
 OPENTAPE --native-eod --device NRMT0
+OPENTAPE --native-space-seq-filemarks 2 --device NRMT0
+OPENTAPE --native-space-setmarks -1 --device NRMT0
+OPENTAPE --native-space-seq-setmarks 2 --device NRMT0
 ```
 
 Counts use decimal digits with an optional minus sign. No count is accepted
@@ -84,6 +113,13 @@ capability bits, session guards and cleanup precedence. OpenTape's
 counts, untouched invalid packets, multiple handles, poisoned writer ownership,
 host/target/deferred/contradictory failures, unsupported commands and recovery.
 All media are memory-only; physical-drive positioning remains unqualified.
-READ POSITION/LOCATE, load/unload and optional movement emulation remain separate
-work. See [native controls](native-tape-control.md) and
+READ POSITION/LOCATE and load/unload have separate bindings; optional movement
+emulation and physical qualification remain open. See [native controls](native-tape-control.md) and
 [device/quirk policy](tape-device-profiles.md).
+
+For codes 2/4/5 the sibling OpenTape `tests/dos_native_extended_space.sh` runs
+all three operations with signed extrema, zero, both directions, invalid
+requests, exclusive handles, active/abandoned/dirty writers and exact CDB
+counts. Fault variants cover each operation with transport, current/deferred
+sense, contradictory status, filemark and descriptor-sense errors. Separate
+GUI tests exercise the native **S** chooser entries 4/5/6 and older headers.

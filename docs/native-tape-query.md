@@ -2,10 +2,17 @@
 
 ASPITAP now provides the first runtime part of the
 [native OpenTape API](native-tape-api.md). This is separate from the historical
-ASPITAPE category `07h`. The provider advertises operation mask `FFFFh`:
+ASPITAPE category `07h`. The provider advertises operation mask `1FFFFFFFh`:
 QUERY, READY, REWIND, READ, WRITE, BEGIN_WRITE, FLUSH, FILEMARK, END_WRITE and
-ABORT_WRITE, FIXED_IO, SPACE_RECORDS/SPACE_FILEMARKS/SPACE_EOD and LOAD/UNLOAD.
-See [native positioning](native-tape-space.md) for the new movement counts and guards and [media loading](native-tape-media.md) for LOAD/UNLOAD recovery.
+ABORT_WRITE, FIXED_IO, SPACE_RECORDS/SPACE_FILEMARKS/SPACE_EOD LOAD/UNLOAD, LOCK/UNLOCK, POSITION, LOCATE, their 64-bit forms, PARTITIONS, SPACE_SEQ_FILEMARKS, SPACE_SETMARKS and
+SPACE_SEQ_SETMARKS, classified READ_SETMARK and owned SETMARK writing and explicit TapeAlert retrieval.
+[TapeAlert](native-tape-alerts.md) is not part of REFRESH because reading its
+log can acknowledge device warning flags.
+The [reported partition layout](native-tape-partitions.md) is a separate
+read-only operation; REFRESH retains its existing probe sequence.
+See [native positioning](native-tape-space.md) for movement counts and guards,
+[media loading](native-tape-media.md) for LOAD/UNLOAD recovery, and
+[removal control](native-tape-removal.md) for LOCK/UNLOCK.
 See the [control](native-tape-control.md), [read](native-tape-read.md)
 and [writer](native-tape-write.md) bindings and the
 [fixed-block extension](native-tape-fixed.md), including OpenTape's explicit

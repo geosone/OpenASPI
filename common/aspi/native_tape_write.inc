@@ -1,11 +1,11 @@
 ; Native writer state machine, separate from legacy character-device writes.
 ; BEGIN claims a compatible existing mode; it does not issue MODE SELECT.
-; FLUSH/END synchronously write zero filemarks, FILEMARK writes one, and END
+; FLUSH/END write zero filemarks, FILEMARK/SETMARK write one selected mark; END
 ; releases only after success. ABORT releases ownership without I/O, flush,
 ; rollback or any promise that an uncertain tape position has been recovered.
 ;
 ; Private active/dirty/failed bits map to public native session bits. Mark dirty
-; before submitting WRITE; never resubmit a possibly completed write. A proven
+; before submitting WRITE or a mark; never resubmit a possibly completed write. A proven
 ; short clean completion is INCOMPLETE, while failures latch the claim until
 ; explicit recovery. Legacy close must not append its automatic filemarks.
 
@@ -48,9 +48,15 @@ native_wcontrol_owned:
         NT_JUMP jnz,native_wcontrol_busy
         call prepare_control_srb
         mov byte ptr [srb+SRB_CDB],SCSI_WRITE_FILEMARKS
+        cmp word ptr [native_info+NC_OPERATION],17
+        jne native_wcontrol_filemark
+        mov byte ptr [srb+SRB_CDB+1],2 ; WSMK=1, IMMED=0
+        jmp short native_wcontrol_one_mark
+native_wcontrol_filemark:
         cmp word ptr [native_info+NC_OPERATION],4
         jne native_wcontrol_submit
-        mov byte ptr [srb+SRB_CDB+4],1  ; exactly one explicit filemark
+native_wcontrol_one_mark:
+        mov byte ptr [srb+SRB_CDB+4],1  ; exactly one explicitly selected mark
         or byte ptr [native_write_state],2
 native_wcontrol_submit:
         ; FLUSH and END use count zero, IMMED=0: no filemarks are appended.

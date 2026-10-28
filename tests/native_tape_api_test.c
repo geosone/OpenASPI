@@ -149,7 +149,8 @@ static void space_tests(void)
     struct ot_tape_control_v1 c, saved;
     const oa_s32 counts[] = {0,1,-1,8388607L,-8388608L};
     unsigned i, op;
-    for (op=7;op<=8;++op) for (i=0;i<sizeof(counts)/sizeof(counts[0]);++i) {
+    for (op=7;op<=16;++op) for (i=0;i<sizeof(counts)/sizeof(counts[0]);++i) {
+        if(op>=9 && op<=13) continue;
         assert(ot_tape_space_init(&c,(oa_u16)op,counts[i])==0);
         assert(c.count==counts[i] && c.size==64);
         c.scsi_opcode=0x11; c.completion_flags=3;
@@ -179,12 +180,12 @@ static void media_tests(void)
 {
     struct ot_tape_control_v1 p;
     unsigned op, state;
-    for(op=10;op<=11;++op) for(state=0;state<=0x60;state+=0x20) {
+    for(op=10;op<=13;++op) for(state=0;state<=0x60;state+=0x20) {
         assert(ot_tape_control_init(&p,(oa_u16)op)==0);
-        p.scsi_opcode=0x1b; p.completion_flags=3; p.session_state=(oa_u16)state;
+        p.scsi_opcode=(oa_u8)(op>=12 ? 0x1e : 0x1b); p.completion_flags=3; p.session_state=(oa_u16)state;
         assert(ot_tape_control_validate(&p,sizeof(p))==(state==0x20 ? -1 : 0));
-        p.result=3; p.diagnostic_class=1; p.completion_flags=5;
-        assert(ot_tape_control_validate(&p,sizeof(p))==((state&0x40) ? 0 : -1));
+        p.result=3; p.diagnostic_class=1; p.completion_flags=(oa_u16)(op>=12 ? 1 : 5);
+        assert(ot_tape_control_validate(&p,sizeof(p))==((op>=12 ? state!=0x20 : (state&0x40)!=0) ? 0 : -1));
     }
     ot_tape_control_init(&p,10); p.scsi_opcode=0x1b; p.completion_flags=3;
     p.count=1; assert(ot_tape_control_validate(&p,sizeof(p))==-1);
@@ -192,6 +193,229 @@ static void media_tests(void)
     p.flags=0; p.completion_flags|=8; assert(ot_tape_control_validate(&p,sizeof(p))==-1);
     p.completion_flags=3; p.scsi_opcode=0x11; assert(ot_tape_control_validate(&p,sizeof(p))==-1);
     assert(ot_tape_space_init(&p,10,0)==-1);
+    assert(ot_tape_control_init(&p,12)==0);
+    p.scsi_opcode=0x1e; p.completion_flags=3;
+    p.completion_flags|=8; assert(ot_tape_control_validate(&p,sizeof(p))==-1);
+    p.result=3; p.diagnostic_class=2; p.completion_flags=5;
+    assert(ot_tape_control_validate(&p,sizeof(p))==-1); /* no position mutation */
+    p.completion_flags=1; assert(ot_tape_control_validate(&p,sizeof(p))==0);
+    p.session_state=0x10; assert(ot_tape_control_validate(&p,sizeof(p))==-1);
+    assert(ot_tape_control_init(&p,18)==-1);
+    assert(ot_tape_space_init(&p,12,0)==-1);
+}
+
+static void position_tests(void)
+{
+    struct ot_tape_position_v1 p;
+    unsigned i;
+    assert(sizeof(p)==64 && ot_tape_position_init(0)==-1);
+    assert(ot_tape_position_init(&p)==0);
+    p.scsi_opcode=0x34; p.completion_flags=3; p.valid_fields=1;
+    p.partition=255; p.first_block=0x89abcdefUL; p.last_block=0xffffffffUL;
+    assert(ot_tape_position_validate(&p,sizeof(p))==0);
+    p.partition=256; assert(ot_tape_position_validate(&p,sizeof(p))==-1); p.partition=255;
+    p.device_flags=4; assert(ot_tape_position_validate(&p,sizeof(p))==-1);
+    p.valid_fields=0; p.partition=p.first_block=p.last_block=0;
+    assert(ot_tape_position_validate(&p,sizeof(p))==0);
+    p.device_flags=2; assert(ot_tape_position_validate(&p,sizeof(p))==0);
+    p.device_flags=8; assert(ot_tape_position_validate(&p,sizeof(p))==-1);
+    p.device_flags=0; p.valid_fields=1;
+    for(i=0;i<12;++i) {
+        p.reserved[i]=1; assert(ot_tape_position_validate(&p,sizeof(p))==-1); p.reserved[i]=0;
+    }
+    p.valid_fields=0; p.result=1; p.diagnostic_class=5; p.probe_flags=1;
+    assert(ot_tape_position_validate(&p,sizeof(p))==0);
+    p.valid_fields=1; assert(ot_tape_position_validate(&p,sizeof(p))==-1); p.valid_fields=0;
+    p.probe_flags=0; p.result=3; p.diagnostic_class=3;
+    assert(ot_tape_position_validate(&p,sizeof(p))==0);
+    p.completion_flags=1; assert(ot_tape_position_validate(&p,sizeof(p))==-1);
+    p.diagnostic_class=1; assert(ot_tape_position_validate(&p,sizeof(p))==0);
+    p.completion_flags=5; assert(ot_tape_position_validate(&p,sizeof(p))==-1);
+    p.completion_flags=1; p.session_state=0x40;
+    assert(ot_tape_position_validate(&p,sizeof(p))==0);
+    p.session_state=0x60; assert(ot_tape_position_validate(&p,sizeof(p))==0);
+    p.session_state=0x20; assert(ot_tape_position_validate(&p,sizeof(p))==-1);
+    ot_tape_position_init(&p); p.result=2; p.session_state=0x10;
+    assert(ot_tape_position_validate(&p,sizeof(p))==0);
+    p.scsi_opcode=0x34; assert(ot_tape_position_validate(&p,sizeof(p))==-1);
+    assert(ot_tape_position_validate(&p,63)==-1);
+}
+
+static void locate_tests(void)
+{
+    struct ot_tape_locate_v1 p,saved;
+    unsigned i;
+    memset(&p,0xa5,sizeof(p)); saved=p;
+    assert(ot_tape_locate_init(&p,2,0,1)==-1 && memcmp(&p,&saved,sizeof(p))==0);
+    assert(ot_tape_locate_init(&p,0,1,1)==-1 && memcmp(&p,&saved,sizeof(p))==0);
+    assert(ot_tape_locate_init(&p,1,256,1)==-1 && memcmp(&p,&saved,sizeof(p))==0);
+    assert(ot_tape_locate_init(0,0,0,0)==-1);
+    assert(ot_tape_locate_init(&p,1,255,0xffffffffUL)==0);
+    p.scsi_opcode=0x2b; p.completion_flags=3;
+    assert(ot_tape_locate_validate(&p,sizeof(p))==0);
+    for(i=0;i<28;++i) { p.reserved[i]=1; assert(ot_tape_locate_validate(&p,sizeof(p))==-1); p.reserved[i]=0; }
+    p.completion_flags=0xb; assert(ot_tape_locate_validate(&p,sizeof(p))==-1);
+    p.completion_flags=3; p.session_state=0x40; assert(ot_tape_locate_validate(&p,sizeof(p))==-1);
+    p.result=3; p.diagnostic_class=4; p.completion_flags=5;
+    assert(ot_tape_locate_validate(&p,sizeof(p))==0);
+    p.session_state=0; assert(ot_tape_locate_validate(&p,sizeof(p))==-1);
+    p.session_state=0x60; assert(ot_tape_locate_validate(&p,sizeof(p))==-1);
+    p.session_state=0x40; p.diagnostic_class=3; assert(ot_tape_locate_validate(&p,sizeof(p))==-1);
+    p.result=2; p.completion_flags=0; p.scsi_opcode=0; p.diagnostic_class=0;
+    assert(ot_tape_locate_validate(&p,sizeof(p))==0);
+    p.partition=256; assert(ot_tape_locate_validate(&p,sizeof(p))==-1);
+    assert(ot_tape_locate_validate(&p,63)==-1);
+}
+
+static void wide_tests(void)
+{
+    const char *numbers[]={"0","1","4294967295","4294967296","9223372036854775808","18446744073709551615"};
+    const oa_u32 lows[]={0,1,0xffffffffUL,0,0,0xffffffffUL};
+    const oa_u32 highs[]={0,0,0,1,0x80000000UL,0xffffffffUL};
+    struct ot_tape_position64_v1 p;
+    struct ot_tape_locate64_v1 l;
+    char text[21],saved[21];
+    oa_u32 low=7,high=8;
+    unsigned i;
+    for(i=0;i<6;++i) {
+        assert(ot_tape_u64_parse(numbers[i],&low,&high)==0 && low==lows[i] && high==highs[i]);
+        assert(ot_tape_u64_format(low,high,text,sizeof(text))==0 && strcmp(text,numbers[i])==0);
+    }
+    low=7; high=8;
+    assert(ot_tape_u64_parse("18446744073709551616",&low,&high)==-1 && low==7 && high==8);
+    assert(ot_tape_u64_parse("-1",&low,&high)==-1 && low==7);
+    assert(ot_tape_u64_parse("+1",&low,&high)==-1 && low==7);
+    assert(ot_tape_u64_parse("",&low,&high)==-1 && low==7);
+    assert(ot_tape_u64_parse("1x",&low,&high)==-1 && low==7);
+    memset(text,'X',sizeof(text)); memcpy(saved,text,sizeof(text));
+    assert(ot_tape_u64_format(0xffffffffUL,0xffffffffUL,text,20)==-1 && memcmp(text,saved,21)==0);
+    assert(ot_tape_position64_init(&p)==0); p.scsi_opcode=0x34; p.completion_flags=3; p.valid_fields=3;
+    p.partition=0xffffffffUL; p.block=p.block_high=p.file=p.file_high=0xffffffffUL;
+    assert(ot_tape_position64_validate(&p,sizeof(p))==0);
+    p.device_flags=8; p.valid_fields=1; p.file=p.file_high=0;
+    assert(ot_tape_position64_validate(&p,sizeof(p))==0);
+    p.device_flags=4; p.valid_fields=2; p.partition=p.block=p.block_high=0;
+    assert(ot_tape_position64_validate(&p,sizeof(p))==0);
+    p.device_flags=0x10; assert(ot_tape_position64_validate(&p,sizeof(p))==-1);
+    p.device_flags=12; p.valid_fields=0; assert(ot_tape_position64_validate(&p,sizeof(p))==0);
+    p.device_flags=0; p.result=1; p.diagnostic_class=5; p.probe_flags=1;
+    assert(ot_tape_position64_validate(&p,sizeof(p))==0);
+    assert(ot_tape_locate64_init(&l,1,255,0xffffffffUL,0xffffffffUL)==0);
+    l.scsi_opcode=0x92; l.completion_flags=3;
+    assert(ot_tape_locate64_validate(&l,sizeof(l))==0);
+    l.scsi_opcode=0x2b; assert(ot_tape_locate64_validate(&l,sizeof(l))==-1);
+    l.scsi_opcode=0x92; l.result=3; l.diagnostic_class=4; l.session_state=0x40; l.completion_flags=5;
+    assert(ot_tape_locate64_validate(&l,sizeof(l))==0);
+    assert(ot_tape_locate_validate(&l,sizeof(l))==-1);
+}
+
+static void partitions_tests(void)
+{
+    struct ot_tape_partitions_v1 p,saved;
+    unsigned n;
+    assert(sizeof(p)==64 && offsetof(struct ot_tape_partitions_v1,probe_flags)==56);
+    assert(ot_tape_partitions_init(0)==-1);
+    assert(ot_tape_partitions_init(&p)==0);
+    assert(ot_tape_partitions_validate(&p,sizeof(p))==-1);
+    p.scsi_opcode=0x1a; p.completion_flags=3; p.valid_fields=1;
+    p.maximum_additional=0; p.defined_additional=255; p.partition_flags=255;
+    p.format_recognition=255; p.partition_units=255; p.size_descriptors=26;
+    assert(ot_tape_partitions_validate(&p,sizeof(p))==0);
+    saved=p;
+    for(n=0;n<64;++n) assert(ot_tape_partitions_validate(&p,n)==-1);
+    p.maximum_additional=256; assert(ot_tape_partitions_validate(&p,64)==-1);
+    p=saved; p.size_descriptors=27; assert(ot_tape_partitions_validate(&p,64)==-1);
+    p=saved; p.flags=1; assert(ot_tape_partitions_validate(&p,64)==-1);
+    p=saved; p.reserved[3]=1; assert(ot_tape_partitions_validate(&p,64)==-1);
+    p=saved; p.valid_fields=0; assert(ot_tape_partitions_validate(&p,64)==-1);
+    ot_tape_partitions_init(&p); p.result=2;
+    assert(ot_tape_partitions_validate(&p,64)==0);
+    p.maximum_additional=1; assert(ot_tape_partitions_validate(&p,64)==-1);
+    ot_tape_partitions_init(&p); p.result=1; p.scsi_opcode=0x1a;
+    p.completion_flags=3; p.diagnostic_class=5; p.probe_flags=1;
+    assert(ot_tape_partitions_validate(&p,64)==0);
+    p.valid_fields=1; assert(ot_tape_partitions_validate(&p,64)==-1);
+}
+
+static void setmark_tests(void)
+{
+    struct ot_tape_record_v1 p,saved;
+    unsigned response;
+    for(response=0x70;response<=0x72;response+=2) {
+        ot_tape_record_init(&p,8); p.actual=0; p.result=5; p.diagnostic_class=2;
+        p.scsi_opcode=8; p.target_status=2; p.sense_response=(oa_u8)response; p.ascq=3;
+        p.completion_flags=0x23; p.stream_flags=OT_TAPE_STREAM_SETMARK|OT_TAPE_STREAM_SHORT;
+        assert(ot_tape_record_validate(&p,64)==0); saved=p;
+        p.stream_flags|=OT_TAPE_STREAM_FILEMARK; assert(ot_tape_record_validate(&p,64)==-1);
+        p=saved; p.stream_flags=9; assert(ot_tape_record_validate(&p,64)==-1); /* old provider misclassification */
+        p=saved; p.stream_flags|=OT_TAPE_STREAM_EOD; assert(ot_tape_record_validate(&p,64)==-1);
+        p=saved; p.ascq=1; assert(ot_tape_record_validate(&p,64)==-1);
+        p=saved; p.sense_response++; assert(ot_tape_record_validate(&p,64)==-1);
+        p=saved; p.host_status=0x11; assert(ot_tape_record_validate(&p,64)==-1);
+        p=saved; p.sense_key=3; assert(ot_tape_record_validate(&p,64)==-1);
+        p.result=3; p.completion_flags=0x25; assert(ot_tape_record_validate(&p,64)==0);
+        p=saved; p.actual=4; assert(ot_tape_record_validate(&p,64)==0);
+        p=saved; p.actual=8; p.stream_flags=OT_TAPE_STREAM_SETMARK;
+        assert(ot_tape_record_validate(&p,64)==0);
+        p.operation=OT_TAPE_RECORD_WRITE; p.scsi_opcode=0x0a;
+        assert(ot_tape_record_validate(&p,64)==-1);
+        ot_tape_record_fixed_init(&p,0,1024,512); p.actual=512; p.result=5;
+        p.diagnostic_class=2; p.scsi_opcode=8; p.target_status=2; p.sense_response=(oa_u8)response;
+        p.ascq=3; p.completion_flags=0x23; p.stream_flags=0x48;
+        assert(ot_tape_record_validate(&p,64)==0);
+    }
+}
+
+static void setmark_write_packets(void)
+{
+    struct ot_tape_control_v1 p,saved;
+    unsigned state;
+    assert(ot_tape_control_init(&p,OT_TAPE_CONTROL_SETMARK)==0);
+    p.scsi_opcode=0x10; p.completion_flags=3; p.session_state=0x30;
+    assert(ot_tape_control_validate(&p,64)==0); saved=p;
+    for(state=0;state<=0x70;state+=0x10) {
+        p=saved; p.session_state=(oa_u16)state;
+        assert((ot_tape_control_validate(&p,64)==0)==(state==0x30));
+    }
+    p=saved; p.flags=1; p.block_size=512; assert(ot_tape_control_validate(&p,64)==-1);
+    p=saved; p.count=1; assert(ot_tape_control_validate(&p,64)==-1);
+    p=saved; p.completion_flags|=OT_TAPE_POSITION_BOT; assert(ot_tape_control_validate(&p,64)==-1);
+    p=saved; p.result=3; p.session_state=0x70; p.completion_flags=5; p.diagnostic_class=2;
+    p.target_status=2; p.sense_key=7; p.sense_response=0x70; p.asc=0x27;
+    assert(ot_tape_control_validate(&p,64)==0);
+    p.session_state=0x50; assert(ot_tape_control_validate(&p,64)==-1);
+    ot_tape_control_init(&p,OT_TAPE_CONTROL_SETMARK); p.result=2;
+    assert(ot_tape_control_validate(&p,64)==0);
+    assert(ot_tape_space_init(&p,OT_TAPE_CONTROL_SETMARK,0)==-1);
+}
+
+static void alert_packets(void)
+{
+    struct ot_tape_alerts_v1 p,saved;
+    unsigned i;
+    memset(&p,0xa5,sizeof(p)); saved=p;
+    assert(ot_tape_alerts_init(&p,0)==-1 && memcmp(&p,&saved,sizeof(p))==0);
+    assert(ot_tape_alerts_init(&p,3)==-1 && memcmp(&p,&saved,sizeof(p))==0);
+    assert(ot_tape_alerts_init(&p,1)==0 && sizeof(p)==64);
+    p.scsi_opcode=0x4d; p.completion_flags=3; p.valid_fields=1;
+    p.reported_low=0x80080001UL; p.reported_high=0x80000001UL;
+    p.active_low=0x80080000UL; p.active_high=0x80000000UL;
+    assert(ot_tape_alerts_validate(&p,64)==0);
+    assert(ot_tape_alert_state(&p,1)==0 && ot_tape_alert_state(&p,20)==1);
+    assert(ot_tape_alert_state(&p,32)==1 && ot_tape_alert_state(&p,33)==0 && ot_tape_alert_state(&p,64)==1);
+    assert(ot_tape_alert_state(&p,2)==-1 && ot_tape_alert_state(&p,0)==-1 && ot_tape_alert_state(&p,65)==-1);
+    saved=p;
+    for(i=0;i<64;++i) assert(ot_tape_alerts_validate(&p,(oa_u16)i)==-1);
+    p.active_low|=2; assert(ot_tape_alerts_validate(&p,64)==-1);
+    p=saved; p.flags=0; assert(ot_tape_alerts_validate(&p,64)==-1);
+    p=saved; p.valid_fields=0; assert(ot_tape_alerts_validate(&p,64)==-1);
+    p=saved; p.reserved[11]=1; assert(ot_tape_alerts_validate(&p,64)==-1);
+    ot_tape_alerts_init(&p,1); p.result=2;
+    assert(ot_tape_alerts_validate(&p,64)==0 && ot_tape_alert_state(&p,20)==-1);
+    ot_tape_alerts_init(&p,1); p.result=1; p.scsi_opcode=0x4d; p.completion_flags=3;
+    p.diagnostic_class=5; p.probe_flags=1;
+    assert(ot_tape_alerts_validate(&p,64)==0);
+    p.reported_low=1; assert(ot_tape_alerts_validate(&p,64)==-1);
 }
 
 int main(void)
@@ -289,6 +513,13 @@ int main(void)
     fixed_packets();
     space_tests();
     media_tests();
+    position_tests();
+    locate_tests();
+    wide_tests();
+    partitions_tests();
+    setmark_tests();
+    setmark_write_packets();
+    alert_packets();
     puts("Native tape API validation/capability/control/record/writer/fixed tests passed");
     return 0;
 }

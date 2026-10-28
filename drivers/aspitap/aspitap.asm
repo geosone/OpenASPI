@@ -71,6 +71,7 @@ SCSI_WRITE      equ     0Ah
 SCSI_WRITE_FILEMARKS equ 10h
 SCSI_SPACE      equ     11h
 SCSI_LOAD       equ     1Bh
+SCSI_PREVENT    equ     1Eh
 SPACE_BLOCKS    equ     00h
 SPACE_FILEMARKS equ     01h
 
@@ -1807,13 +1808,15 @@ mtop_unsupported:
         ret
 ioctl_mtop endp
 
-; Submit a prepared no-data command and capture its diagnostics. TUR retains
-; cached data/queued EOF; other controls discard the software buffer before I/O
+; Submit a prepared no-data command and capture its diagnostics. TUR and
+; PREVENT/ALLOW retain cached data/queued EOF; other controls discard it before I/O
 ; and clear queued EOF only after success. A failed motion may still have affected
 ; media, so this helper makes no rollback or automatic-repeat promise.
 execute_control_srb proc near
         cmp     byte ptr [srb+SRB_CDB], SCSI_TUR
         je      control_buffer_ready
+        cmp     byte ptr [srb+SRB_CDB], SCSI_PREVENT
+        je      control_buffer_ready    ; removal policy cannot discard stream state
         call    discard_tape_buffer
 control_buffer_ready:
         mov     byte ptr [driver_error], 0
@@ -1838,6 +1841,8 @@ control_buffer_ready:
 control_complete:
         cmp     byte ptr [srb+SRB_CDB], SCSI_TUR
         je      control_success
+        cmp     byte ptr [srb+SRB_CDB], SCSI_PREVENT
+        je      control_success         ; preserve queued legacy filemark/EOF
         and     byte ptr [device_state], not MT_STATE_EOF_NEXT
 control_success:
         clc

@@ -58,6 +58,14 @@ endif
         ret
 endif
 media_mock_success:
+ifdef NATIVE_LOCK_TEST
+        cmp byte ptr es:[bx+SRB_CDB+4],0
+        jne media_removal_allowed
+        cmp byte ptr cs:[native_locked],0
+        je media_removal_allowed
+        jmp native_removal_prevented
+media_removal_allowed:
+endif
         mov al,byte ptr es:[bx+SRB_CDB+4]
         mov byte ptr cs:[native_media_loaded],al
         mov byte ptr es:[bx+SRB_Status],SS_COMP
@@ -65,6 +73,9 @@ media_mock_success:
 native_media_command endp
 
 native_media_read proc near
+ifdef NATIVE_LOCK_EOF
+        jmp native_record_command
+endif
         cmp byte ptr cs:[native_media_loaded],0
         jne media_mock_bad
         cmp byte ptr es:[bx+SRB_CDBLen],6
