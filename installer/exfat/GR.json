@@ -1,0 +1,17 @@
+{
+  "Title": "exFAT Installation",
+  "Done": "exFAT ist installiert. Starten Sie den Rechner neu, um EXFAT.SYS zu laden.",
+  "Welcome": [
+    "EXFAT.SYS gibt exFAT-Datentraegern DOS-Laufwerksbuchstaben: Festplatten",
+    "und USB-Sticks ueber das BIOS, mit OpenASPI auch die exFAT-Medien von",
+    "ASPIDSK und ASPIFDD. Es liest nur. EXFMT formatiert exFAT, EXCHK prueft",
+    "und repariert es.",
+    "",
+    "Mit OpenASPI (ASPIDSK, ASPIFDD) muss EXFAT.SYS in CONFIG.SYS nach diesen",
+    "Treibern stehen."
+  ],
+  "Options": [
+    "EXFAT.SYS in CONFIG.SYS laden",
+    "In den oberen Speicher laden (DEVICEHIGH)"
+  ]
+}

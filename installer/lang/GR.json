@@ -13,6 +13,8 @@
     "Festplatten: ASPIDSK.SYS (wenn vorhanden)",
     "LS-120, ZIP und Wechselmedien: ASPIFDD.SYS (wenn vorhanden)",
     "CD/DVD und digitales Audio: ASPICDA.SYS (wenn vorhanden)",
-    "Gewaehlte Treiber in den oberen Speicher laden (DEVICEHIGH)"
+    "Gewaehlte Treiber in den oberen Speicher laden (DEVICEHIGH)",
+    "exFAT-Laufwerke: EXFAT.SYS mit EXFMT und EXCHK",
+    "FAT-Werkzeuge: ASPICHK (Pruefen und Reparieren) und DEFRAG"
   ]
 }

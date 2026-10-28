@@ -211,7 +211,7 @@ invalid_done:
         SEND ST_DONE or ST_ERROR or ERR_MEDIA_CHANGE,1
         test byte ptr [unit_table+U_FLAGS],UF_MEDIA
         EQCHECK
-        test byte ptr [unit_table+U_FLAGS],UF_CHANGED
+        test byte ptr [unit_table+U_XFLAGS],XF_CHANGED
         jnz read_attention_latched
         jmp failed
 read_attention_latched:
@@ -222,7 +222,7 @@ read_attention_latched:
         SEND ST_DONE,0
         cmp byte ptr [packet+RH_MEDIA_RET],0FFh
         EQCHECK
-        test byte ptr [unit_table+U_FLAGS],UF_CHANGED
+        test byte ptr [unit_table+U_XFLAGS],XF_CHANGED
         EQCHECK
         SEND ST_DONE,1
 ifdef TEST_FDD

@@ -74,7 +74,7 @@ notification and a later TEST UNIT READY succeeded on a different medium.
 
 | Driver | Effect |
 | --- | --- |
-| ASPIDSK/ASPIFDD, removable unit | The request keeps its DOS error (`0Fh` for a failed transfer). `UF_MEDIA` and the BPB override are dropped and `UF_CHANGED` is set: DOS retries get NOT READY without a CDB, so no I/O uses the old BPB. The next MEDIA CHECK returns `0FFh` without TEST UNIT READY and clears `UF_CHANGED`; BUILD BPB rereads the volume. |
+| ASPIDSK/ASPIFDD, removable unit | The request keeps its DOS error (`0Fh` for a failed transfer). `UF_MEDIA` and the BPB override are dropped and `XF_CHANGED` is set (the flag EXFAT.SYS also uses for a change it saw first): DOS reads and writes get NOT READY without a CDB, so no I/O uses DOS's old DPB. The next MEDIA CHECK returns `0FFh` without TEST UNIT READY and clears `XF_CHANGED`; BUILD BPB, or the READ that follows the report, rereads the volume. |
 | ASPIDSK, fixed unit | Not latched; the medium cannot be exchanged. A failed transfer still returns `0Fh` and a later BUILD BPB revalidates as before. |
 | ASPICDA | `DISC_CHANGED` (`80h`) is set in the unit's door-state byte. MEDIA CHANGED still issues its TEST UNIT READY (which also invalidates audio state), then returns `0FFh` once and clears the bit. |
 

@@ -18,6 +18,13 @@ Implemented behavior:
   64 sectors per command.  A write-protected medium reports DOS error 00h.
 - Media check and BUILD BPB for devices with the removable bit (USB
   sticks, card readers): a new medium is read again.
+- exFAT media (superfloppy or primary MBR partition of type 07h) for
+  `EXFAT.SYS`: DOS sees an empty, write-protected disk until EXFAT.SYS
+  takes the drive letter over; it reads the sectors through the exFAT
+  service (`common/dos/exfat_svc.inc`).  See [EXFAT.SYS](../exfat/README.md).
+  [EXCHK](../../tools/exchk/README.md) `/F` writes through it, and
+  [EXFMT](../../tools/exfmt/README.md) formats any medium of the driver
+  through it (sectors of the whole medium, then a reload).
 - A private stack for the ASPI manager.
 - Per-unit DOS access control (`47h`/`67h`) and independent logical mapping
   requests (`17h`/`18h`); see [access behavior](../../docs/block-access.md).

@@ -41,6 +41,11 @@ for language in US GR; do
         mcopy -o -i "$work/storage.img@@32256" "::/OPENASPI/$file" "$work/$file"
         cmp "$work/$file" "$ROOT/build/$language/dos/$file"
     done
+    # the FAT tools option is on by default
+    for file in ASPICHK.EXE DEFRAG.EXE; do
+        mcopy -o -i "$work/storage.img@@32256" "::/OPENASPI/$file" "$work/$file"
+        cmp "$work/$file" "$ROOT/build/dos/$file"
+    done
     mcopy -o -i "$work/storage.img@@32256" '::/OPENASPI/OPENASPI.TXT' "$work/README.TXT"
     cmp "$work/README.TXT" "$ROOT/build/packages/$language/README.TXT"
     dd if="$work/storage.img" of="$work/partition.img" bs=512 skip=63 status=none

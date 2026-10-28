@@ -24,6 +24,28 @@ package by itself. The Makefile selects language-specific ASPIMGR/ASPIDDG and
 shared driver/CLI binaries. The two output files are written sequentially;
 failed generation is not a completed release.
 
+For the exFAT package a third argument selects `installer/exfat/` (its
+INSTALL.INI, GR.json and READMEs):
+
+```sh
+python3 tools/package/localize.py GR build/example-exfat exfat
+```
+
+## mkexfat.sh
+
+```sh
+bash tools/package/mkexfat.sh US build/packages/exfat-US build/example-release/US 0.2
+```
+
+From a package directory of `make exfat-dist` it writes
+`exfat-<version>-<lang>.zip` (fixed timestamps) and the nonbootable 1.44 MB
+disk `exfat-<lang>-disk1.img`. It checks that the package holds exactly the
+files of `[Files]` plus INSTALL.EXE/INI, all 8.3 names, runs `fsck.fat` on
+the disk and compares every file on it and tests the zip.
+`tests/dos_install_exfat.sh` installs both languages in QEMU, then OpenASPI
+with its exFAT option over it, then the exFAT package again (refused by
+`Conflicts=`).
+
 ## mkdisks.sh
 
 Run from the repository root with a fully assembled package:

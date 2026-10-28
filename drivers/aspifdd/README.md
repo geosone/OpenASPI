@@ -20,6 +20,7 @@ Implemented behavior:
 - Partitioned disks (ZIP) and superfloppies (LS-120); FAT12/FAT16 and
   conditional FAT32 with extended BPBs, qualified on FreeDOS 1.4.
 - READ, WRITE and WRITE WITH VERIFY as ASPIDSK.
+- exFAT media for `EXFAT.SYS` as ASPIDSK; see [EXFAT.SYS](../exfat/README.md).
 - Verified Media-ID writes (`46h`), including a validated FAT32 backup.
 - Checked default/current logical BPBs (`40h`); see
   [parameter behavior](../../docs/block-parameters.md) for supported modes.

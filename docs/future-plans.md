@@ -83,22 +83,37 @@ from the device header.
 
 DOS FORMAT and CHKDSK know FAT only, and they need a block device, which an
 exFAT drive of EXFAT.SYS is not.  So exFAT gets its own two tools.  They
-work like EXFAT.SYS without ASPI: they use the sector interface of
-EXFAT.SYS, so BIOS disks and ASPIDSK/ASPIFDD media are handled the same way.
+read the sectors themselves, as EXFAT.SYS does (INT 13h, the exFAT service
+of ASPIDSK/ASPIFDD), so that the resident driver does not grow; EXFAT.SYS
+tells them its volumes through a table its device header points to
+(`EXI1`, `include/openaspi/exfatsys.h`).  Both are done, also for TexFAT:
+[EXCHK](../tools/exchk/README.md) with `/F` and
+[EXFMT](../tools/exfmt/README.md).  For media of ASPIDSK/ASPIFDD that are
+not exFAT yet, EXFMT writes through functions of their exFAT service that
+address the whole medium (PREAD, PWRITE, CAPACITY, RELOAD).
 
-- **EXFMT**: creates exFAT (boot region with its backup and checksum,
-  allocation bitmap, upcase table, root directory with volume label),
-  cluster size by medium size as Windows does.  The target is an exFAT
-  drive letter, a FAT drive (reformatted in its partition, as ASPIFMT does),
-  or a blank medium: BIOS disk number (`/D:80`) or ASPIDSK/ASPIFDD letter.
-  Like ASPIFMT: without `/YES` only the layout is shown; read check of the
-  data area, bad clusters marked in the FAT and allocation bitmap.
-- **EXCHK**: checks an exFAT volume: boot sector checksums, entry set
-  checksums, allocation bitmap against the cluster chains, lost and cross
-  linked clusters, the VolumeDirty flag.  First version only reports;
-  `/F` repairs later, with the writing of EXFAT.SYS.
-- While a tool writes, EXFAT.SYS locks the drive (no open files, caches
-  flushed) and reads the volume again afterwards.
+TexFAT (two FATs and allocation bitmaps, ActiveFat in the boot sector) is
+worth it for aging removable media such as ZIP and SuperDisk: EXFAT.SYS
+reads it, EXCHK repairs one FAT from the other, EXFMT `/TEXFAT` creates
+it.  Still to come: the writing of EXFAT.SYS keeps both copies (write
+the inactive one, then switch ActiveFat, then bring the other one up to
+date).
+
+- **EXFMT** (done): creates exFAT (boot region with its backup and
+  checksum, allocation bitmap, upcase table, root directory with volume
+  label), cluster size by volume size as Windows does.  The target is an
+  EXFAT.SYS drive, a FAT drive of ASPIDSK/ASPIFDD (reformatted in its
+  partition, as ASPIFMT does), a blank medium of theirs, or a BIOS disk
+  (`/D:80`).  Like ASPIFMT: without `/YES` only the layout is shown; read
+  check of the data area, bad clusters marked in the FAT and allocation
+  bitmap.
+- **EXCHK** (done): checks an exFAT volume: boot sector checksums, entry
+  set checksums, name hashes, allocation bitmap against the cluster chains,
+  lost and cross linked clusters, the VolumeDirty flag; `/F` repairs.
+- After a tool has written, EXFAT.SYS reads the volume again (`changed`).
+  Still missing: a lock while the tool writes (no open files on the drive,
+  caches flushed); until EXFAT.SYS writes, only reading programs can be
+  disturbed.
 - ASPIFMT stays the FAT formatter for ASPIFDD; it can get `/FS:EXFAT`
   calling the same format code.
 
@@ -125,15 +140,18 @@ volume v" and "has the medium changed".
   specification (2019).  Check the exFAT patent situation for a DOS driver
   before a release.
 
-Release: EXFAT.SYS, EXFMT and EXCHK are part of the OpenASPI release, and
-the release files also get a separate exFAT package for systems without
-ASPI.  Like every package it comes with the GeosOne DOS Installer: an
-`exfat-<version>.zip` with INSTALL.EXE and its own INSTALL.INI (Id=EXFAT,
-default directory `%BOOT%\EXFAT`, the DEVICE line in CONFIG.SYS with `/L:x`
-and `/X` as options), plus the disk images as for OpenASPI.  In the
-OpenASPI installer exFAT is one more option (EXFAT.SYS after ASPIDSK and
-ASPIFDD in CONFIG.SYS); both installers install the same files, so the
-exFAT package can later be replaced by OpenASPI and the other way round.
+Release (done): EXFAT.SYS, EXFMT and EXCHK are part of the OpenASPI
+release, as its setup option "exFAT drives" (EXFAT.SYS after ASPIDSK and
+ASPIFDD in CONFIG.SYS), and `make disksets` also makes a separate exFAT
+package for systems without ASPI: `exfat-<version>-us.zip`/`-gr.zip` and
+the disks `exfat-us-disk1.img`/`exfat-gr-disk1.img`, with the GeosOne DOS
+Installer and its own INSTALL.INI (`installer/exfat`, Id=EXFAT, default
+directory `%BOOT%\EXFAT`).  Both install the same files.  The exFAT
+package conflicts with OpenASPI (`Conflicts=OPENASPI`: Setup asks, Cancel
+by default); OpenASPI installed over it replaces its EXFAT.SYS line.  GDI's
+`Remove=` is also applied by `INSTALL /U`, so removing either package
+removes every EXFAT.SYS line; the READMEs say to remove the exFAT package
+before going over to OpenASPI.
 
 Tests: QEMU with an exFAT disk image made by `mkfs.exfat` (MBR, GPT and
 superfloppy) as IDE disk and USB stick through the BIOS, without ASPI; then
@@ -147,37 +165,44 @@ Windows 98 runs in Windows only), and the DOS tools stop at the limits of
 their DOS version.  OpenASPI gets its own two tools, even though DOS has a
 checker:
 
-- **ASPICHK**: checks FAT12, FAT16 and FAT32: boot sector and BPB, both FAT
-  copies against each other, cluster chains (lost, cross linked, loops),
-  directory entries and VFAT long name entries (checksums, orphans), file
-  sizes against chains, FAT32 FSInfo free counts.  Reports first, repairs
-  with `/F`.  Works on every DOS drive (absolute disk read/write, INT 25h/
-  26h and INT 21h 7305h for FAT32), and on ASPIDSK/ASPIFDD media through
-  their raw-media service, also when DOS has not mounted them.
-- **DEFRAG**: defragments FAT12, FAT16 and FAT32 (and exFAT through the
-  sector interface of EXFAT.SYS once that can write): files contiguous,
-  directories first, free space at the end, optionally sorted directories.
-  Safe against power loss: data is copied first, the FAT and the directory
-  entry are changed after, both FAT copies, a journal of the current move.
-  Text UI like MS DEFRAG (cluster map).
+- **ASPICHK** (done, [README](../tools/aspichk/README.md)): checks FAT12,
+  FAT16 and FAT32: boot sector and BPB, the FAT32 backup boot sector and
+  FSInfo, the FAT copies against each other, cluster chains (lost, cross
+  linked, loops), directory entries and VFAT long name entries, file sizes
+  against chains.  Reports first, repairs with `/F`.  Works on every DOS
+  drive (INT 21h 7305h, INT 25h/26h), and on ASPIDSK/ASPIFDD media through
+  the physical sector functions of their exFAT service, also when DOS has
+  not mounted them.
+- **DEFRAG** (done, [README](../tools/defrag/README.md)): defragments
+  FAT12, FAT16 and FAT32: files contiguous, directories first, free space
+  at the end, or only the fragmented files joined (`/U`).  Safe against
+  power loss: files are moved whole, data first, then the new chain in all
+  FATs, then the directory entry (one sector), the old chain freed last;
+  an interruption leaves only what ASPICHK `/F` repairs (lost clusters,
+  stale `..` entries).  Text UI with a cluster map.  exFAT later, once
+  EXFAT.SYS can write.
 
-Both are adapted from existing free code instead of written new:
+The plan was to adapt existing free code.  The license check of the
+source archives (FreeDOS 1.3 legacy CD) changed that:
 
-| Source | License | Use |
+| Source | License found | Use |
 |---|---|---|
-| FreeDOS DEFRAG 1.3.1 (Imre Leber), with its FAT transformation engine | GPL | DEFRAG; the engine is shared with FreeDOS CHKDSK and RECOVER |
-| FreeDOS CHKDSK (Imre Leber) | GPL | ASPICHK, same engine |
-| dosfsck 2.11 (FreeDOS port, Eric Auer) / fsck.fat of dosfstools 4.x | GPL v2 / GPL v3 or later | ASPICHK checks and repairs, FAT32 |
+| FreeDOS DEFRAG 1.3.2a and CHKDSK 0.9.2 (Imre Leber) | GPL v2 in the LSM files, only about half of the source files say "or later" | DEFRAG's text UI as a model only |
+| dosfsck 2.11 (FreeDOS port) | GPL v2, mostly without "or later" | none |
+| fsck.fat of dosfstools 4.2 | GPL v3 or later | the check and repair rules of ASPICHK |
 | exfatprogs (mkfs.exfat, fsck.exfat) | GPL v2 or later | EXFMT and EXCHK |
 
-OpenASPI is GPL version 3: code under "GPL v2 only" cannot be taken over,
-"v2 or later" can.  The license text in each source archive has to be
-checked before anything is copied (the project pages are not enough).
+OpenASPI is GPL version 3: code under "GPL v2 only" cannot be taken over.
+So ASPICHK has its own check core (`common/fat/fat_check.c`, Watcom C, the
+multi-pass walk of EXCHK) with the rules of `fsck.fat`, and DEFRAG is
+written new as well, with a move order of its own that is safe against
+power loss (instead of a journal: every intermediate state is one that
+ASPICHK repairs without losing data).
 
 Tests: QEMU disk images made by `mkfs.fat` with fragmented files (written
 and deleted in turns), checked by `fsck.fat` on the host after DEFRAG and
 after ASPICHK `/F`; power loss in the middle of a DEFRAG (QEMU stopped) and
 ASPICHK afterwards.
 
-Release: both in the OpenASPI release and its installer (options ASPICHK
-and DEFRAG, no CONFIG.SYS line).
+Release (done): both in the OpenASPI release and its installer (one option
+"FAT tools", on by default, no CONFIG.SYS line).

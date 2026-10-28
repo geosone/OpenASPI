@@ -65,7 +65,10 @@ check parameter/query behavior, media changes, errors and buffer boundaries.
 all three installed image-backed drives. See [block IOCTL behavior](block-ioctl.md).
 
 `make disksets` builds both language packages sequentially and creates
-`release/US/openaspi-us-disk1.img` and `release/GR/openaspi-gr-disk1.img`.
+`release/US/openaspi-us-disk1.img` and `release/GR/openaspi-gr-disk1.img`,
+and the exFAT package of each language (`make exfat-dist`,
+`tools/package/mkexfat.sh`): `release/US/exfat-<version>-us.zip` and
+`release/US/exfat-us-disk1.img`, the same for GR.
 Each current package fits on one nonbootable 1.44 MB FAT12 disk; GDI,
 package pages, README and the QUILIB programs select English or German.
 The build verifies actual image contents, language binaries and common
