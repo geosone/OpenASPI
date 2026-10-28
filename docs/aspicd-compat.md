@@ -246,6 +246,10 @@ for the next MEDIA CHANGED. Only `SS_COMP` with host status 0 returns success;
 any other completion returns 0Ch after that invalidation. `tests/dos_cda.sh`
 (`BUS=ahci` and `BUS=ide`) locks the drive, resets it through AHCIASPI, checks
 the released lock and the single change report, then reads the CD again.
+`tests/dos_cda_swap.sh` exchanges the medium over QMP while a test program
+waits: READ CAPACITY first sees NOT READY and the drive's UNIT ATTENTION, yet
+the next MEDIA CHANGED still reports `0FFh` once, the volume size is the new
+disc's, and SHSUCDX reads a file that exists only on the new disc.
 A missing/replaced medium cannot reuse the old range.
 Other failed commands preserve the committed state/range and return their
 DOS error. Error-stopped playback is reported as not busy, not successful

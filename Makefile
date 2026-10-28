@@ -99,6 +99,8 @@ dos-smoke: all
 dos-cda-smoke: all
 	bash tests/dos_cda.sh
 	BUS=ide bash tests/dos_cda.sh
+	bash tests/dos_cda_swap.sh
+	BUS=ide bash tests/dos_cda_swap.sh
 
 dos-disk-smoke: all
 	bash tests/dos_block_ownership.sh

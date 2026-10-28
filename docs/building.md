@@ -103,6 +103,9 @@ boundary tests and an optional sanitizer run.
   runs `tests/cda_commands.asm`: the actual driver against memory-only ASPI
   for seek/prefetch/address/play packet and failure checks, then installed
   driver positioning at sector zero, the last sector and one past capacity.
+  `tests/cda_reset.asm` resets the installed drive through AHCIASPI, and
+  `tests/dos_cda_swap.sh` exchanges the CD over QMP and checks the single
+  change report, the new capacity and SHSUCDX reading the new disc.
   `tests/cda_subchannel.asm` adds memory-only head-position/Q-channel tests:
   exact HSG/MSF and binary/BCD fields, aliased far buffers, guards, malformed
   replies and no-medium/unsupported-command failures.
