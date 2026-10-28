@@ -12,7 +12,7 @@
 #include "openaspi/exfat.h"
 #include "openaspi/exfatsys.h"
 
-#define VERSION "0.2"
+#define VERSION "0.3"
 #define MAXVOL 8
 #define STACKSIZE 1024                  /* as in exfatsys.asm */
 
@@ -52,6 +52,10 @@ static unsigned ndrv;
 const struct { oa_u16 version; unsigned *count; struct drive *table; oa_u16 stride; }
     exfat_info = { 1, &ndrv, drv, sizeof(struct drive) };
 static oa_u8 __far *sda;
+#ifdef EXFAT_LFN
+static oa_u8 __far *nul_dev;          /* the DOS device chain, for 71xxh */
+static oa_u8 __far *sft_list;         /* the first SFT block, for 71A6h */
+#endif
 static oa_u8 first_letter;
 static const struct oa_exfat_cp *cp;
 static struct oa_exfat_cp cptab;           /* the active one, copied at INIT */
@@ -616,6 +620,10 @@ int __cdecl assign(void __far *unused)
     int21(&q);
     lol = (oa_u8 __far *)MK_FP(q.es, q.bx);
     cds = *(oa_u8 __far * __far *)(lol + 0x16);
+#ifdef EXFAT_LFN
+    nul_dev = lol + 0x22;
+    sft_list = *(oa_u8 __far * __far *)(lol + 4);
+#endif
     last = lol[0x21];
     if (!cds || FP_OFF(cds) == 0xFFFF) return 0;
     nbios = ndrv;
@@ -636,12 +644,551 @@ int __cdecl assign(void __far *unused)
     return 0;
 }
 
+#ifdef EXFAT_LFN
+/* ---- long file names: INT 21h AX=71xxh for the own drives (EXFATL.SYS,
+   installed as EXFAT.SYS when the long names are chosen) ----
+   The calls of DOSLFN and Windows 95 (find, open, change directory,
+   attributes, current directory, TRUENAME, volume information); the ones
+   that write give "access denied".  Paths may use the long names and the
+   8.3 names of EXFAT.SYS.  Other drives go on to the next handler.  DOSLFN
+   loaded later passes these calls on: it has no DPB for a redirector drive
+   and knows its own find handles by a mark byte, which the handles here
+   avoid. */
+#define LFN_MAX 260
+#define NFIND 6
+#define PATMAX 80
+#define E_FUNC     1
+#define E_HANDLE   6
+
+struct lfind {
+    struct drive *d;            /* 0: free */
+    oa_u16 handle;
+    struct oa_exfat_file dir;
+    oa_u32 pos;
+    oa_u8 dots;                 /* "." and ".." of a subdirectory given */
+    oa_u8 allow, need, dosdate;
+    oa_u16 used;                /* for reuse: a program may end without 71A1h */
+    char pat[PATMAX];
+};
+static struct lfind finds[NFIND];
+static oa_u16 find_clock;
+static char lpath[LFN_MAX + 2];         /* the path made absolute: "X:\..." */
+static char spath[LFN_MAX + 2];         /* the parts found, 8.3 */
+static char lout[LFN_MAX + 2];          /* the parts found, long */
+static char lname[256], sname[13], comp[256];
+static char drv_name[3] = "?:";
+static oa_u16 unconv;                   /* bit 0: a long name lacks characters */
+
+static oa_u8 up(oa_u8 c)
+{
+    if (c >= 'a' && c <= 'z') return (oa_u8)(c - 32);
+    return c >= 0x80 ? cp->upper[c - 0x80] : c;
+}
+
+/* the long name of ent in the code page */
+static void ent_name(void)
+{
+    unsigned i, j;
+    oa_u16 u;
+    oa_u8 c;
+    for (i = 0; i < ent.name_len; ++i) {
+        u = ent.name[i];
+        c = u < 0x80 ? (oa_u8)u : 0;
+        for (j = 0; !c && j < 128; ++j) if (cp->uni[j] == u) c = (oa_u8)(0x80 + j);
+        if (!c) { c = '_'; unconv |= 1; }
+        lname[i] = (char)c;
+    }
+    lname[i] = 0;
+}
+
+static void fcb_name(const char *fcb, char *out)
+{
+    unsigned i;
+    for (i = 0; i < 8 && fcb[i] != ' '; ++i) *out++ = fcb[i];
+    if (fcb[8] != ' ') {
+        *out++ = '.';
+        for (i = 8; i < 11 && fcb[i] != ' '; ++i) *out++ = fcb[i];
+    }
+    *out = 0;
+}
+
+static int same(const char *a, const char *b)
+{
+    while (*a && up(*a) == up(*b)) ++a, ++b;
+    return !*a && !*b;
+}
+
+/* p with '*' and '?' against s; "x.*" also matches "x" */
+static int glob(const char *p, const char *s)
+{
+    const char *bp = 0, *bs = 0;
+    while (*s) {
+        if (*p == '*') { bp = ++p; bs = s; continue; }
+        if (*p && (*p == '?' || up(*p) == up(*s))) { ++p; ++s; continue; }
+        if (!bp) return 0;
+        p = bp; s = ++bs;
+    }
+    while (*p == '*') ++p;
+    if (p[0] == '.' && p[1] == '*') for (p += 2; *p == '*'; ++p) ;
+    return !*p;
+}
+
+static int is_sep(char c) { return c == '\\' || c == '/'; }
+
+/* the last part of lpath names a DOS device (AUX, NUL, ...): DOS's */
+static int device;                      /* full_path: the path is a device on one of our drives */
+
+static int is_device(void)
+{
+    oa_u8 __far *dev = nul_dev;
+    const char *p = strrchr(lpath, '\\') + 1;
+    char name[8];
+    unsigned i;
+    memset(name, ' ', 8);
+    for (i = 0; p[i] && p[i] != '.' && i < 8; ++i) name[i] = (char)up((oa_u8)p[i]);
+    if (p[i] && p[i] != '.') return 0;
+    for (; dev && FP_OFF(dev) != 0xFFFF; dev = *(oa_u8 __far * __far *)dev)
+        if ((W(dev, 4) & 0x8000) && !_fmemcmp(dev + 10, name, 8)) return 1;
+    return 0;
+}
+
+/* p made absolute in lpath ("." and ".." resolved); its drive if ours */
+static struct drive *full_path(const char __far *p)
+{
+    struct iregs q;
+    oa_u8 __far *e;
+    char *o;
+    unsigned n;
+    oa_u8 letter;
+    device = 0;
+    if (!sda) return 0;
+    if (p[0] && p[1] == ':') { letter = (oa_u8)(up((oa_u8)p[0]) - 'A'); p += 2; }
+    else {
+        memset(&q, 0, sizeof(q));
+        q.ax = 0x1900;
+        int21(&q);
+        letter = (oa_u8)q.ax;
+    }
+    if (letter >= 26) return 0;
+    for (n = 0; n < ndrv && drv[n].pub.letter != letter; ++n) ;
+    if (n == ndrv) return 0;                    /* quick: not one of ours */
+    lpath[0] = (char)('A' + letter); lpath[1] = ':'; lpath[2] = 0;
+    o = lpath + 2;
+    if (!is_sep(*p)) {                          /* from the current directory */
+        e = cds + 0x58 * letter;
+        if (e[0] == lpath[0] && e[1] == ':')
+            for (n = 2; e[n] && n < 67; ++n) *o++ = (char)e[n];
+        while (o > lpath + 2 && o[-1] == '\\') --o;
+    }
+    for (;;) {
+        while (is_sep(*p)) ++p;
+        if (!*p) break;
+        for (n = 0; p[n] && !is_sep(p[n]); ++n) ;
+        if (n == 1 && p[0] == '.') ;
+        else if (n == 2 && p[0] == '.' && p[1] == '.') { while (o > lpath + 2 && *--o != '\\') ; }
+        else {
+            if (o - lpath + n + 1 > LFN_MAX) return 0;
+            *o++ = '\\';
+            _fmemcpy(o, p, n); o += n;
+        }
+        p += n;
+    }
+    if (o == lpath + 2) *o++ = '\\';
+    *o = 0;
+    if (!drive_of(letter)) return 0;
+    if (is_device()) { device = 1; return 0; }
+    return drive_of(letter);
+}
+
+/* ent: the entry of comp in dir (long name, or 8.3 name) */
+static int find_comp(struct drive *d, struct oa_exfat_file *dir)
+{
+    char fcb[11];
+    oa_u32 pos = 0;
+    unsigned n = strlen(comp);
+    int rc;
+    for (;;) {
+        rc = oa_exfat_dir_next(&d->v, dir, &pos, &ent);
+        if (rc == OA_EXFAT_END) break;
+        if (rc) return E_NOTREADY;
+        ent_name();
+        if (same(comp, lname)) return 0;
+    }
+    if (n > 12 || strchr(comp, ' ') || strchr(comp, '*') || strchr(comp, '?')) return E_NOTFOUND;
+    to_fcb(comp, fcb);
+    rc = oa_exfat_lookup(&d->v, dir, fcb, &ent);
+    return rc == OA_EXFAT_END ? E_NOTFOUND : rc ? E_NOTREADY : 0;
+}
+
+/* lpath on d: spath and lout of the parts found, the last in ent and
+   lname/sname.  0, -1 the root, E_NOTFOUND (the last part is missing;
+   dir is its directory), E_PATH, E_NOTREADY. */
+static int resolve(struct drive *d, struct oa_exfat_file *dir)
+{
+    char *p = lpath + 3, *q, *s = spath + 3, *l = lout + 3, fcb[11];
+    unsigned n;
+    int rc;
+    memcpy(spath, lpath, 3); memcpy(lout, lpath, 3);
+    *s = *l = 0;
+    oa_exfat_rootdir(&d->v, dir);
+    if (!*p) return -1;
+    for (;;) {
+        for (q = p; *q && *q != '\\'; ++q) ;
+        n = (unsigned)(q - p);
+        if (n > 255) return E_PATH;
+        memcpy(comp, p, n); comp[n] = 0;
+        if ((rc = find_comp(d, dir)) != 0) return *q ? (rc == E_NOTFOUND ? E_PATH : rc) : rc;
+        ent_name();
+        if (oa_exfat_short(&d->v, dir, &ent, fcb)) return E_NOTREADY;
+        fcb_name(fcb, sname);
+        if (s > spath + 3) *s++ = '\\';
+        if (l > lout + 3) *l++ = '\\';
+        strcpy(s, sname); s += strlen(sname);
+        if (l - lout + strlen(lname) > LFN_MAX) return E_PATH;
+        strcpy(l, lname); l += strlen(lname);
+        if (!*q) return 0;
+        if (!(ent.attr & OA_EXFAT_DIR)) return E_PATH;
+        dir_file(dir, &ent.file);
+        p = q + 1;
+    }
+}
+
+/* ---- the find data (WIN32_FIND_DATA) ---- */
+
+/* v = v * m + a, v of four 16-bit words, lowest first */
+static void mul_add(oa_u16 *v, oa_u16 m, oa_u16 a)
+{
+    unsigned i;
+    oa_u32 x, carry = a;
+    for (i = 0; i < 4; ++i) { x = (oa_u32)v[i] * m + carry; v[i] = (oa_u16)x; carry = x >> 16; }
+}
+
+/* v = v / d, the remainder returned */
+static oa_u16 div16(oa_u16 *v, oa_u16 d)
+{
+    unsigned i = 4;
+    oa_u32 x, rem = 0;
+    while (i--) { x = rem << 16 | v[i]; v[i] = (oa_u16)(x / d); rem = x % d; }
+    return (oa_u16)rem;
+}
+
+static const oa_u16 before[12] = { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 };
+static int leap(oa_u32 y) { return !(y & 3) && (y % 100 || !(y % 400)); }
+
+/* FILETIME to DOS date and time (CX, DX) and 10 ms (BH), for 71A7h */
+static void dos_time(const oa_u8 __far *p, struct regs *r)
+{
+    oa_u16 v[4], ms;
+    oa_u32 days, y = 1601, n, mon;
+    _fmemcpy(v, p, 8);
+    div16(v, 10000);                            /* milliseconds */
+    ms = div16(v, 1000);                        /* seconds */
+    n = div16(v, 400);
+    n += (oa_u32)div16(v, 216) * 400;           /* seconds of the day, v the days */
+    days = v[0] | (oa_u32)v[1] << 16;
+    for (; days >= (oa_u32)(365 + leap(y)); ++y) days -= 365 + leap(y);
+    for (mon = 12; mon > 1 && days < before[mon - 1] + (mon > 2 && leap(y)); --mon) ;
+    days -= before[mon - 1] + (mon > 2 && leap(y));
+    if (y < 1980) { y = 1980; mon = 1; days = 0; n = 0; }
+    r->cx = (oa_u16)((n / 3600) << 11 | (n / 60 % 60) << 5 | (n % 60) / 2);
+    r->dx = (oa_u16)((y - 1980) << 9 | mon << 5 | (days + 1));
+    r->bx = (r->bx & 0xFF) | (oa_u16)(((n & 1) * 100 + ms / 10) << 8);
+}
+
+/* the DOS date and time as FILETIME (100 ns from 1601) or DOS (dosdate);
+   cs10: 10 ms units to add */
+static void put_time(oa_u8 __far *p, oa_u16 time, oa_u16 date, int dosdate, oa_u16 cs10)
+{
+    oa_u16 v[4];
+    oa_u32 days, y = 1980 + (date >> 9) - 1601, mon = (date >> 5) & 15, secs;
+    if (dosdate) { W(p, 0) = time; W(p, 2) = date; D(p, 4) = 0; return; }
+    if (mon < 1 || mon > 12) mon = 1;
+    days = y * 365 + y / 4 - y / 100 + y / 400 + before[mon - 1] + (date & 31) - 1;
+    y += 1601;
+    if (mon > 2 && leap(y)) ++days;
+    secs = (oa_u32)(time >> 11) * 3600 + ((time >> 5) & 63) * 60 + (time & 31) * 2;
+    v[0] = (oa_u16)days; v[1] = (oa_u16)(days >> 16); v[2] = v[3] = 0;
+    mul_add(v, 400, 0); mul_add(v, 216, (oa_u16)secs);     /* * 86400 + seconds */
+    if (secs >> 16) { v[2] += (v[1] += (oa_u16)(secs >> 16)) < (oa_u16)(secs >> 16); }
+    mul_add(v, 100, cs10);
+    mul_add(v, 1000, 0); mul_add(v, 100, 0);    /* 10 ms to 100 ns */
+    _fmemcpy(p, v, 8);
+}
+
+/* ent (or "." / ".." when dots) into the find data at fd */
+static void fill_find(oa_u8 __far *fd, int dosdate)
+{
+    unsigned i;
+    _fmemset(fd, 0, 318);
+    D(fd, 0) = ent.attr;
+    for (i = 4; i <= 20; i += 8) put_time(fd + i, ent.time, ent.date, dosdate, 0);
+    D(fd, 28) = ent.file.big ? 1 : 0;
+    D(fd, 32) = ent.file.size;
+    _fmemcpy(fd + 44, lname, strlen(lname) + 1);
+    if (strcmp(lname, sname)) _fmemcpy(fd + 304, sname, strlen(sname) + 1);
+}
+
+/* the next match of a search, 0 or a DOS error */
+static int find_next(struct lfind *f, oa_u8 __far *fd)
+{
+    char fcb[11];
+    int rc;
+    while (f->dots < 2) {
+        memset(&ent, 0, sizeof(ent));
+        ent.attr = OA_EXFAT_DIR;
+        strcpy(lname, f->dots++ ? ".." : ".");
+        strcpy(sname, lname);
+        if ((f->allow & OA_EXFAT_DIR) && !(f->need & ~OA_EXFAT_DIR) && glob(f->pat, lname)) {
+            fill_find(fd, f->dosdate);
+            return 0;
+        }
+    }
+    for (;;) {
+        rc = oa_exfat_dir_next(&f->d->v, &f->dir, &f->pos, &ent);
+        if (rc == OA_EXFAT_END) return E_NOMORE;
+        if (rc) return E_NOTREADY;
+        if ((ent.attr & ~f->allow) & (OA_EXFAT_HIDDEN | OA_EXFAT_SYSTEM | OA_EXFAT_DIR)) continue;
+        if ((ent.attr & f->need) != f->need) continue;
+        ent_name();
+        if (oa_exfat_short(&f->d->v, &f->dir, &ent, fcb)) return E_NOTREADY;
+        fcb_name(fcb, sname);
+        if (glob(f->pat, lname) || glob(f->pat, sname)) {
+            fill_find(fd, f->dosdate);
+            return 0;
+        }
+    }
+}
+
+/* a handle number the provider above (DOSLFN) does not take for one of its
+   own: it looks for the byte ACh or ADh at that offset of its segment */
+static oa_u16 new_handle(unsigned i)
+{
+    oa_u16 seg = *(oa_u16 __far *)MK_FP(0, 0x86), h = 0;
+    unsigned k;
+    oa_u8 b;
+    for (k = 0; k < 16; ++k) {
+        h = (oa_u16)(0xF001 + (k << 8) + i * 2);
+        b = *(oa_u8 __far *)MK_FP(seg, h);
+        if (seg == DS_SEG() || (b != 0xAC && b != 0xAD)) break;
+    }
+    return h;
+}
+
+static struct lfind *find_handle(oa_u16 h)
+{
+    unsigned i;
+    for (i = 0; i < NFIND; ++i) if (finds[i].d && finds[i].handle == h) return &finds[i];
+    return 0;
+}
+
+static int lfn_find_first(struct regs *r, struct drive *d)
+{
+    struct lfind *f;
+    char *last;
+    unsigned i, n;
+    int rc;
+    for (i = 0; i < NFIND && finds[i].d; ++i) ;
+    if (i == NFIND)                             /* all taken: the least used */
+        for (i = 0, n = 1; n < NFIND; ++n)
+            if ((oa_u16)(finds[n].used - finds[i].used) & 0x8000) i = n;
+    f = &finds[i];
+    f->used = ++find_clock;
+    last = strrchr(lpath, '\\');
+    if (!last[1]) return error(r, E_NOTFOUND);
+    if (strlen(last + 1) >= PATMAX) return error(r, E_PATH);
+    strcpy(f->pat, last + 1);
+    if (!strcmp(f->pat, "*.*")) f->pat[1] = 0;
+    if (last == lpath + 2) last[1] = 0; else *last = 0;
+    rc = resolve(d, &f->dir);
+    if (rc > 0) return error(r, rc == E_NOTFOUND ? E_PATH : (oa_u16)rc);
+    if (!rc) {
+        if (!(ent.attr & OA_EXFAT_DIR)) return error(r, E_PATH);
+        dir_file(&f->dir, &ent.file);
+    }
+    f->dots = (oa_u8)(rc < 0 ? 2 : 0);
+    f->pos = 0;
+    f->allow = (oa_u8)r->cx; f->need = (oa_u8)(r->cx >> 8); f->dosdate = (oa_u8)(r->si & 1);
+    unconv = 0;
+    f->d = d;
+    if ((rc = find_next(f, (oa_u8 __far *)MK_FP(r->es, r->di))) != 0) { f->d = 0; return error(r, (oa_u16)rc); }
+    f->handle = new_handle(i);
+    r->ax = f->handle; r->cx = unconv;
+    return ok(r);
+}
+
+/* the SFT of handle h of the current program, 0 if closed */
+static oa_u8 __far *handle_sft(oa_u16 h)
+{
+    oa_u8 __far *psp = (oa_u8 __far *)MK_FP(W(sda, 0x10), 0), __far *blk;
+    oa_u8 n;
+    if (!sft_list || h >= W(psp, 0x32)) return 0;
+    n = (*(oa_u8 __far * __far *)(psp + 0x34))[h];
+    if (n == 0xFF) return 0;
+    for (blk = sft_list; FP_OFF(blk) != 0xFFFF; blk = *(oa_u8 __far * __far *)blk) {
+        if (n < W(blk, 4)) return blk + 6 + n * 0x3B;
+        n = (oa_u8)(n - W(blk, 4));
+    }
+    return 0;
+}
+
+/* 71A6h: BY_HANDLE_FILE_INFORMATION of a file of ours at DS:DX */
+static int lfn_handle_info(struct regs *r)
+{
+    oa_u8 __far *sft = handle_sft(r->bx), __far *out;
+    struct drive *d;
+    unsigned i;
+    if (!sft || !(d = sft_drive(sft))) return 1;
+    out = (oa_u8 __far *)MK_FP(r->ds, r->dx);
+    _fmemset(out, 0, 52);
+    D(out, 0) = sft[4];
+    for (i = 4; i <= 0x14; i += 8) put_time(out + i, W(sft, 0x0D), W(sft, 0x0F), 0, 0);
+    D(out, 0x1C) = d->v.serial;
+    D(out, 0x24) = D(sft, 0x11);
+    D(out, 0x28) = 1;                           /* links */
+    D(out, 0x30) = D(sft, 0x1B);                /* first cluster as the index */
+    return ok(r);
+}
+
+/* "X:\" of the drive of a name, for 71A0h */
+static struct drive *root_drive(const char __far *p)
+{
+    oa_u8 c = up((oa_u8)p[0]);
+    if (c < 'A' || c > 'Z' || p[1] != ':') return 0;
+    return full_path(p);
+}
+
+/* a DOS call with a path of our own (spath) in DS:DX */
+static int dos_path(struct regs *r, oa_u16 ax)
+{
+    struct iregs q;
+    memset(&q, 0, sizeof(q));
+    q.ax = ax; q.bx = r->bx; q.cx = r->cx; q.dx = FP_OFF((void __far *)spath); q.si = q.dx; q.di = r->di;
+    q.ds = q.es = DS_SEG();
+    if (ax == 0x6C00) q.dx = r->dx;
+    if (int21(&q)) return error(r, q.ax);
+    r->ax = q.ax;
+    if (ax == 0x6C00) r->cx = 1;                /* opened */
+    return ok(r);
+}
+
+/* a device on our drive: the old call with the caller's registers (the
+   caller does not fall back to it, as the drive has long names) */
+static int dos_device(struct regs *r, oa_u16 ax)
+{
+    struct iregs q;
+    q.ax = ax; q.bx = r->bx; q.cx = r->cx; q.dx = r->dx; q.si = r->si; q.di = r->di;
+    q.ds = r->ds; q.es = r->es;
+    if (int21(&q)) return error(r, q.ax);
+    r->ax = q.ax; r->cx = q.cx;
+    return ok(r);
+}
+
+int __cdecl lfn(struct regs *r)
+{
+    struct oa_exfat_file dir;
+    struct lfind *f;
+    struct drive *d;
+    const char __far *dx = (const char __far *)MK_FP(r->ds, r->dx);
+    const char __far *si = (const char __far *)MK_FP(r->ds, r->si);
+    char __far *out;
+    oa_u8 fn = (oa_u8)r->ax;
+    int rc;
+    unsigned n;
+    switch (fn) {
+    case 0xA7:                                  /* time conversion, for any drive */
+        if (!(oa_u8)r->bx) { dos_time(si, r); return ok(r); }
+        if ((oa_u8)r->bx != 1) return 1;
+        put_time((oa_u8 __far *)MK_FP(r->es, r->di), r->cx, r->dx, 0, r->bx >> 8);
+        return ok(r);
+    case 0x39: case 0x3A: case 0x41:            /* make and remove directory, delete */
+        if (!full_path(dx)) return 1;
+        return error(r, E_ACCESS);
+    case 0x56:                                  /* rename */
+        if (!full_path(dx) && !full_path((const char __far *)MK_FP(r->es, r->di))) return 1;
+        return error(r, E_ACCESS);
+    case 0x3B:                                  /* change directory */
+        if (!(d = full_path(dx))) return 1;
+        rc = resolve(d, &dir);
+        if (rc > 0 || (!rc && !(ent.attr & OA_EXFAT_DIR))) return error(r, E_PATH);
+        return dos_path(r, 0x3B00);
+    case 0x43:                                  /* attributes and times */
+        if (!(d = full_path(dx))) return device && !(oa_u8)r->bx ? dos_device(r, 0x4300) : 1;
+        rc = resolve(d, &dir);
+        if (rc > 0) return error(r, (oa_u16)rc);
+        if (rc < 0) { memset(&ent, 0, sizeof(ent)); ent.attr = OA_EXFAT_DIR; }
+        switch ((oa_u8)r->bx) {
+        case 0: r->cx = ent.attr; break;
+        case 4: r->cx = ent.time; r->di = ent.date; break;
+        case 2: r->ax = (oa_u16)ent.file.size; r->dx = (oa_u16)(ent.file.size >> 16); break;
+        case 6: r->di = ent.date; break;
+        case 8: r->cx = ent.time; r->di = ent.date; r->si = 0; break;
+        case 1: case 3: case 5: case 7: return error(r, E_ACCESS);
+        default: return error(r, E_FUNC);
+        }
+        return ok(r);
+    case 0x47:                                  /* current directory */
+        drv_name[0] = (char)((oa_u8)r->dx ? '@' + (oa_u8)r->dx : 0);
+        if (!(d = full_path(drv_name))) return 1;
+        rc = resolve(d, &dir);
+        out = (char __far *)MK_FP(r->ds, r->si);
+        if (rc > 0) _fmemcpy(out, lpath + 3, strlen(lpath + 3) + 1);
+        else _fmemcpy(out, lout + 3, strlen(lout + 3) + 1);
+        return ok(r);
+    case 0x4E:                                  /* find first */
+        if (!(d = full_path(dx))) return 1;
+        return lfn_find_first(r, d);
+    case 0x4F:                                  /* find next */
+        if (!(f = find_handle(r->bx))) return 1;
+        if (!drive_of(f->d->pub.letter)) { f->d = 0; return error(r, E_NOTREADY); }
+        unconv = 0;
+        f->used = ++find_clock;
+        if ((rc = find_next(f, (oa_u8 __far *)MK_FP(r->es, r->di))) != 0) return error(r, (oa_u16)rc);
+        r->cx = unconv;
+        return ok(r);
+    case 0xA1:                                  /* find close */
+        if (!(f = find_handle(r->bx))) return 1;
+        f->d = 0;
+        return ok(r);
+    case 0x60:                                  /* TRUENAME: 0 as given, 1 short, 2 long */
+        if (!(d = full_path(si))) return device ? dos_device(r, 0x6000) : 1;
+        out = (char __far *)MK_FP(r->es, r->di);
+        if (!((oa_u8)r->cx & 3)) { _fmemcpy(out, lpath, strlen(lpath) + 1); return ok(r); }
+        rc = resolve(d, &dir);
+        if (rc > 0) return error(r, (oa_u16)rc);
+        if (((oa_u8)r->cx & 3) == 1) _fmemcpy(out, spath, strlen(spath) + 1);
+        else _fmemcpy(out, lout, strlen(lout) + 1);
+        return ok(r);
+    case 0x6C:                                  /* extended open/create */
+        if (!(d = full_path(si))) return device ? dos_device(r, 0x6C00) : 1;
+        rc = resolve(d, &dir);
+        if (rc == E_NOTFOUND) return error(r, (oa_u16)(r->dx & 0x10 ? E_ACCESS : E_NOTFOUND));
+        if (rc) return error(r, (oa_u16)(rc < 0 ? E_ACCESS : rc));
+        if (ent.attr & OA_EXFAT_DIR) return error(r, E_ACCESS);
+        return dos_path(r, 0x6C00);
+    case 0xA6:                                  /* file information by handle */
+        return lfn_handle_info(r);
+    case 0xA0:                                  /* volume information */
+        if (!root_drive(dx)) return 1;
+        r->bx = 0x4006;                         /* case kept, Unicode, the 71xxh calls */
+        r->dx = LFN_MAX; n = r->cx; r->cx = 255;
+        if (n >= 6) _fmemcpy(MK_FP(r->es, r->di), "exFAT", 6);
+        return ok(r);
+    }
+    return 1;
+}
+
+#endif /* EXFAT_LFN */
+
 /* ---- INIT: after the resident part, freed when INIT returns ---- */
 #pragma code_seg("INIT_TEXT", "INIT")
 #pragma data_seg("INIT_DATA", "INIT")
 /* string literals would stay resident in CONST */
 static char efi_part[] = "EFI PART", hexdig[] = "0123456789ABCDEF";
+#ifdef EXFAT_LFN
+static char msg_hello[] = "EXFAT " VERSION " - exFAT drives, read-only, long names\r\n$";
+#else
 static char msg_hello[] = "EXFAT " VERSION " - exFAT drives, read-only\r\n$";
+#endif
 static char msg_none[] = "No exFAT volumes and no ASPIDSK/ASPIFDD - EXFAT not installed\r\n$";
 static char msg_bios[] = "  exFAT volume on BIOS disk $", msg_h[] = "h\r\n$";
 static char msg_aspi[] = "  exFAT media on the drives of ASPIDSK/ASPIFDD\r\n$";

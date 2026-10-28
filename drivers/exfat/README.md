@@ -16,7 +16,9 @@ LASTDRIVE=Z
   BIOSes with faulty extensions; only the first 8 GB are reachable)
 
 EXFAT.SYS stays resident with about 13.5 KB; it loads high with
-`DEVICEHIGH`.  The initialisation code and the unused code page table are
+`DEVICEHIGH`.  The same source built with `EXFAT_LFN` is `EXFATL.SYS`
+(about 21.5 KB) with the long file names below; setup installs one of the
+two as `EXFAT.SYS` (option "long file names").  The initialisation code and the unused code page table are
 freed after loading.
 
 EXFAT.SYS finds exFAT volumes in two places:
@@ -42,6 +44,16 @@ Up to eight volumes.
   names in the DOS code page (437, or 850 when that is active): names that
   fit stay as they are (`README.TXT`, `klein.txt` as `KLEIN.TXT`), others
   get `~n` in the order of the directory (`EINLAN~1.TXT`, `EINLA~10.TXT`).
+- EXFATL.SYS only: long names (INT 21h AX=71xxh, the calls of DOSLFN and
+  Windows 95) for the own drives: find first/next/close (six searches; when a program
+  ends without closing its search, the least used one is reused), open
+  (716Ch), change and current directory, attributes, times and size
+  (7143h), TRUENAME in its three forms, file information by handle
+  (71A6h), volume information and the time conversion (71A7h).  Paths may
+  mix long and 8.3 names.  The calls that write give "access denied".
+  Other drives go on to the next handler, so DOSLFN loaded after
+  EXFAT.SYS gives them long names; on MS-DOS 7 COMMAND.COM's DIR shows
+  the long names.
 - Subdirectories show `.` and `..` as on FAT.
 - TexFAT volumes (two FATs and allocation bitmaps) are read through the
   active FAT and bitmap (ActiveFat of the boot sector).
@@ -64,6 +76,9 @@ HIMEM.SYS, EMM386.EXE and MEM.EXE from DIR, `OPTS=/C`: CHS reads) and
 compares DIR, CD, TYPE and
 COPY results.  `tests/dos_exfat_aspi.sh` uses EUSBASPI and ASPIDSK with a
 removable USB stick and changes the medium exFAT -> FAT16 -> exFAT.
+`tests/dos_exfat_lfn.sh` runs `tests/lfntest.c` (LFNTEST.EXE) for the
+71xxh calls on MS-DOS 7.1 (`DOSLFN=file`: also with DOSLFN.COM loaded
+after EXFAT.SYS).
 
 Known: on SvarDOS the free space shown by DIR counts one sector per
 cluster.

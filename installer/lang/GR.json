@@ -15,6 +15,7 @@
     "CD/DVD und digitales Audio: ASPICDA.SYS (wenn vorhanden)",
     "Gewaehlte Treiber in den oberen Speicher laden (DEVICEHIGH)",
     "exFAT-Laufwerke: EXFAT.SYS mit EXFMT und EXCHK",
-    "FAT-Werkzeuge: ASPICHK (Pruefen und Reparieren) und DEFRAG"
+    "FAT-Werkzeuge: ASPICHK (Pruefen und Reparieren) und DEFRAG",
+    "exFAT mit langen Dateinamen fuer LFN-Programme (8 KB mehr)"
   ]
 }

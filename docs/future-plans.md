@@ -126,8 +126,8 @@ volume v" and "has the medium changed".
   first/next, file attributes and times, free space.
 - exFAT names are long Unicode names without 8.3 names: EXFAT.SYS makes
   short names (`LETTER~1.TXT`) and converts the characters to the DOS code
-  page (CP437/CP850, upcase table of the volume).  Long names later through
-  INT 21h 71xxh (as DOSLFN) for DOS 7.
+  page (CP437/CP850, upcase table of the volume).  Long names (done)
+  through INT 21h 71xxh, as DOSLFN, for DOS 7 and LFN programs.
 - Files of 4 GB and more cannot be opened by DOS: hidden or shown with their
   size cut, to be decided.
 - Writing as a second step: allocation bitmap, FAT chains and contiguous

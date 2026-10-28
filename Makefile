@@ -61,7 +61,7 @@ include tools/exfmt/exfmt.mk
 
 .PHONY: exfat-dist all tools test check dos-c-check dos-smoke dos-cda-smoke dos-media-smoke dos-disk-smoke dos-tape-smoke dos-mhvtl-smoke dos-mhvtl-roundtrip dos-mhvtl-write-protect gdi-install dist disksets clean
 
-all: $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(DOSEXFAT) $(EXFATTESTBIN) $(DOSEXCHK) $(EXCHKTESTBIN) $(DOSASPICHK) $(FATCHKTESTBIN) $(DOSDEFRAG) $(DEFRAGTESTBIN) $(DOSEXFMT) $(EXFMTTESTBIN) $(DOSSHSUCDX) $(DOSCDAUDIO) $(DOSSCAN) $(DOSMGR) $(DOSCTL) $(DOSCTLALIASES) $(DOSFMT) $(DOSDD) $(DOSDDGUI) $(DOSTAPECTL) $(DOSAPIINFO) $(DOSWINCHECK) $(WIN16CHECK) $(TESTBIN) $(ASPITESTBIN)
+all: $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(DOSEXFAT) $(DOSEXFATL) $(EXFATTESTBIN) $(DOSEXCHK) $(EXCHKTESTBIN) $(DOSASPICHK) $(FATCHKTESTBIN) $(DOSDEFRAG) $(DEFRAGTESTBIN) $(DOSEXFMT) $(EXFMTTESTBIN) $(DOSSHSUCDX) $(DOSCDAUDIO) $(DOSSCAN) $(DOSMGR) $(DOSCTL) $(DOSCTLALIASES) $(DOSFMT) $(DOSDD) $(DOSDDGUI) $(DOSTAPECTL) $(DOSAPIINFO) $(DOSWINCHECK) $(WIN16CHECK) $(TESTBIN) $(ASPITESTBIN)
 
 test: $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(EXFATTESTBIN) $(TESTBIN) $(ASPITESTBIN) $(FATTESTBIN) $(RESCUETESTBIN) $(NATIVEAPITESTBIN)
 	$(TESTBIN)
@@ -138,7 +138,7 @@ dist: all gdi-install LICENSE tests/dist_layout.sh tools/package/localize.py ins
 	cp $(DOSCTL) $(DOSCTLALIASES) $(DISTDIR)/
 	cp $(DOSFMT) $(DOSDD) $(DISTDIR)/
 	cp $(DOSDDGUI) $(DISTDIR)/
-	cp $(DOSEXFAT) $(DOSEXFMT) $(DOSEXCHK) $(DISTDIR)/
+	cp $(DOSEXFAT) $(DOSEXFATL) $(DOSEXFMT) $(DOSEXCHK) $(DISTDIR)/
 	cp $(DOSASPICHK) $(DOSDEFRAG) $(DISTDIR)/
 	mv $(DISTDIR)/LICENSE $(DISTDIR)/LICENSE.TXT
 	cp $(SHSUCD)/LICENSE.txt $(DISTDIR)/SHSUCD.LIC
@@ -148,10 +148,10 @@ dist: all gdi-install LICENSE tests/dist_layout.sh tools/package/localize.py ins
 
 # the exFAT package: the same files as the exFAT option of OpenASPI
 EXFATVERSION := $(shell sed -n 's/^\#define VERSION "\(.*\)"/\1/p' drivers/exfat/exfatsys.c)
-exfat-dist: $(DOSEXFAT) $(DOSEXFMT) $(DOSEXCHK) gdi-install LICENSE tools/package/localize.py installer/exfat/INSTALL.INI
+exfat-dist: $(DOSEXFAT) $(DOSEXFATL) $(DOSEXFMT) $(DOSEXCHK) gdi-install LICENSE tools/package/localize.py installer/exfat/INSTALL.INI
 	rm -rf $(DISTDIR)
 	mkdir -p $(DISTDIR)
-	cp $(DOSEXFAT) $(DOSEXFMT) $(DOSEXCHK) $(GDIINSTALL) $(DISTDIR)/
+	cp $(DOSEXFAT) $(DOSEXFATL) $(DOSEXFMT) $(DOSEXCHK) $(GDIINSTALL) $(DISTDIR)/
 	cp LICENSE $(DISTDIR)/LICENSE.TXT
 	python3 tools/package/localize.py $(MAXLANG) $(DISTDIR) exfat
 

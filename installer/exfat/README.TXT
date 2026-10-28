@@ -1,4 +1,4 @@
-OpenASPI exFAT 0.2 - exFAT drives for DOS
+OpenASPI exFAT 0.3 - exFAT drives for DOS
 ==========================================
 
   EXFAT.SYS  exFAT volumes as DOS drives (read only)
@@ -9,7 +9,7 @@ EXFAT.SYS is a redirector: it works with every DOS that has one (MS-DOS 5
 and later, FreeDOS, EDR-DOS). It finds exFAT volumes on the BIOS disks
 (superfloppy or MBR partition of type 07h) and, with OpenASPI, the exFAT
 media of ASPIDSK.SYS and ASPIFDD.SYS, also when a medium is changed. It
-needs about 14 KB and can be loaded high:
+needs about 14 KB (22 KB with long file names) and can be loaded high:
 
   DEVICE=C:\EXFAT\EXFAT.SYS [/L:x] [/Q] [/C]
 
@@ -18,7 +18,11 @@ needs about 14 KB and can be loaded high:
   /C    BIOS disks through CHS only, without the INT 13h extensions
 
 With OpenASPI, EXFAT.SYS must come after ASPIDSK.SYS and ASPIFDD.SYS.
-Long names are shown as 8.3 names (LETTER~1.TXT) in code page 437 or 850.
+DOS shows long names as 8.3 names (LETTER~1.TXT) in code page 437 or 850.
+With the setup option "Long file names" (EXFATL.SYS, installed as
+EXFAT.SYS), programs for long file names (INT 21h AX=71xxh, as with DOSLFN
+or Windows 95: the DIR of MS-DOS 7, file managers) see the long names;
+DOSLFN may be loaded after EXFAT.SYS for the other drives.
 Writing, creating, deleting and renaming give "access denied". Files of
 4 GB and more show the size FFFFFFFFh. CHKDSK, SCANDISK and DEFRAG do not
 work on the drives; EXFMT and EXCHK take their place.

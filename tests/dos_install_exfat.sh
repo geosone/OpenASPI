@@ -21,8 +21,9 @@ for language in US GR; do
     printf 'start=63,type=6\n' | sfdisk -q "$work/storage.img"
     mkfs.fat -F16 -h63 --offset 63 "$work/storage.img" $(((32*2048-63)/2)) > /dev/null
     printf '%s\r\n' 'LASTDRIVE=Z' 'SHELL=COMMAND.COM /P' > "$work/CONFIG.SYS"
-    # OpenASPI: the five options as detected/proposed, exFAT on
-    printf '%s\r\n' '[Answers]' 'Options=222221' > "$work/ANSWERS.INI"
+    # OpenASPI: the five options as detected/proposed, exFAT on, FAT tools
+    # proposed, exFAT with long file names on (EXFATL.SYS as EXFAT.SYS)
+    printf '%s\r\n' '[Answers]' 'Options=22222121' > "$work/ANSWERS.INI"
     # step 1 installs the exFAT disk, step 2 (after the disk change) OpenASPI
     printf '%s\r\n' '@ECHO OFF' 'IF EXIST C:\STEP2 GOTO STEP3' 'IF EXIST C:\STEP1 GOTO STEP2' \
         'ECHO REM scratch test > C:\CONFIG.SYS' 'ECHO REM scratch test > C:\AUTOEXEC.BAT' \
@@ -67,8 +68,14 @@ for language in US GR; do
     test "$(echo "$config3" | sed "1d;\$d")" = "$(echo "$config2" | sed "1d;\$d")" || { echo "CONFIG.SYS changed by the conflicting exFAT setup"; fail=1; }
     mcopy -o -i "$work/storage.img@@32256" '::/EXFAT/EXFAT.TXT' "$work/EXFAT.TXT"
     cmp "$work/EXFAT.TXT" "$ROOT/build/packages/exfat-$language/README.TXT" || fail=1
+    # the exFAT package by default without, OpenASPI here with long names
+    mcopy -o -i "$work/storage.img@@32256" '::/EXFAT/EXFAT.SYS' "$work/EXFAT-PKG.SYS"
+    cmp "$work/EXFAT-PKG.SYS" "$ROOT/build/dos/EXFAT.SYS" || fail=1
     mcopy -o -i "$work/storage.img@@32256" '::/OPENASPI/EXFAT.SYS' "$work/EXFAT.SYS"
-    cmp "$work/EXFAT.SYS" "$ROOT/build/dos/EXFAT.SYS" || fail=1
+    cmp "$work/EXFAT.SYS" "$ROOT/build/dos/EXFATL.SYS" || fail=1
+    if mdir -i "$work/storage.img@@32256" ::/OPENASPI/EXFATL.SYS >/dev/null 2>&1; then
+        echo "EXFATL.SYS installed under its own name"; fail=1
+    fi
     dd if="$work/storage.img" of="$work/partition.img" bs=512 skip=63 status=none
     fsck.fat -vn "$work/partition.img" > "$work/fsck.log" || fail=1
     if test "$fail" != 0; then cat "$work/serial.txt"; echo "$language FAILED"; exit 1; fi

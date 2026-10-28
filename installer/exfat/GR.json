@@ -12,6 +12,7 @@
   ],
   "Options": [
     "EXFAT.SYS in CONFIG.SYS laden",
-    "In den oberen Speicher laden (DEVICEHIGH)"
+    "In den oberen Speicher laden (DEVICEHIGH)",
+    "Lange Dateinamen fuer LFN-Programme (8 KB mehr)"
   ]
 }

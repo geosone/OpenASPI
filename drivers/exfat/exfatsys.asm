@@ -36,9 +36,13 @@ DGROUP  group _HDR, _TEXT, CONST, CONST2, _DATA, _BSS, _STK, INIT_TEXT, INIT_DAT
         public  _svc_call, _aspi_callback_off
 
         extern  _redir:near, _drv_init:near, _assign:near, _aspi_notify:near
+ifdef EXFAT_LFN
+        extern  _lfn:near
+endif
         extern  _exfat_info:near
 
 STACKSIZE equ   1024
+LFNSTACK equ    1024                    ; the 71xxh calls, which call DOS
 
 _HDR    segment
         assume  cs:DGROUP, ds:DGROUP
@@ -196,7 +200,13 @@ int2f   endp
 
 ; INT 21h: the drive letters are taken when the first program is started
 ; (AH=4Bh), as the DOS drive table (CDS) exists only after CONFIG.SYS.
+; AH=71h (long file names) goes to the C function lfn, as INT 2Fh to redir,
+; but on a stack of its own: lfn calls DOS, and DOS the redirector.
 int21   proc far
+ifdef EXFAT_LFN
+        cmp     ah, 71h
+        je      lfn21
+endif
         cmp     ah, 4Bh
         jne     chain21
         cmp     cs:assigned, 0
@@ -212,6 +222,73 @@ int21   proc far
         mov     cs:busy, 0
 chain21:
         jmp     cs:_old21
+ifdef EXFAT_LFN
+lfn21:  cmp     cs:lfn_busy, 0
+        jne     chain21
+        mov     cs:lfn_busy, 1
+        mov     cs:lfn_ax, ax
+        mov     cs:lfn_ss, ss
+        mov     cs:lfn_sp, sp
+        mov     ax, cs
+        cli
+        mov     ss, ax
+        mov     sp, offset DGROUP:lfn_top
+        sti
+        push    ax                      ; flags (out)
+        push    cs:lfn_ss
+        push    cs:lfn_sp
+        push    cs:lfn_ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    bp
+        push    ds
+        push    es
+        mov     ds, ax
+        mov     es, ax
+        cld
+        mov     ax, sp
+        push    ax
+        call    _lfn
+        add     sp, 2
+        mov     lfn_result, ax
+        pop     es
+        pop     ds
+        pop     bp
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        add     sp, 4
+        pop     cs:lfn_ax               ; flags (out)
+        cli
+        mov     ss, cs:lfn_ss
+        mov     sp, cs:lfn_sp
+        sti
+        mov     cs:lfn_busy, 0
+        cmp     cs:lfn_result, 0
+        jne     lfn_chain
+        push    bp
+        mov     bp, sp
+        and     word ptr [bp+6], not 1
+        test    cs:lfn_ax, 1
+        jz      @F
+        or      word ptr [bp+6], 1
+@@:     pop     bp
+        iret
+lfn_chain:
+        ; not ours: the registers are as the caller gave them
+        jmp     cs:_old21
+lfn_busy db     0
+lfn_ss  dw      0
+lfn_sp  dw      0
+lfn_ax  dw      0
+lfn_result dw   0
+endif
 assigned db     0
 int21   endp
 
@@ -391,6 +468,10 @@ _bss_start label byte
 _BSS    ends
 
 _STK    segment
+ifdef EXFAT_LFN
+        db      LFNSTACK dup (?)        ; first: INIT clears up to the main stack
+lfn_top label   word
+endif
         db      STACKSIZE dup (?)
 stack_top label word
 _resident_end label byte

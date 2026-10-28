@@ -2,7 +2,7 @@
 # The exFAT package of one language: exfat-<version>-<lang>.zip and a
 # nonbootable 1.44 MB installation disk, from a package directory assembled
 # by "make exfat-dist" (INSTALL.EXE, the localized INSTALL.INI and
-# README.TXT, EXFAT.SYS, EXFMT.EXE, EXCHK.EXE, LICENSE.TXT).
+# README.TXT, EXFAT.SYS, EXFATL.SYS, EXFMT.EXE, EXCHK.EXE, LICENSE.TXT).
 # Run from the repository root.
 set -euo pipefail
 language=${1:?US or GR}
