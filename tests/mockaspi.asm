@@ -120,6 +120,17 @@ aspi_entry proc far
 
         les     bx, dword ptr [bp+6]
         mov     al, byte ptr es:[bx+SRB_Cmd]
+ifdef ATTENTION_TEST
+        cmp     al, 0F2h
+        jne     attention_not_stats
+        mov     ax, word ptr cs:[attention_index]
+        mov     word ptr es:[bx+4], ax
+        mov     ax, word ptr cs:[attention_bad]
+        mov     word ptr es:[bx+6], ax
+        mov     byte ptr es:[bx+SRB_Status], SS_COMP
+        jmp     aspi_done
+attention_not_stats:
+endif
 ifdef NATIVE_PROBE_TEST
         cmp     al, 0F0h
         jne     native_not_stats
@@ -233,6 +244,10 @@ endif
         call    execute_read_block_limits
         jmp     aspi_done
 execute_data:
+ifdef ATTENTION_TEST
+        call attention_test_command
+        jmp aspi_done
+endif
 ifdef WRITE_PROTECT_ACCEPTANCE
         call protect_acceptance_command
         jmp aspi_done
@@ -1340,6 +1355,9 @@ ifdef BUFFERED_TEST
 endif
 ifdef NATIVE_PROBE_TEST
         include tests/mocknative.inc
+endif
+ifdef ATTENTION_TEST
+        include tests/mockattention.inc
 endif
 resident_end label byte
 

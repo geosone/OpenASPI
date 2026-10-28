@@ -540,7 +540,8 @@ fill_mtget endp
 ; Build the explicit 16-byte layout by translating the common status fields.
 ; Its physical-unit/error/state positions differ from the 14-byte layout; do not
 ; interpret a longer buffer as sufficient evidence of which layout was returned.
-; The extra state bits also expose pending rewind and a saved write diagnostic.
+; The extra state bits also expose pending rewind, a saved write diagnostic and
+; a latched UNIT ATTENTION (0400h) that only a successful REWIND clears.
 fill_mtget16 proc near
         call    fill_mtget
         mov     ax, word ptr es:[di+12]
@@ -575,8 +576,12 @@ mtget16_eot_ready:
         mov     ah, 1
 mtget16_ready:
         cmp     byte ptr [write_error_valid], 0
-        je      mtget16_store_state
+        je      mtget16_attention_state
         or      ah, 2                   ; OpenASPI latched write diagnostic
+mtget16_attention_state:
+        cmp     byte ptr [media_attention], 0
+        je      mtget16_store_state
+        or      ah, 4                   ; OpenASPI UNIT ATTENTION: REWIND required
 mtget16_store_state:
         mov     word ptr es:[di+4], ax
         ret
@@ -596,6 +601,10 @@ read_request proc near
         ret
 
 read_nonempty:
+        call    check_media_attention
+        jnc     read_attention_clear
+        ret
+read_attention_clear:
         mov     byte ptr [driver_error], 17
         cmp     byte ptr [buffer_internal_io], 0
         jne     read_open_allowed
@@ -749,6 +758,10 @@ write_request proc near
         mov     ax, word ptr es:[bx+REQ_COUNT]
         mov     word ptr [requested_bytes], ax
         mov     word ptr es:[bx+REQ_COUNT], 0
+        call    check_media_attention   ; also refuses zero-byte WRITTEN marking
+        jnc     write_attention_clear
+        ret
+write_attention_clear:
         cmp     byte ptr [buffer_internal_io], 0
         jne     write_open_exclusive
         cmp     byte ptr [session_buffered], 0
@@ -1079,8 +1092,8 @@ begin_buffer_request proc near
 begin_buffer_request endp
 
 ; Apply session guards before copying bytes or polling media: retain a
-; latched physical-write failure, enforce the first-open buffered/raw choice,
-; then check handle and single-byte policy. Fixed-mode buffer size must divide
+; latched physical-write failure, refuse a latched UNIT ATTENTION, enforce
+; the first-open buffered/raw choice, then check handle and single-byte policy. Fixed-mode buffer size must divide
 ; into complete blocks. CF is the access result, not a hardware completion.
 check_buffer_access proc near
         cmp     byte ptr [buffer_write_failed], 0
@@ -1090,6 +1103,8 @@ check_buffer_access proc near
         stc
         ret
 buffer_access_not_latched:
+        call    check_media_attention   ; no cached bytes across UNIT ATTENTION
+        jc      buffer_access_error
         mov     byte ptr [driver_error], 17
         mov     al, byte ptr [request_buffered]
         cmp     al, byte ptr [session_buffered]
@@ -1258,6 +1273,20 @@ flush_buffer_failed:
         stc
         ret
 flush_tape_buffer endp
+
+; After a current UNIT ATTENTION the medium may have changed or the drive may
+; have reset to BOT. Refuse record I/O, implicit close filemarks and motion other
+; than REWIND/OFFLINE/NOP with driver error 24 and no CDB. CF set when latched.
+check_media_attention proc near
+        cmp     byte ptr [media_attention], 0
+        je      media_attention_clear
+        mov     byte ptr [driver_error], 24
+        stc
+        ret
+media_attention_clear:
+        clc
+        ret
+check_media_attention endp
 
 ; Report no proven DOS progress and retain the original requested byte count
 ; as residual. Do not infer that the device did not consume a failed record from
@@ -1434,6 +1463,7 @@ rewind_on_close proc near
 rewind_close_issue:
         call    execute_control_srb
         jc      rewind_close_done
+        mov     byte ptr [media_attention], 0 ; accepted REWIND leaves the old position
         test    byte ptr [config_options], OPT_WAIT_REWIND
         jnz     rewind_close_done
         mov     byte ptr [rewind_pending], 1
@@ -1651,8 +1681,13 @@ read_bios_ticks endp
 ; this extra record/position policy by accident.
 finish_written_tape proc near
         test    byte ptr [device_state], MT_STATE_WRITTEN
-        jnz     finish_tape_write_marks
+        jnz     finish_tape_attention
         clc
+        ret
+finish_tape_attention:
+        ; Never append close marks to a medium that may have reset or changed.
+        call    check_media_attention
+        jnc     finish_tape_write_marks
         ret
 finish_tape_write_marks:
         call    prepare_control_srb
@@ -1711,6 +1746,12 @@ mtop_count_checked:
         jnc     mtop_count_valid
         ret
 mtop_count_valid:
+        cmp     ax, MTREW               ; REWIND, OFFLINE and NOP stay allowed
+        jae     mtop_attention_allowed
+        call    check_media_attention
+        jnc     mtop_attention_allowed
+        ret
+mtop_attention_allowed:
         call    wait_for_rewind
         jnc     mtop_rewind_ready
         ret
@@ -1796,7 +1837,11 @@ mtop_bsr_ready:
 mtop_rewind:
         call    prepare_control_srb
         mov     byte ptr [srb+SRB_CDB], SCSI_REWIND
-        jmp     execute_control_srb
+        call    execute_control_srb
+        jc      mtop_rewind_done
+        mov     byte ptr [media_attention], 0
+mtop_rewind_done:
+        ret
 
 mtop_offline:
         call    prepare_control_srb
@@ -2607,6 +2652,7 @@ endif
 srb                  db  ASPI_SRB_SIZE dup (0)
 
 native_write_state  db  0               ; active=1 dirty=2 failed=4
+media_attention     db  0               ; current UNIT ATTENTION until REWIND
 session_buffered    db  0
 buffer_internal_io  db  0
 buffer_write_failed db  0

@@ -98,6 +98,8 @@ its own function/packet. [Logical LOCATE(10)](native-tape-locate.md) uses functi
 [Medium removal control](native-tape-removal.md) adds LOCK/UNLOCK (12/13).
 These non-moving commands preserve earlier native uncertainty and queued legacy
 EOF; a failed lock command does not introduce POSITION_UNKNOWN or FAILED.
+The exception is a current [Unit Attention](aspi-sense.md#tape-unit-attention-latch)
+on any command: it reports FAILED until a successful REWIND.
 
 With partitioned media, the historical BOT completion flag does not force or
 prove partition 0. REWIND has no change-partition field; explicitly select a

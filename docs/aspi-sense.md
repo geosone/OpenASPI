@@ -31,7 +31,8 @@ The SRB is zeroed before every new command. `SRB_SenseLen` is an allocation
 length, **not a reliable returned byte count**. Header/bounds checks and
 clearing prevent stale-buffer reuse; they cannot prove that every byte of
 a manager's short autosense transfer arrived. Transfer-count qualification
-and command-specific Unit Attention policy remain separate work items.
+and block/CD Unit Attention policy remain separate work items. ASPITAP has
+its own [Unit Attention latch](#tape-unit-attention-latch).
 This change adds no command replay or transport recovery.
 
 ASPITAP has its own fixed/descriptor decoder and stream semantics, including
@@ -59,6 +60,45 @@ clearing between commands. `tests/dos_media_control.sh` runs it alongside
 resident block/CD controls and raw-session tests. Disk and CD regression
 fixtures now produce valid fixed-sense headers for intended media failures.
 
+
+## Tape Unit Attention latch
+
+A current UNIT ATTENTION (checked CHECK CONDITION, response `70h`/`72h`,
+sense key 6) means the drive did not execute the command because it was reset,
+the medium may have changed (ASC `28h`), power was cycled (`29h`) or parameters
+changed. The old position and medium identity are then unknown. Writing on
+would append to a different tape, or at BOT of a reset one.
+
+`remember_sense_key` therefore sets the resident `media_attention` latch for
+every ASPITAP caller: legacy reads, writes and `mtop`, close finalization, rewind
+polling, native controls, records and read-only probes. Deferred sense,
+host/transport errors, BUSY and malformed replies do not latch. The decoder
+never clears it, and nothing is retried automatically. The latch lives outside
+the diagnostic area that QUERY and position probes save and restore.
+
+While latched:
+
+| Path | Effect |
+| --- | --- |
+| Legacy READ/WRITE, buffered copy | Refused before any CDB, driver error 24. |
+| Legacy `mtop` | REWIND, OFFLINE and NOP are allowed; filemarks and SPACE return driver error 24 without a CDB. |
+| Legacy close | No automatic filemarks or append backspace; the refusal is saved as a write error. A rewinding alias still issues its close REWIND only when finalization succeeded. |
+| 16-byte status | State bit `0400h`; error byte shows the saved write error or the last driver error. |
+| Native session | Reports `NATIVE_FAILED` (`40h`), so SPACE, LOCATE, READ, BEGIN_WRITE and REFRESH return BUSY. READY, LOCK/UNLOCK, LOAD/UNLOAD, POSITION, PARTITIONS and ALERTS remain available. |
+| Native writer | WRITE, FLUSH, FILEMARK, SETMARK and END are BUSY; ABORT still releases ownership. |
+
+Only a successful REWIND clears the latch: native REWIND, legacy `MTREW` or an
+accepted close rewind. LOAD does not, because loading cannot prove where the
+next write would land. Reusing the v1 FAILED bit keeps old SDK validators valid;
+clients identify the cause from the reply's sense key 6 and ASC. A Unit
+Attention consumed during driver initialization is not latched, as no session
+or position exists yet.
+
+`tests/tape_sense.asm` covers the decoder rules. The `attention` and
+`attention-legacy` fixtures in `tests/dos_tape_ioctl.sh` inject `29h` on a WRITE
+and `28h` on a TUR and use a scripted manager that counts any CDB issued while
+latched. OpenTape's `dos_native_lock.sh lock-attention` checks the native
+contract and the CLI hint in both languages.
 
 ## Choose the decoder for its boundary
 

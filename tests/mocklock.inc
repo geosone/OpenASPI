@@ -54,6 +54,9 @@ elseif NATIVE_LOCK_FAULT eq 6
         mov byte ptr es:[bx+SRB_TargStat],8
 elseif NATIVE_LOCK_FAULT eq 7
         mov byte ptr es:[bx+TAPE_SENSE+2],80h
+elseif NATIVE_LOCK_FAULT eq 8
+        mov byte ptr es:[bx+TAPE_SENSE+2],6 ; current UNIT ATTENTION: reset
+        mov byte ptr es:[bx+TAPE_SENSE+12],29h
 endif
         ret
 endif

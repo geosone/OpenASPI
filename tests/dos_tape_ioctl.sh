@@ -325,6 +325,12 @@ run_fixture() {
                 *-status16) defines+=(-DSTATUS16); driver_line='DEVICE=ASPITAP.SYS -2w' ;;
             esac
             ;;
+        attention|attention-legacy)
+            defines=(-DATTENTION_TEST)
+            test_source="$ROOT/tests/tape_attention.asm"
+            success_text='OpenASPI tape unit attention test passed'
+            if test "$variant" = attention-legacy; then defines+=(-DNO_RESIDUAL); fi
+            ;;
         legacy) defines=(-DNO_RESIDUAL) ;;
         pathname) driver_line='DEVICE=ASPI-S\ASPITAP.SYS -w' ;;
         verbose) driver_line='DEVICE=ASPITAP.SYS -vw' ;;
@@ -670,7 +676,7 @@ run_fixture() {
         esac
     fi
     case "$variant" in
-      native-fixed-legacy|native-fixed-*-legacy|native-write-legacy|native-write-*-legacy|native-read-legacy|native-read-*-legacy|native-legacy|native-short-legacy|write-protect-acceptance|legacy|fixed-legacy|fixed-multiblock*-legacy|fixed-residual-*-legacy|buffered-legacy|buffered-fixed-legacy|buffered-boundary*-legacy|buffered-refill-*-legacy|buffered-write-error-legacy|buffered-close-error-legacy|final-*-legacy|raw-write-error-legacy|read-stream-*-legacy|read-combined-*-legacy)
+      attention-legacy|native-fixed-legacy|native-fixed-*-legacy|native-write-legacy|native-write-*-legacy|native-read-legacy|native-read-*-legacy|native-legacy|native-short-legacy|write-protect-acceptance|legacy|fixed-legacy|fixed-multiblock*-legacy|fixed-residual-*-legacy|buffered-legacy|buffered-fixed-legacy|buffered-boundary*-legacy|buffered-refill-*-legacy|buffered-write-error-legacy|buffered-close-error-legacy|final-*-legacy|raw-write-error-legacy|read-stream-*-legacy|read-combined-*-legacy)
         grep -q 'extensions=0000' "$run_dir/serial.log"
         ;;
       no-manager|no-adapters|bad-inquiry) ;;
@@ -716,6 +722,8 @@ run_fixture() {
 if test "$#" -gt 0; then
     for variant in "$@"; do run_fixture "$variant"; done
 else
+run_fixture attention
+run_fixture attention-legacy
 run_fixture native-normal
 run_fixture native-fixed-normal
 run_fixture native-fixed-legacy

@@ -90,7 +90,9 @@ The native result is distinct from DOS IOCTL delivery. A successful DOS call
 can return PARTIAL or BUSY. Legacy status, saved write/finalization failures,
 transfer counts and decoded sense state are restored after native probing.
 Discovery can consume target-side Unit Attention; this is another reason to
-avoid probes during active sessions. Multi-command information is not an
+avoid probes during active sessions. A consumed current Unit Attention still
+[latches](aspi-sense.md#tape-unit-attention-latch), and the reply's session
+field is refreshed after the probes so it reports FAILED. Multi-command information is not an
 atomic media snapshot and must be revalidated before future mode changes.
 
 ## Parsing and record sizes

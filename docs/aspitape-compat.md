@@ -62,14 +62,16 @@ not autodetect an original third-party driver's 16-byte ABI.
 Both state layouts share bits `01h` buffered, `02h` raw, `04h` rewind on
 close, `08h` written and `10h` read. The header ABI additionally reports
 `20h` after a successful explicit movement/filemark operation (not `MTNOP`),
-uses `40h` for pending EOF, `80h` for ignored EOT, and `0100h` for a pending
-rewind. The manual ABI retains `20h`, `40h`, `80h` for those last three states.
+uses `40h` for pending EOF, `80h` for ignored EOT, `0100h` for a pending
+rewind, `0200h` for a saved write diagnostic and `0400h` for a latched Unit
+Attention. The manual ABI retains `20h`, `40h`, `80h` for those last three states.
 
 The header ABI's error byte reports a sense key on failed SCSI requests,
 or driver errors 16 (rewind timeout), 17 (access/exclusivity), 18 (single-byte
 guard), 19 (read after write), 20 (unsupported IOCTL), 21 (unknown tape
-operation), 22 (SCSI BUSY), and 23 (interrupted rewind wait). OpenASPI reserves
-31 for failures without a more specific code. Status queries do not clear
+operation), 22 (SCSI BUSY), 23 (interrupted rewind wait) and 24 (refused after
+a latched [Unit Attention](aspi-sense.md#tape-unit-attention-latch); REWIND
+first). OpenASPI reserves 31 for failures without a more specific code. Status queries do not clear
 the error. A subsequent media request can replace it unless the saved buffered
 write-failure rule below applies; this is not an error history. Unit zero is
 the single supported physical drive. Emulator tests

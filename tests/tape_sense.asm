@@ -21,6 +21,7 @@ sense_flags db 0
 sense_info_valid db 0
 sense_info_high dw 0
 sense_info_low dw 0
+media_attention db 0
 step dw 0
 ok db 'Resident tape sense validation passed',13,10,'$'
 bad db 'Resident tape sense validation FAILED',13,10,'$'
@@ -187,8 +188,67 @@ success_target_test:
         mov byte ptr [srb+SRB_HaStat],0
         mov byte ptr [srb+SRB_TargStat],2
         call check_tape_completion
-        jc passed
+        jc attention_tests
         jmp failed
+
+; UNIT ATTENTION latch: only checked current key 6 sets it, and the decoder
+; never clears it. No earlier case above used key 6.
+attention_tests:
+        cmp byte ptr [media_attention],0
+        EQCHECK
+        mov byte ptr [srb+SRB_Status],SS_ERR
+        mov byte ptr [srb+SRB_TargStat],2
+        mov byte ptr [srb+SRB_CDBLen],6
+        mov byte ptr [srb+SRB_SenseLen],32
+        push ds
+        pop es
+        mov di,offset srb+TAPE_SENSE
+        mov cx,32
+        xor al,al
+        rep stosb
+        mov byte ptr [srb+TAPE_SENSE+2],6
+        mov byte ptr [srb+TAPE_SENSE+7],6
+        mov byte ptr [srb+TAPE_SENSE+12],29h
+        mov byte ptr [srb+TAPE_SENSE],71h       ; deferred does not latch
+        call remember_sense_key
+        cmp byte ptr [media_attention],0
+        EQCHECK
+        mov byte ptr [srb+TAPE_SENSE],73h
+        call remember_sense_key
+        cmp byte ptr [media_attention],0
+        EQCHECK
+        mov byte ptr [srb+TAPE_SENSE],0F0h      ; VALID current fixed
+        mov byte ptr [srb+SRB_HaStat],11h       ; host error: sense unusable
+        call remember_sense_key
+        cmp byte ptr [media_attention],0
+        EQCHECK
+        mov byte ptr [srb+SRB_HaStat],0
+        mov byte ptr [srb+SRB_TargStat],8       ; BUSY carries no sense
+        call remember_sense_key
+        cmp byte ptr [media_attention],0
+        EQCHECK
+        mov byte ptr [srb+SRB_TargStat],2
+        call remember_sense_key
+        cmp byte ptr [media_attention],1
+        EQCHECK
+        cmp byte ptr [last_sense_key],6
+        EQCHECK
+        cmp byte ptr [sense_asc],29h
+        EQCHECK
+        mov byte ptr [srb+TAPE_SENSE+2],3       ; later sense never clears
+        call remember_sense_key
+        cmp byte ptr [media_attention],1
+        EQCHECK
+        mov byte ptr [media_attention],0
+        mov byte ptr [srb+TAPE_SENSE],72h       ; descriptor current
+        mov byte ptr [srb+TAPE_SENSE+1],6
+        mov byte ptr [srb+TAPE_SENSE+2],28h
+        mov byte ptr [srb+TAPE_SENSE+7],0
+        call remember_sense_key
+        cmp byte ptr [media_attention],1
+        EQCHECK
+        cmp byte ptr [sense_asc],28h
+        EQCHECK
 passed:
         mov dx,offset ok
         mov ah,9

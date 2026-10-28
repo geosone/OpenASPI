@@ -23,6 +23,7 @@ tape_completion_failed:
 check_tape_completion endp
 
 ; Decode into resident sense_* / last_sense_key, clearing every field first.
+; media_attention is the one sticky output: set on current UNIT ATTENTION only.
 ; DS=CS; AX/BX/CX/SI are scratch, and carry is not a validity return. Consumers
 ; must inspect response/valid flags and qualify command completion separately.
 ; DOS autosense follows the actual six-, ten- or sixteen-byte CDB. DI holds that base
@@ -192,7 +193,21 @@ fixed_sense_flags:
         mov     byte ptr [sense_flags], ah
         and     al, 0Fh
         mov     byte ptr [last_sense_key], al
+; A current UNIT ATTENTION (key 6, response 70h/72h) reports a reset, medium
+; change or changed parameters instead of executing this command. Latch it for
+; every legacy/native caller: position and medium identity are no longer known.
+; Deferred sense does not latch. Only a successful REWIND clears media_attention;
+; this decoder never retries. Keep the latch outside saved diagnostic ranges.
 sense_done:
+        cmp     byte ptr [last_sense_key], 6
+        jne     sense_attention_done
+        cmp     byte ptr [sense_response], 70h
+        je      sense_attention
+        cmp     byte ptr [sense_response], 72h
+        jne     sense_attention_done
+sense_attention:
+        mov     byte ptr [media_attention], 1
+sense_attention_done:
         pop     di
         ret
 remember_sense_key endp

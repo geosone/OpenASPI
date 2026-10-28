@@ -83,10 +83,14 @@ not capabilities established merely by reading a specification.
   parser and installed-driver fault tests cover these paths. Actual short-
   transfer qualification remains open; allocation length alone cannot prove
   the returned byte count.
-- [ ] Define command-specific Unit Attention handling. Bounded retries can be
-  qualified for read-only discovery; a shared retry wrapper must not replay
-  writes, tape movement or filemarks. Test insertion, removal, power-up and
-  reset notifications without retaining an old BPB, capacity or disc state.
+- [x] ASPITAP: [Unit Attention latch](aspi-sense.md#tape-unit-attention-latch).
+  A current key 6 on any tape command blocks data, filemarks and motion other
+  than REWIND until a successful REWIND; no command is retried. Emulator-tested
+  for reset and medium-change sense on legacy and native paths.
+- [ ] Define Unit Attention handling for ASPIDSK/ASPIFDD/ASPICDA. Bounded
+  retries can be qualified for read-only discovery; a shared retry wrapper
+  must not replay writes. Test insertion, removal, power-up and reset
+  notifications without retaining an old BPB, capacity or disc state.
 - [ ] Check short INQUIRY/command replies and optional residual reporting.
   Do not let a successful status expose reused response-buffer contents.
   Test actual transfer length where the manager supports it, and document

@@ -216,6 +216,14 @@ DOS writes: an otherwise unwritten, non-rewinding session must issue neither
 data writes nor filemarks. See the
 [compatibility notes](../../docs/aspitape-compat.md) for this DOS API distinction.
 
+Unit Attention fixtures (`attention`, `attention-legacy`) report a reset on
+the second WRITE and a possible medium change on a later TUR. Subsequent writes,
+reads, `MTWEOF`, `MTFSF`/`MTFSR` and close finalization must fail without any
+CDB, with status bit `0400h`, the saved cause or driver error 24. TUR and
+`MTREW` remain allowed; after `MTREW` the next write and the close filemarks
+proceed. The scripted manager fails the run on any unexpected CDB. See the
+[latch contract](../../docs/aspi-sense.md#tape-unit-attention-latch).
+
 ### TAPECTL reporting
 
 Post-scenario utility runs check explicit saved-write warnings and DOS exit

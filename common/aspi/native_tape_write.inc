@@ -46,6 +46,8 @@ native_wcontrol_owned:
         NT_JUMP jnz,native_wcontrol_busy
         test byte ptr [native_write_state],4
         NT_JUMP jnz,native_wcontrol_busy
+        cmp byte ptr [media_attention],0 ; ABORT above still releases
+        NT_JUMP jne,native_wcontrol_busy
         call prepare_control_srb
         mov byte ptr [srb+SRB_CDB],SCSI_WRITE_FILEMARKS
         cmp word ptr [native_info+NC_OPERATION],17
@@ -112,7 +114,7 @@ native_tape_write proc near
         stc
         ret
 native_write_header_ok:
-        test al,0Fh
+        test al,4Fh                     ; legacy state or FAILED/UNIT ATTENTION
         NT_JUMP jnz,native_write_busy
         cmp byte ptr [native_write_state],1
         je native_write_owner

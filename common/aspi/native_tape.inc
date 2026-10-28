@@ -218,6 +218,8 @@ native_probe_done:
         mov     di, offset last_scsi_status
         mov     cx, block_limits-last_scsi_status
         rep     movsb
+        call    native_session_state     ; a probe may have latched attention
+        mov     word ptr [native_info+NT_SESSION], ax
 native_output:
         les     di, dword ptr [native_argument]
         mov     si, offset native_info
@@ -507,6 +509,8 @@ native_parse_mode endp
 ; Build the public session mask from separate legacy and native state.
 ; Native active/dirty/failed bits are shifted into bits 4..6; preserving their
 ; separate storage prevents legacy close from finalizing a native stream.
+; A latched UNIT ATTENTION also reports FAILED: the existing v1 bit already means
+; "position unknown until explicit REWIND", so old SDK validators stay valid.
 native_session_state proc near
         xor     ax, ax
         cmp     byte ptr [rewind_pending], 0
@@ -531,6 +535,10 @@ native_state_done:
         shl     ah, 1
         shl     ah, 1
         or      al, ah
+        cmp     byte ptr [media_attention], 0
+        je      native_state_attention_done
+        or      al, 40h
+native_state_attention_done:
         xor     ah, ah
         ret
 native_session_state endp
@@ -766,6 +774,7 @@ native_control_cdb_ready:
         jmp     short native_control_finished
 native_control_bot:
         mov     byte ptr [native_write_state], 0
+        mov     byte ptr [media_attention], 0
         or      word ptr [native_info+NC_COMPLETION], 8
         jmp     short native_control_finished
 native_control_failed:
