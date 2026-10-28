@@ -40,7 +40,7 @@ QUERY advertises WRITE=`0010h`, BEGIN=`0020h`, FLUSH=`0040h`, FILEMARK=`0080h`,
 END=`0100h` and ABORT=`0200h`; FIXED_IO adds `0400h`.
 Optional [SETMARK](native-tape-setmark-write.md) adds `08000000h` independently
 of read-side setmark classification. The complete current provider mask is
-`1FFFFFFFh`; see [query negotiation](native-tape-query.md) for other operations.
+`3FFFFFFFh`; see [query negotiation](native-tape-query.md) for other operations.
 These are entry points, not proof of current media/mode compatibility. The
 command does not change block mode. Driver-detected fixed-only devices reject
 a variable-mode BEGIN without a CDB; fixed-mode BEGIN specifies the block size

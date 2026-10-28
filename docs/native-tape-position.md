@@ -39,7 +39,7 @@ implemented separately; verified emulation remains future work.
 Use category `80h`, function `04h`, version `0100h`, packed size 64 and format
 0. Initialize with `ot_tape_position_init`; validate replies with
 `ot_tape_position_validate`. Existing QUERY/CONTROL/record packets are unchanged.
-The operation capability is `00040000h`; the complete mask is `1FFFFFFFh`.
+The operation capability is `00040000h`; the complete mask is `3FFFFFFFh`.
 This advertises the provider operation, not attached-drive support.
 
 | Offset | Bytes | Field |

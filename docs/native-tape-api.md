@@ -137,6 +137,8 @@ operation model and adapters; we are not cloning every historical API.
   independent provider capability, dirty/failure state and no automatic marks.
 - [x] Add explicit acknowledged [TapeAlert retrieval](native-tape-alerts.md),
   with reported/active masks, bounded parsing and no implicit health polling.
+- [x] Add synchronous [RETENSION](native-tape-media.md) (LOAD with RETEN) with
+  its own capability bit, LOAD's recovery rules and no BOT claim.
 - [ ] Add remaining common controls and qualify physical fixed-block devices.
 - [x] Define native close/flush/mark behavior without duplicating legacy
   finalization; keep explicit writer results through abort and close.

@@ -146,7 +146,7 @@ native_header_valid:
         mov     word ptr [native_info+6], NT_VERSION
         mov     word ptr [native_info+NT_VALID], 20h ; session only, no cached guesses
         mov     word ptr [native_info+NT_OPERATIONS], 0FFFFh
-        mov     word ptr [native_info+NT_OPERATIONS+2], 1FFFh
+        mov     word ptr [native_info+NT_OPERATIONS+2], 3FFFh
         mov     al, byte ptr [tape_ha]
         mov     byte ptr [native_info+NT_ADDRESS], al
         mov     al, byte ptr [tape_target]
@@ -607,12 +607,12 @@ native_control_variable:
         jne     native_control_bad
 native_control_mode_valid:
         mov     ax, word ptr es:[di+NC_OPERATION]
-        cmp     ax, 17
+        cmp     ax, 18
         ja      native_control_bad
         mov     dx, word ptr es:[di+NC_COUNT]
         mov     cx, word ptr es:[di+NC_COUNT+2]
-        cmp     ax, 17
-        je      native_control_zero_count
+        cmp     ax, 17                   ; SETMARK and RETENSION: no count
+        jae     native_control_zero_count
         cmp     ax, 14
         jae     native_control_signed_count
         cmp     ax, 7
@@ -678,6 +678,8 @@ native_control_select_motion:
 ; cannot. Claim/alias/buffer guards apply before submission, so BUSY reports
 ; no command completion facts. Session bits are public flags, not private state.
 native_control_motion:
+        cmp     word ptr [native_info+NC_OPERATION], 18
+        je      native_control_ordinary  ; RETENSION is a media action like LOAD
         cmp     word ptr [native_info+NC_OPERATION], 14
         jae     native_control_space_guard
         cmp     word ptr [native_info+NC_OPERATION], 10
@@ -711,6 +713,8 @@ native_control_submit:
         mov     ax, word ptr [native_info+NC_OPERATION]
         or      ax, ax
         je      native_control_cdb_ready
+        cmp     ax, 18
+        je      native_control_media
         cmp     ax, 14
         jae     native_control_space
         cmp     ax, 12
@@ -730,12 +734,15 @@ native_control_removal:
         mov     byte ptr [srb+SRB_CDB+4], 1
         jmp     short native_control_cdb_ready
 native_control_media:
-        ; Sequential-access LOAD/UNLOAD: byte 4 LOAD=1/0, RETEN/IMMED=0.
-        ; Do not reuse CD START STOP's LoEj bits for a tape command.
+        ; Sequential-access LOAD/UNLOAD: byte 4 LOAD=1/0, IMMED=0; RETENSION
+        ; is LOAD with RETEN (03h). Do not reuse CD START STOP's LoEj bits.
         mov     byte ptr [srb+SRB_CDB], SCSI_LOAD
-        cmp     ax, 10
-        jne     native_control_cdb_ready
+        cmp     ax, 11
+        je      native_control_cdb_ready
         mov     byte ptr [srb+SRB_CDB+4], 1
+        cmp     ax, 18
+        jne     native_control_cdb_ready
+        mov     byte ptr [srb+SRB_CDB+4], 3
         jmp     short native_control_cdb_ready
 native_control_space:
         mov     byte ptr [srb+SRB_CDB], SCSI_SPACE

@@ -81,6 +81,7 @@
 #define OT_TAPE_OP_READ_SETMARK    0x4000000UL
 #define OT_TAPE_OP_SETMARK         0x8000000UL
 #define OT_TAPE_OP_ALERTS          0x10000000UL
+#define OT_TAPE_OP_RETENSION       0x20000000UL
 #define OT_TAPE_POSITION_FILE_VALID 2UL
 /* Separate namespaces: OP_* above are capability bits, CONTROL_* and
  * RECORD_* below are operation enums. FIXED is a request flag in those packets,
@@ -106,6 +107,8 @@
 #define OT_TAPE_CONTROL_SPACE_SEQ_SETMARKS 16u
 /* One explicit synchronous mark in an owned native writer; count stays zero. */
 #define OT_TAPE_CONTROL_SETMARK    17u
+/* LOAD with RETEN: a media action like LOAD; no count, no BOT claim. */
+#define OT_TAPE_CONTROL_RETENSION  18u
 #define OT_TAPE_RECORD_READ       0u
 #define OT_TAPE_RECORD_WRITE      1u
 #define OT_TAPE_API_CONTROL_SIZE   64u

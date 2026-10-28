@@ -22,7 +22,7 @@ zero for SPACE, even when the drive is in fixed-block data mode.
 | SPACE_SETMARKS | 15 | `01000000h` | 4 | signed -8388608..8388607 |
 | SPACE_SEQ_SETMARKS | 16 | `02000000h` | 5 | signed -8388608..8388607 |
 
-The complete current provider operation mask is `1FFFFFFFh`. These bits advertise
+The complete current provider operation mask is `3FFFFFFFh`. These bits advertise
 entry points, not proof that the drive supports a particular spacing code or direction.
 Check the particular bit before submission; an older provider without it is
 unsupported without issuing a movement CDB. Positive counts move forward,

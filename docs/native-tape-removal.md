@@ -17,7 +17,7 @@ and DOS assembly offsets retain the established ABI.
 | UNLOCK | 13 | `00020000h` | `00h` (allow removal) |
 
 The complete current provider operation mask, including
-[position observation](native-tape-position.md), is `1FFFFFFFh`. These new bits
+[position observation](native-tape-position.md), is `3FFFFFFFh`. These new bits
 occupy the high WORD; consumers must retain all 32 bits. Each accepted operation
 issues exactly one six-byte CDB with opcode `1Eh`, no data buffer and remaining
 CDB bytes zero. Persistent-prevent variants are not requested. There is no

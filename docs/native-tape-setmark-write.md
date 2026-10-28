@@ -18,7 +18,7 @@ requires flags, block size, count and reserved fields zero. The count field
 is not a mark count: this entry always requests exactly one mark. Invalid
 requests are rejected before submission without changing caller bytes.
 The capability is `OT_TAPE_OP_SETMARK=08000000h`; the complete current provider
-mask is `1FFFFFFFh`. Read classification has its own independent capability.
+mask is `3FFFFFFFh`. Read classification has its own independent capability.
 
 An accepted owned operation submits one six-byte CDB `10 02 00 00 01 00`:
 WRITE FILEMARKS with WSMK=1, IMMED=0 and transfer length 1. It requests no data

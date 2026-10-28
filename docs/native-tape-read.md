@@ -2,7 +2,7 @@
 
 Category `80h`, function `02h` reads one variable-length tape record. QUERY
 advertises READ as operation bit `8`; the full current operation mask is
-`1FFFFFFFh` (including the separate writer operations). This bit describes a provider entry
+`3FFFFFFFh` (including the separate writer operations). This bit describes a provider entry
 point. Variable-mode requests on driver-detected fixed-only devices return
 UNSUPPORTED without submission; explicit [fixed-block requests](native-tape-fixed.md)
 are now supported. [Native writes](native-tape-write.md)

@@ -18,7 +18,7 @@ The existing category `80h`, function `02h`, version `0100h`, packed 64-byte
 READ packet and byte-count fields are unchanged. `OT_TAPE_STREAM_SETMARK=40h`
 is a returned stream flag; it is not a request flag or operation number.
 The provider advertises `OT_TAPE_OP_READ_SETMARK=04000000h`; the complete
-current operation mask is `1FFFFFFFh`. This means the provider can classify
+current operation mask is `3FFFFFFFh`. This means the provider can classify
 the event, not that a drive supports or currently reports setmarks.
 
 Classification requires checked current target CHECK CONDITION, usable fixed

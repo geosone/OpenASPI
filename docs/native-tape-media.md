@@ -1,4 +1,4 @@
-# Native tape LOAD/UNLOAD
+# Native tape LOAD/UNLOAD/RETENSION
 
 The native DOS CONTROL binding adds synchronous sequential-access media
 commands. These operate one selected tape drive; library/changer support
@@ -14,12 +14,15 @@ are rejected before submission without overwriting the caller's packet.
 | --- | --- | --- | --- |
 | LOAD | 10 | `4000h` | `01h` |
 | UNLOAD | 11 | `8000h` | `00h` |
+| RETENSION | 18 | `20000000h` | `03h` (LOAD with RETEN) |
 
 The complete current operation mask, including [removal controls](native-tape-removal.md),
-is `1FFFFFFFh`. Capability bits describe
+is `3FFFFFFFh`. Capability bits describe
 provider entry points, not confirmed support by the attached drive. Each
 accepted operation issues exactly one six-byte `1Bh` CDB with no data buffer.
-IMMED, RETEN and remaining CDB fields are zero. Tape byte 4 uses LOAD, not
+IMMED and remaining CDB fields are zero; RETEN is set only by RETENSION.
+RETENSION has its own capability bit: LOAD support does not imply it, and RETEN
+without LOAD is never sent. Tape byte 4 uses LOAD, not
 CD START STOP's LoEj semantics. There is no implicit readiness probe, rewind,
 flush, filemark, retry or software fallback.
 
@@ -37,7 +40,7 @@ qualified host/target/sense diagnostics and retained native FAILED (`40h`).
 Deferred sense, contradictory completion, target BUSY and FILEMARK sense are
 failures rather than successful media actions. No failed command is replayed.
 
-Unlike relative SPACE, explicit LOAD/UNLOAD remain available when FAILED or
+Unlike relative SPACE, explicit LOAD/UNLOAD/RETENSION remain available when FAILED or
 DIRTY|FAILED (`60h`) survives a closed/aborted session. They preserve that
 state even on success: loading a tape does not finalize abandoned output or
 establish its position. Native data I/O and SPACE remain blocked until an
@@ -48,16 +51,18 @@ must distinguish completed media action from a recovered data session.
 ## Consumer and qualification
 
 OpenTape's `ot_native_execute` / `ot_dos_native_execute` accept operations
-10/11, check the individual capability bit and validate the returned packet.
+10/11/18, check the individual capability bit and validate the returned packet.
+The DOS UI's tape controls offer RETENSION on key N.
 
 ```text
 OPENTAPE --native-unload --device NRMT0
 OPENTAPE --native-load --device NRMT0
+OPENTAPE --native-retension --device NRMT0
 OPENTAPE --native-ready --device NRMT0
 OPENTAPE --native-rewind --device NRMT0
 ```
 
-There are no count, refresh, retension or immediate-mode options. A successful
+There are no count, refresh or immediate-mode options. A successful
 media command returns CLI status 0 even if earlier native uncertainty remains;
 the localized warning remains visible. Command failure returns 2, malformed
 arguments 1. Snapshot status still reports an uncertain native session as 2.

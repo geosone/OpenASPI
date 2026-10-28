@@ -200,8 +200,33 @@ static void media_tests(void)
     assert(ot_tape_control_validate(&p,sizeof(p))==-1); /* no position mutation */
     p.completion_flags=1; assert(ot_tape_control_validate(&p,sizeof(p))==0);
     p.session_state=0x10; assert(ot_tape_control_validate(&p,sizeof(p))==-1);
-    assert(ot_tape_control_init(&p,18)==-1);
+    assert(ot_tape_control_init(&p,19)==-1);
     assert(ot_tape_space_init(&p,12,0)==-1);
+}
+
+/* RETENSION is LOAD with RETEN: 1Bh, no count, no BOT claim, preserves
+ * abandoned DIRTY|FAILED, and a submitted failure leaves FAILED uncertainty. */
+static void retension_tests(void)
+{
+    struct ot_tape_control_v1 p,saved;
+    unsigned state;
+    assert(OT_TAPE_OP_RETENSION==0x20000000UL && OT_TAPE_CONTROL_RETENSION==18u);
+    assert(ot_tape_control_init(&p,OT_TAPE_CONTROL_RETENSION)==0);
+    p.scsi_opcode=0x1b; p.completion_flags=3; saved=p;
+    for(state=0;state<=0x60;state+=0x20) {
+        p=saved; p.session_state=(oa_u16)state;
+        assert(ot_tape_control_validate(&p,64)==(state==0x20 ? -1 : 0));
+        p.result=3; p.diagnostic_class=1; p.completion_flags=5;
+        assert(ot_tape_control_validate(&p,64)==((state&0x40)!=0 ? 0 : -1));
+        p.completion_flags=1; assert(ot_tape_control_validate(&p,64)==-1);
+    }
+    p=saved; p.count=1; assert(ot_tape_control_validate(&p,64)==-1);
+    p=saved; p.completion_flags|=OT_TAPE_POSITION_BOT; assert(ot_tape_control_validate(&p,64)==-1);
+    p=saved; p.scsi_opcode=0x1e; assert(ot_tape_control_validate(&p,64)==-1);
+    p=saved; p.session_state=0x10; assert(ot_tape_control_validate(&p,64)==-1);
+    ot_tape_control_init(&p,OT_TAPE_CONTROL_RETENSION); p.result=2;
+    assert(ot_tape_control_validate(&p,64)==0);
+    assert(ot_tape_space_init(&p,OT_TAPE_CONTROL_RETENSION,0)==-1);
 }
 
 static void position_tests(void)
@@ -519,6 +544,7 @@ int main(void)
     partitions_tests();
     setmark_tests();
     setmark_write_packets();
+    retension_tests();
     alert_packets();
     puts("Native tape API validation/capability/control/record/writer/fixed tests passed");
     return 0;

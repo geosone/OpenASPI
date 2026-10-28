@@ -137,7 +137,7 @@ int ot_tape_info_block_valid(const struct ot_tape_info_v1 *info, oa_u32 bytes)
  */
 int ot_tape_control_init(struct ot_tape_control_v1 *p, oa_u16 operation)
 {
-    if (p == 0 || operation > OT_TAPE_CONTROL_SETMARK) return -1;
+    if (p == 0 || operation > OT_TAPE_CONTROL_RETENSION) return -1;
     memset(p, 0, sizeof(*p));
     memcpy(p->magic, "OTAP", 4u);
     p->size = OT_TAPE_API_CONTROL_SIZE;
@@ -178,7 +178,7 @@ int ot_tape_control_validate(const void *packet, oa_u16 available)
     if (packet == 0 || available < OT_TAPE_API_CONTROL_SIZE) return -1;
     p = (const struct ot_tape_control_v1 *)packet;
     if (memcmp(p->magic, "OTAP", 4u) != 0 || p->size != OT_TAPE_API_CONTROL_SIZE ||
-        p->version != OT_TAPE_API_VERSION || p->operation > OT_TAPE_CONTROL_SETMARK ||
+        p->version != OT_TAPE_API_VERSION || p->operation > OT_TAPE_CONTROL_RETENSION ||
         !space_count_valid(p->operation, p->count) ||
         (p->flags & ~OT_TAPE_IO_FIXED) != 0u ||
         (p->flags != 0u && (p->operation != OT_TAPE_CONTROL_BEGIN_WRITE ||
@@ -215,13 +215,14 @@ int ot_tape_control_validate(const void *packet, oa_u16 available)
                 (p->session_state & OT_TAPE_SESSION_NATIVE_WRITER) == 0u) ? 0 : -1;
     }
     /* Actual CDBs: READY=00h, REWIND=01h, FILEMARKS=10h, SPACE=11h,
-     * sequential LOAD/UNLOAD=1Bh, PREVENT/ALLOW MEDIUM REMOVAL=1Eh.
+     * sequential LOAD/UNLOAD/RETENSION=1Bh, PREVENT/ALLOW MEDIUM REMOVAL=1Eh.
      * FLUSH/END use zero marks; FILEMARK uses one. Exact success flags below
      * prevent a response from claiming completion of a different operation.
      */
     expected = p->operation == OT_TAPE_CONTROL_READY ? 0u :
         p->operation == OT_TAPE_CONTROL_REWIND ? 1u :
         p->operation == OT_TAPE_CONTROL_SETMARK ? 0x10u :
+        p->operation == OT_TAPE_CONTROL_RETENSION ? 0x1bu :
         space_operation(p->operation) ? 0x11u :
         p->operation >= OT_TAPE_CONTROL_LOCK ? 0x1eu :
         p->operation >= OT_TAPE_CONTROL_LOAD ? 0x1bu :
@@ -247,7 +248,8 @@ int ot_tape_control_validate(const void *packet, oa_u16 available)
         if ((p->session_state & ~0x60u) != 0u ||
             ((p->session_state & OT_TAPE_SESSION_NATIVE_DIRTY) != 0u &&
              (p->session_state & OT_TAPE_SESSION_NATIVE_FAILED) == 0u) ||
-            (p->result == OT_TAPE_RESULT_ERROR && p->operation < OT_TAPE_CONTROL_LOCK &&
+            (p->result == OT_TAPE_RESULT_ERROR &&
+             (p->operation < OT_TAPE_CONTROL_LOCK || p->operation == OT_TAPE_CONTROL_RETENSION) &&
              (p->session_state & OT_TAPE_SESSION_NATIVE_FAILED) == 0u)) return -1;
     }
     if (p->result == OT_TAPE_RESULT_OK) {

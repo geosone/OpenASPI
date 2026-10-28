@@ -95,7 +95,7 @@ start:
         EQCHECK
         cmp word ptr [info+NT_OPERATIONS],0FFFFh
         EQCHECK
-        cmp word ptr [info+NT_OPERATIONS+2],1FFFh
+        cmp word ptr [info+NT_OPERATIONS+2],3FFFh
         EQCHECK
         call zero_calls
         inc word ptr [step]

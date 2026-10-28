@@ -30,7 +30,7 @@ buffer as part of LOCATE; the provider sends no additional flush command.
 Use category `80h`, function `05h`, packed size 64, version `0100h` and format
 0. `ot_tape_locate_init` validates flags/partition before changing the caller's
 packet. `ot_tape_locate_validate` checks returned completion consistency.
-The provider capability is `00080000h`; the complete mask is `1FFFFFFFh`.
+The provider capability is `00080000h`; the complete mask is `3FFFFFFFh`.
 This indicates the provider entry point, not attached-drive support.
 
 | Offset | Bytes | Meaning |

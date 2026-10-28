@@ -22,7 +22,7 @@ and writable media preparation require separate qualification.
 
 Category `80h`, function `06h`, version `0100h`, packed size 64, format 0 and
 flags 0. The provider capability is `00400000h`; the complete current mask is
-`1FFFFFFFh`. This capability advertises the binding, not drive support.
+`3FFFFFFFh`. This capability advertises the binding, not drive support.
 Initialize with `ot_tape_partitions_init` and validate every response with
 `ot_tape_partitions_validate` before inspecting its result.
 

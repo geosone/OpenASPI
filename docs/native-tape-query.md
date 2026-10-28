@@ -2,7 +2,7 @@
 
 ASPITAP now provides the first runtime part of the
 [native OpenTape API](native-tape-api.md). This is separate from the historical
-ASPITAPE category `07h`. The provider advertises operation mask `1FFFFFFFh`:
+ASPITAPE category `07h`. The provider advertises operation mask `3FFFFFFFh`:
 QUERY, READY, REWIND, READ, WRITE, BEGIN_WRITE, FLUSH, FILEMARK, END_WRITE and
 ABORT_WRITE, FIXED_IO, SPACE_RECORDS/SPACE_FILEMARKS/SPACE_EOD LOAD/UNLOAD, LOCK/UNLOCK, POSITION, LOCATE, their 64-bit forms, PARTITIONS, SPACE_SEQ_FILEMARKS, SPACE_SETMARKS and
 SPACE_SEQ_SETMARKS, classified READ_SETMARK and owned SETMARK writing and explicit TapeAlert retrieval.

@@ -22,7 +22,7 @@ function 5. Format 0 and its original structures/helpers remain unchanged.
 | Long position | `00100000h` | `ot_tape_position64_v1` | READ POSITION(10), SA `06h` |
 | Wide locate | `00200000h` | `ot_tape_locate64_v1` | LOCATE(16), opcode `92h` |
 
-The complete provider mask is `1FFFFFFFh`. Check each specific bit: short-form
+The complete provider mask is `3FFFFFFFh`. Check each specific bit: short-form
 support does not imply support for a wide entry point, and a provider bit does
 not prove attached-drive command support. No silent short-form fallback or
 rewind/SPACE emulation is performed, even when the high DWORD is zero.

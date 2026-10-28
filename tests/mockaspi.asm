@@ -148,6 +148,10 @@ ifdef NATIVE_WRITE_SETMARK_TEST
         mov     ax, word ptr cs:[native_setmarks]
         mov     word ptr es:[bx+14], ax
 endif
+ifdef NATIVE_MEDIA_TEST
+        mov     ax, word ptr cs:[native_retension_calls]
+        mov     word ptr es:[bx+16], ax
+endif
         mov     byte ptr es:[bx+SRB_Status], SS_COMP
         jmp     aspi_done
 native_not_stats:
@@ -163,6 +167,7 @@ ifdef NATIVE_SPACE_TEST
 endif
 ifdef NATIVE_MEDIA_TEST
         mov     word ptr cs:[native_media_calls], 0
+        mov     word ptr cs:[native_retension_calls], 0
 endif
 ifdef NATIVE_LOCK_TEST
         mov     word ptr cs:[native_lock_calls], 0

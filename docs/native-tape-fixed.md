@@ -8,7 +8,7 @@ fixed mode from a byte count or a product name.
 ## Negotiation and wire fields
 
 QUERY operation bit `OT_TAPE_OP_FIXED_IO` (`0400h`) advertises this provider
-extension. The complete current operation mask is `1FFFFFFFh`. This describes API
+extension. The complete current operation mask is `3FFFFFFFh`. This describes API
 support, not the drive's current block configuration. The caller selects a
 drive already configured for the requested block size. No request here issues
 MODE SELECT, changes density/compression or prepares media.

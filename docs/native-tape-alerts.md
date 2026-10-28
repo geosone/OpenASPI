@@ -20,7 +20,7 @@ library/changer.
 Category `80h`, function `07h`, version `0100h`, packed size 64, format 0.
 Flags must be exactly `OT_TAPE_ALERTS_ACKNOWLEDGE=1`; missing or unknown flags
 are rejected before a command. The provider capability is
-`OT_TAPE_OP_ALERTS=10000000h`; the complete current mask is `1FFFFFFFh`.
+`OT_TAPE_OP_ALERTS=10000000h`; the complete current mask is `3FFFFFFFh`.
 A provider bit advertises the binding, not attached-drive support.
 
 | Offset | Bytes | Field |

@@ -1,6 +1,8 @@
-; Synchronous sequential LOAD/UNLOAD: no host device or changer access.
+; Synchronous sequential LOAD/UNLOAD/RETENSION (LOAD with RETEN, 03h): no
+; host device or changer access. RETEN without LOAD is never sent.
 ; The loaded state survives counter resets, so recovery must really LOAD.
 native_media_calls dw 0
+native_retension_calls dw 0             ; LOAD with RETEN, reported at stats+16
 native_media_loaded db 1
 native_media_command proc near
         jmp short media_mock_validate
@@ -27,8 +29,10 @@ media_mock_validate:
         jne media_mock_bad
         cmp byte ptr es:[bx+SRB_CDB+3],0
         jne media_mock_bad
-        cmp byte ptr es:[bx+SRB_CDB+4],1
+        cmp byte ptr es:[bx+SRB_CDB+4],3
         ja media_mock_bad
+        cmp byte ptr es:[bx+SRB_CDB+4],2
+        je media_mock_bad
         cmp byte ptr es:[bx+SRB_CDB+5],0
         jne media_mock_bad
         inc word ptr cs:[native_media_calls]
@@ -67,6 +71,11 @@ ifdef NATIVE_LOCK_TEST
 media_removal_allowed:
 endif
         mov al,byte ptr es:[bx+SRB_CDB+4]
+        test al,2
+        jz media_not_retension
+        inc word ptr cs:[native_retension_calls]
+media_not_retension:
+        and al,1
         mov byte ptr cs:[native_media_loaded],al
         mov byte ptr es:[bx+SRB_Status],SS_COMP
         ret
