@@ -14,7 +14,8 @@
 ;   aspi_scan_next   next device: CF clear and scan_ha/target/lun/type set,
 ;                    CF set at the end
 ;   aspi_inquiry     INQUIRY of the scan_* device into inquiry_data; CF on
-;                    failure.  inquiry_data+1 bit 7 is the removable bit.
+;                    failure.  inquiry_data+1 bit 7 is the removable bit;
+;                    bytes beyond the reply are blank, never stale.
 
 aspi_manager_name db    'SCSIMGR$', 0
 
@@ -25,7 +26,9 @@ scan_type       db      0
 scan_adapters   db      0
 scan_targets    db      0
 scan_own_id     db      0
+scan_ext_flags  dw      0               ; HA_ExtFlags of scan_ha
 inquiry_data    db      INQUIRY_LEN dup (0)
+        include common/aspi/inquiry.inc
 
 ; Open SCSIMGR$ only to retrieve its FAR manager entry point, then close the
 ; DOS handle while retaining IOCTL carry. Query adapter count through that entry;
@@ -125,11 +128,14 @@ scan_adapter_inquiry:
 scan_eight:
         mov     al, 8
 scan_targets_ready:
+        mov     dx, word ptr [srb+HA_ExtFlags]
         cmp     byte ptr [srb+SRB_Status], SS_COMP
         je      scan_adapter_ok
         mov     al, 1                           ; skip a failing adapter
         mov     byte ptr [scan_own_id], 0FFh
+        xor     dx, dx
 scan_adapter_ok:
+        mov     word ptr [scan_ext_flags], dx
         mov     byte ptr [scan_targets], al
         mov     byte ptr [scan_target], 0
 scan_target_ok:
@@ -166,6 +172,9 @@ aspi_scan_next endp
 ; selects the shared SRB address as a side effect; callers retain scan_* if they
 ; need to continue discovery. Carry reports checked completion, not ownership
 ; or proof that the drive currently contains a mountable filesystem.
+;
+; A successful status does not prove 36 bytes arrived: see inquiry.inc. The
+; residual count is requested when the adapter advertises it.
 aspi_inquiry proc near
         mov     al, byte ptr [scan_ha]
         mov     byte ptr [unit_ha], al
@@ -181,8 +190,21 @@ aspi_inquiry proc near
         mov     word ptr [srb+SRB_BufLen], INQUIRY_LEN
         mov     word ptr [srb+SRB_BufPointer], offset inquiry_data
         mov     word ptr [srb+SRB_BufPointer+2], cs
+        test    word ptr [scan_ext_flags], HA_EXT_RESIDUAL
+        jz      inquiry_prepared
+        or      byte ptr [srb+SRB_Flags], SRB_RESIDUAL
+inquiry_prepared:
+        call    inquiry_poison
         call    call_aspi
-        jmp     aspi_result
+        call    aspi_result
+        jc      inquiry_done
+        mov     al, byte ptr [scan_type]
+        call    inquiry_qualify
+        jnc     inquiry_done
+        xor     ax, ax
+        stc
+inquiry_done:
+        ret
 aspi_inquiry endp
 
 ; Print the vendor and product of inquiry_data (24 characters).

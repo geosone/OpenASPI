@@ -325,6 +325,7 @@ fake_exec:
         mov cx,INQUIRY_LEN
         rep stosb
         mov byte ptr [inquiry_data+1],80h
+        mov byte ptr [inquiry_data+4],31    ; a standard 36-byte reply
 ifdef TEST_FDD
         mov word ptr [inquiry_data+16],'IZ'
         mov byte ptr [inquiry_data+18],'P'

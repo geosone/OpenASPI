@@ -36,6 +36,16 @@ remains a separate work item. Block and CD drivers use the
 its own [Unit Attention latch](#tape-unit-attention-latch).
 This change adds no command replay or transport recovery.
 
+Standard INQUIRY replies get the same treatment through
+`common/aspi/inquiry.inc` (drivers and ASPISCAN): the 36-byte buffer is
+filled with `0FFh` first, the residual count is requested when the adapter
+reports `HA_EXT_RESIDUAL`, and the reply counts only up to the smaller of the
+transferred bytes and `5 + additional length`. Fewer than five bytes, a
+nonzero peripheral qualifier or a peripheral type that differs from GET
+DEVICE TYPE rejects the device; the rest of the buffer becomes zero/blanks and
+vendor, product and revision are forced to printable ASCII, so ownership
+(`removable.inc`) never matches bytes of an earlier device.
+
 ASPITAP has its own fixed/descriptor decoder and stream semantics, including
 FILEMARK, EOM and ILI. Its resident decoder now checks the execute-SCSI command,
 completion envelope, supported six-/ten-/sixteen-byte CDB and 8..32-byte sense allocation before

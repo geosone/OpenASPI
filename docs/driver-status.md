@@ -92,11 +92,15 @@ not capabilities established merely by reading a specification.
   reported once by the next MEDIA CHECK/MEDIA CHANGED; no command is retried.
   Emulator-tested with memory-only ASPI; real insertion, power-up and reset
   notifications on hardware remain to be checked.
-- [ ] Check short INQUIRY/command replies and optional residual reporting.
-  Do not let a successful status expose reused response-buffer contents.
-  Test actual transfer length where the manager supports it, and document
-  conservative checks when it does not. Qualify residual flags against the
-  specific DOS ASPI contract; OS/2 assigns these bits differently.
+- [x] Short INQUIRY replies: `common/aspi/inquiry.inc`, shared by ASPIDSK,
+  ASPIFDD, ASPICDA and ASPISCAN, poisons the buffer, uses the DOS ASPI
+  residual count (`SRB_RESIDUAL`, `HA_EXT_RESIDUAL`) when the adapter has it,
+  cuts the reply to its additional length and rejects untouched, too short,
+  qualified or type-mismatched replies; missing identification reads as
+  blanks. `tests/aspi_inquiry.asm`. READ CAPACITY already poisons its reply.
+- [ ] Other short command replies (MODE SENSE, READ TOC, sub-channel) with
+  the residual count where the manager supports it. Without it, a truncated
+  transfer whose own header claims full length stays undetectable.
 - [ ] Add pending-completion/abort/reset fault tests around the shared client.
   IRQ-driven completion must remain possible; SRBs and buffers cannot be
   reused or released while a manager still owns them. Driver/app cancellation

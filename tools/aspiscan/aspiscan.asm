@@ -70,8 +70,9 @@ adapter_loop:
         mov     byte ptr [srb+SRB_HaId], al
         call    call_aspi
         cmp     byte ptr [srb+SRB_Status], SS_COMP
-        jne     adapter_next
-
+        je      adapter_ready
+        jmp     adapter_next
+adapter_ready:
         mov     al, byte ptr [srb+HA_SCSI_ID]
         mov     byte ptr [adapter_scsi_id], al
         mov     al, byte ptr [srb+HA_Unique+3]
@@ -101,6 +102,7 @@ targets_known:
         mov     dx, offset msg_extensions
         call    print_string
         mov     ax, word ptr [srb+HA_ExtFlags]
+        mov     word ptr [adapter_ext_flags], ax
         call    print_hex16
         call    print_crlf
 
@@ -355,13 +357,11 @@ parse_done:
         ret
 parse_command_line endp
 
-; Issue the read-only six-byte SCSI INQUIRY command.
+; Issue the read-only six-byte SCSI INQUIRY command. A completed reply the
+; drivers would reject (inquiry.inc) is reported as a failed INQUIRY.
 scsi_inquiry proc near
         call    clear_srb
-        mov     di, offset inquiry_data
-        mov     cx, 36
-        xor     al, al
-        rep     stosb
+        call    inquiry_poison
         mov     byte ptr [srb+SRB_Cmd], SC_EXEC_SCSI_CMD
         mov     byte ptr [srb+SRB_Flags], SRB_DIR_IN
         mov     al, byte ptr [adapter]
@@ -378,7 +378,18 @@ scsi_inquiry proc near
         mov     byte ptr [srb+SRB_CDBLen], 6
         mov     byte ptr [srb+SRB_CDB], 12h
         mov     byte ptr [srb+SRB_CDB+4], 36
+        test    word ptr [adapter_ext_flags], HA_EXT_RESIDUAL
+        jz      inquiry_send
+        or      byte ptr [srb+SRB_Flags], SRB_RESIDUAL
+inquiry_send:
         call    call_aspi
+        cmp     byte ptr [srb+SRB_Status], SS_COMP
+        jne     inquiry_sent
+        mov     al, byte ptr [device_type]
+        call    inquiry_qualify
+        jnc     inquiry_sent
+        mov     byte ptr [srb+SRB_Status], SS_ERR
+inquiry_sent:
         ret
 scsi_inquiry endp
 
@@ -541,6 +552,7 @@ msg_quote_crlf      db  '"', 13, 10, '$'
 
 aspi_entry          dd  0
 adapter_count       db  0
+adapter_ext_flags   dw  0
 adapter             db  0
 adapter_scsi_id     db  0
 target_count        db  8
@@ -563,5 +575,6 @@ quiet               db  0
 match_count         db  0
 
         include common/aspi/removable.inc
+        include common/aspi/inquiry.inc
 
         end     start
