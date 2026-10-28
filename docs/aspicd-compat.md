@@ -231,7 +231,10 @@ failed tray operations retain it unless the failure itself indicates a lost
 medium. NOT READY or UNIT ATTENTION in the common SCSI result handler
 invalidates that unit's resume data, including when a non-audio query consumes
 the notification. The MEDIA CHANGED query uses the same raw-result helper,
-even though it returns a media-change byte rather than a DOS error.
+even though it returns a media-change byte rather than a DOS error. A UNIT
+ATTENTION consumed by any other request is latched per unit and reported once
+by the next MEDIA CHANGED as `0FFh`
+([details](aspi-sense.md#block-and-cd-unit-attention-latch)).
 A missing/replaced medium cannot reuse the old range.
 Other failed commands preserve the committed state/range and return their
 DOS error. Error-stopped playback is reported as not busy, not successful

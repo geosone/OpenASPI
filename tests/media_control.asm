@@ -14,6 +14,7 @@ DRIVER_ENTRY textequ <test_start>
 U_DOOR_STATE equ 15
 DOOR_LOCKED equ 1
 DOOR_OPEN equ 2
+DISC_CHANGED equ 80h
 UNIT_ENTRY equ 16
 U_AUDIO_STATE equ 4
 U_AUDIO_RANGE equ 5
@@ -181,6 +182,39 @@ ifdef TEST_CDA
         mov byte ptr [fault], 0
         SEND ST_DONE,1
         EXPECT_LOCKS 0
+        ; UNIT ATTENTION consumed by LOCK is reported once by MEDIA CHANGED,
+        ; although its TEST UNIT READY succeeds; a TUR attention is not latched.
+        mov byte ptr [expected_opcode], 1Eh
+        mov byte ptr [expected_value], 1
+        mov byte ptr [fault], 6
+        SET_CONTROL 1,1
+        SEND ST_DONE or ST_ERROR or ERR_MEDIA_CHANGE,1
+        EXPECT_LOCKS DISC_CHANGED
+        mov byte ptr [fault], 0
+        mov byte ptr [packet+RH_COMMAND], CMD_IOCTL_IN
+        mov word ptr [packet+RH_COUNT], 2
+        mov byte ptr [expected_opcode], 0
+        mov byte ptr [expected_value], 0
+        SET_CONTROL 9,0A5h
+        SEND ST_DONE,1
+        cmp byte ptr [control+1], 0FFh
+        CHECK_EQ
+        EXPECT_LOCKS 0
+        SET_CONTROL 9,0A5h
+        SEND ST_DONE,1
+        cmp byte ptr [control+1], 1
+        CHECK_EQ
+        mov byte ptr [fault], 6
+        SET_CONTROL 9,0A5h
+        SEND ST_DONE,1
+        cmp byte ptr [control+1], 0FFh
+        CHECK_EQ
+        EXPECT_LOCKS 0
+        mov byte ptr [fault], 0
+        SET_CONTROL 9,0A5h
+        SEND ST_DONE,1
+        cmp byte ptr [control+1], 1
+        CHECK_EQ
 else
         mov word ptr [packet+RH_IOCTL_PARAM+2], ax
         mov word ptr [packet+RH_IOCTL_PARAM], offset control-16

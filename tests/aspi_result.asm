@@ -104,6 +104,38 @@ next_length:
         mov byte ptr [srb+SRB_Status],SS_ERR
         mov byte ptr [srb+SRB_TargStat],2
         EXPECT 0
+        ; Only checked current UNIT ATTENTION sets aspi_attention.
+        cmp byte ptr [aspi_attention],0
+        CHECK je
+        mov byte ptr [srb+bx+SRB_CDB],71h
+        mov byte ptr [srb+bx+SRB_CDB+2],6
+        mov byte ptr [srb+bx+SRB_CDB+7],6
+        EXPECT 6
+        cmp byte ptr [aspi_attention],0
+        CHECK je
+        mov byte ptr [srb+SRB_HaStat],11h
+        mov byte ptr [srb+bx+SRB_CDB],70h
+        EXPECT 0
+        cmp byte ptr [aspi_attention],0
+        CHECK je
+        mov byte ptr [srb+SRB_HaStat],0
+        mov byte ptr [srb+bx+SRB_CDB],0F0h
+        EXPECT 6
+        cmp byte ptr [aspi_attention],1
+        CHECK je
+        mov byte ptr [aspi_attention],0
+        mov byte ptr [srb+bx+SRB_CDB],72h
+        mov byte ptr [srb+bx+SRB_CDB+1],2
+        mov byte ptr [srb+bx+SRB_CDB+2],3Ah
+        EXPECT 3A02h
+        cmp byte ptr [aspi_attention],0
+        CHECK je
+        mov byte ptr [srb+bx+SRB_CDB+1],6
+        mov byte ptr [srb+bx+SRB_CDB+2],28h
+        EXPECT 2806h
+        cmp byte ptr [aspi_attention],1
+        CHECK je
+        mov byte ptr [aspi_attention],0
         inc si
         dec di
         jz passed

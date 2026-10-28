@@ -67,6 +67,7 @@ result db 60 dup (0)
 strategy_ptr dw offset strategy,0
 interrupt_ptr dw offset interrupt,0
 calls dw 0
+readbuf db 512 dup (0)
 step dw 0
 fault db 0
 bad db 0
@@ -199,6 +200,47 @@ invalid_done:
         SEND ST_DONE,1
         cmp word ptr [unit_table+U_BPB+BPB_SPT],18
         EQCHECK
+        ; A READ that consumes UNIT ATTENTION must still yield one changed
+        ; report, although the next TEST UNIT READY would succeed.
+        mov byte ptr [fault],6
+        mov byte ptr [packet+RH_COMMAND],CMD_READ
+        mov word ptr [packet+RH_BUFFER],offset readbuf
+        mov word ptr [packet+RH_BUFFER+2],cs
+        mov word ptr [packet+RH_COUNT],1
+        mov word ptr [packet+RH_START],0
+        SEND ST_DONE or ST_ERROR or ERR_MEDIA_CHANGE,1
+        test byte ptr [unit_table+U_FLAGS],UF_MEDIA
+        EQCHECK
+        test byte ptr [unit_table+U_FLAGS],UF_CHANGED
+        jnz read_attention_latched
+        jmp failed
+read_attention_latched:
+        mov byte ptr [fault],0
+        mov word ptr [packet+RH_COUNT],1
+        SEND ST_DONE or ST_ERROR or ERR_NOT_READY,0   ; no stale-BPB retry
+        mov byte ptr [packet+RH_COMMAND],CMD_MEDIA_CHECK
+        SEND ST_DONE,0
+        cmp byte ptr [packet+RH_MEDIA_RET],0FFh
+        EQCHECK
+        test byte ptr [unit_table+U_FLAGS],UF_CHANGED
+        EQCHECK
+        SEND ST_DONE,1
+ifdef TEST_FDD
+        cmp byte ptr [packet+RH_MEDIA_RET],0
+else
+        cmp byte ptr [packet+RH_MEDIA_RET],1
+endif
+        EQCHECK
+        mov byte ptr [packet+RH_COMMAND],CMD_BUILD_BPB
+        SEND ST_DONE,1
+        cmp word ptr [unit_table+U_BPB+BPB_SPT],18
+        EQCHECK
+        push cs
+        pop es
+        mov di,offset packet+RH_BUFFER  ; READ fields overlap IOCTL fields
+        mov cx,8
+        xor al,al
+        rep stosb
         ; Reject physical remapping even when capacity would permit it.
         mov byte ptr [packet+RH_COMMAND],CMD_GEN_IOCTL
         mov byte ptr [packet+RH_IOCTL_MINOR],40h

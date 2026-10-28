@@ -87,10 +87,11 @@ not capabilities established merely by reading a specification.
   A current key 6 on any tape command blocks data, filemarks and motion other
   than REWIND until a successful REWIND; no command is retried. Emulator-tested
   for reset and medium-change sense on legacy and native paths.
-- [ ] Define Unit Attention handling for ASPIDSK/ASPIFDD/ASPICDA. Bounded
-  retries can be qualified for read-only discovery; a shared retry wrapper
-  must not replay writes. Test insertion, removal, power-up and reset
-  notifications without retaining an old BPB, capacity or disc state.
+- [x] ASPIDSK/ASPIFDD/ASPICDA: [Unit Attention latch](aspi-sense.md#block-and-cd-unit-attention-latch).
+  A current key 6 consumed by any request drops a removable unit's BPB and is
+  reported once by the next MEDIA CHECK/MEDIA CHANGED; no command is retried.
+  Emulator-tested with memory-only ASPI; real insertion, power-up and reset
+  notifications on hardware remain to be checked.
 - [ ] Check short INQUIRY/command replies and optional residual reporting.
   Do not let a successful status expose reused response-buffer contents.
   Test actual transfer length where the manager supports it, and document

@@ -61,6 +61,7 @@ U_AUDIO_CONTROL equ     14             ; 0 unknown, 1 verified, 2 unavailable
 U_DOOR_STATE    equ     15             ; last successful driver command
 DOOR_LOCKED     equ     01h
 DOOR_OPEN       equ     02h
+DISC_CHANGED    equ     80h             ; UNIT ATTENTION not yet reported
 UNIT_ENTRY      equ     16
 
 driver_start:
@@ -130,8 +131,12 @@ next_command:
 found_command:
         call    select_unit
         jc      request_failed
+        mov     byte ptr [aspi_attention], 0
         les     bx, [request_ptr]
         call    word ptr [si+1]
+        pushf
+        call    latch_disc_attention
+        popf
         jc      request_failed
 request_ok:
         les     bx, [request_ptr]
@@ -236,6 +241,21 @@ select_unit_ok:
         clc
         ret
 select_unit endp
+
+; Transfer a current UNIT ATTENTION from any command of this request to the
+; selected unit, so MEDIA CHANGED reports it even if the disc is ready again.
+; Preserves all registers except flags.
+latch_disc_attention proc near
+        cmp     byte ptr [aspi_attention], 0
+        je      latch_disc_done
+        mov     byte ptr [aspi_attention], 0
+        push    si
+        mov     si, word ptr [current_unit]
+        or      byte ptr [si+U_DOOR_STATE], DISC_CHANGED
+        pop     si
+latch_disc_done:
+        ret
+latch_disc_attention endp
 
 ; CF set: AL = DOS error code of the failed SCSI command
 scsi_failed proc near
@@ -1091,6 +1111,9 @@ read_capacity endp
 ; Return a media-change hint, not the TUR error as a failed IOCTL: READY=1,
 ; checked UNIT ATTENTION=FFh, other failure=0 unknown. cd_aspi_result separately
 ; invalidates stale playback state. A change hint does not establish disc type.
+; A UNIT ATTENTION consumed by an earlier request is reported once as changed,
+; even when this TEST UNIT READY succeeds. The probe always runs, so a new
+; notification still invalidates playback state.
 ioctl_media_changed:
         push    es
         push    di
@@ -1104,10 +1127,17 @@ ioctl_media_changed:
         mov     ah, 1
         jnc     media_changed_ready
         mov     ah, 0FFh
+        mov     byte ptr [aspi_attention], 0    ; reported now, do not latch again
         cmp     al, 06h
         je      media_changed_ready
         mov     ah, 0
 media_changed_ready:
+        mov     si, word ptr [current_unit]
+        test    byte ptr [si+U_DOOR_STATE], DISC_CHANGED
+        jz      media_changed_store
+        and     byte ptr [si+U_DOOR_STATE], not DISC_CHANGED
+        mov     ah, 0FFh
+media_changed_store:
         mov     byte ptr es:[di+1], ah
         clc
         ret

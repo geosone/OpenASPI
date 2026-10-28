@@ -54,6 +54,7 @@ UF_RAW_WRITE    equ     08h
 UF_FAT32        equ     10h
 UF_NOACCESS     equ     20h            ; DOS block data I/O disabled by 47h
 UF_BPB_OVERRIDE equ     40h            ; explicitly selected current DOS BPB
+UF_CHANGED      equ     80h            ; removable UNIT ATTENTION not yet reported
 
 ; BPB offsets (from the boot sector offset 0Bh)
 BPB_BYTES       equ     0
@@ -149,6 +150,7 @@ next_command:
 found_command:
         call    select_unit
         jc      request_failed
+        mov     byte ptr [aspi_attention], 0
         les     bx, [request_ptr]
 ifdef FDD_DRIVER
         mov     di, word ptr [unit_ptr]
@@ -169,6 +171,9 @@ raw_request_busy:
 raw_normal_request:
 endif
         call    word ptr [si+1]
+        pushf
+        call    latch_unit_attention
+        popf
         jc      request_failed
         les     bx, [request_ptr]
         mov     word ptr es:[bx+RH_STATUS], ST_DONE
@@ -196,6 +201,27 @@ request_done::
         pop     ax
         ret
 interrupt endp
+
+; A current UNIT ATTENTION seen by any command of this request means a
+; removable medium may have changed even if a later TEST UNIT READY succeeds.
+; Drop the cached BPB/override and keep UF_CHANGED until MEDIA CHECK reports
+; it. Fixed units are not latched: a bus reset does not exchange their medium.
+; Preserves all registers except flags.
+latch_unit_attention proc near
+        cmp     byte ptr [aspi_attention], 0
+        je      latch_attention_done
+        mov     byte ptr [aspi_attention], 0
+        push    di
+        mov     di, word ptr [unit_ptr]
+        test    byte ptr [di+U_FLAGS], UF_REMOVABLE
+        jz      latch_attention_fixed
+        and     byte ptr [di+U_FLAGS], not (UF_MEDIA or UF_BPB_OVERRIDE)
+        or      byte ptr [di+U_FLAGS], UF_CHANGED
+latch_attention_fixed:
+        pop     di
+latch_attention_done:
+        ret
+latch_unit_attention endp
 
 command_table:
         db      CMD_MEDIA_CHECK
@@ -691,6 +717,7 @@ validate_fat32_aux endp
 ; RH_MEDIA_RET with a successful request envelope; failed readiness invalidates
 ; the cached view. ASPIFDD asks DOS to recheck removable media even after READY,
 ; because a successful readiness test alone does not identify the inserted disk.
+; A UNIT ATTENTION latched by an earlier request is reported once as changed.
 media_check proc near
         mov     di, word ptr [unit_ptr]
         mov     ah, 1
@@ -701,6 +728,12 @@ media_check proc near
         mov     ah, 0                          ; invalidated fixed unit needs BPB
         jmp     short media_check_done
 media_check_removable:
+        mov     ah, 0FFh
+        test    byte ptr [di+U_FLAGS], UF_CHANGED
+        jz      media_check_ready
+        and     byte ptr [di+U_FLAGS], not UF_CHANGED
+        jmp     short media_check_done
+media_check_ready:
         push    es
         push    bx
         call    test_unit_ready
@@ -714,6 +747,7 @@ endif
         jnc     media_check_done
         and     byte ptr [di+U_FLAGS], not (UF_MEDIA or UF_BPB_OVERRIDE)
         mov     ah, 0FFh                        ; UNIT ATTENTION, no medium
+        mov     byte ptr [aspi_attention], 0    ; reported now, do not latch again
 media_check_done:
         mov     byte ptr es:[bx+RH_MEDIA_RET], ah
         clc

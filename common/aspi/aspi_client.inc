@@ -23,6 +23,10 @@ INQUIRY_LEN             equ     36
 
 aspi_entry      dd      0
 srb             db      ASPI_SRB_SIZE dup (0)
+; Set by aspi_sense on checked current UNIT ATTENTION (key 6, 70h/72h). Drivers
+; clear it when a DOS request starts and transfer it to the selected unit when
+; the request ends, so a change consumed by any command is not lost.
+aspi_attention  db      0
 
 ; the device of the current request (set by the driver from its unit table)
 unit_ha         db      0
@@ -132,6 +136,7 @@ aspi_result endp
 ; responses carry key/ASC in the header. No descriptor traversal is needed.
 ; SenseLen is an allocation, not proof of the actual transfer length. The
 ; zeroed SRB prevents reuse; DOS ASPI cannot prove every short transfer.
+; Current key 6 also sets aspi_attention; nothing here clears it.
 aspi_sense proc near
         push    bx
         xor     ax, ax
@@ -184,6 +189,7 @@ aspi_sense_descriptor:
         mov     al, byte ptr [srb+bx+SRB_CDB+1]
         and     al, 0Fh
 aspi_sense_valid:
+        call    aspi_note_attention
         pop     bx
         clc
         ret
@@ -193,6 +199,26 @@ aspi_sense_invalid:
         stc
         ret
 aspi_sense endp
+
+; AL = checked key, BX = CDB length (sense base). Set aspi_attention only for
+; current UNIT ATTENTION; deferred sense does not describe this command.
+aspi_note_attention proc near
+        cmp     al, 06h
+        jne     aspi_attention_done
+        push    ax
+        mov     al, byte ptr [srb+bx+SRB_CDB]
+        cmp     al, 72h
+        je      aspi_attention_current
+        and     al, 7Fh
+        cmp     al, 70h
+        jne     aspi_attention_restore
+aspi_attention_current:
+        mov     byte ptr [aspi_attention], 1
+aspi_attention_restore:
+        pop     ax
+aspi_attention_done:
+        ret
+aspi_note_attention endp
 
 ; AL = SCSI sense key -> AL = DOS driver error code (devreq.inc)
 ; Lossy mapping from a qualified key (or zero/unavailable) to DOS error AL.

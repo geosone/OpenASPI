@@ -31,7 +31,8 @@ The SRB is zeroed before every new command. `SRB_SenseLen` is an allocation
 length, **not a reliable returned byte count**. Header/bounds checks and
 clearing prevent stale-buffer reuse; they cannot prove that every byte of
 a manager's short autosense transfer arrived. Transfer-count qualification
-and block/CD Unit Attention policy remain separate work items. ASPITAP has
+remains a separate work item. Block and CD drivers use the
+[block/CD Unit Attention latch](#block-and-cd-unit-attention-latch); ASPITAP has
 its own [Unit Attention latch](#tape-unit-attention-latch).
 This change adds no command replay or transport recovery.
 
@@ -60,6 +61,27 @@ clearing between commands. `tests/dos_media_control.sh` runs it alongside
 resident block/CD controls and raw-session tests. Disk and CD regression
 fixtures now produce valid fixed-sense headers for intended media failures.
 
+
+## Block and CD Unit Attention latch
+
+`aspi_sense` sets the resident `aspi_attention` flag for checked current
+UNIT ATTENTION (key 6, response `70h`/`72h`). Deferred sense, host errors and
+malformed replies do not set it; the helper never clears it. ASPIDSK, ASPIFDD
+and ASPICDA clear the flag when a DOS request has selected its unit and move it
+to that unit when the request ends, whatever command consumed the notification.
+This closes the gap where a READ, LOCK or capacity query consumed the only
+notification and a later TEST UNIT READY succeeded on a different medium.
+
+| Driver | Effect |
+| --- | --- |
+| ASPIDSK/ASPIFDD, removable unit | The request keeps its DOS error (`0Fh` for a failed transfer). `UF_MEDIA` and the BPB override are dropped and `UF_CHANGED` is set: DOS retries get NOT READY without a CDB, so no I/O uses the old BPB. The next MEDIA CHECK returns `0FFh` without TEST UNIT READY and clears `UF_CHANGED`; BUILD BPB rereads the volume. |
+| ASPIDSK, fixed unit | Not latched; the medium cannot be exchanged. A failed transfer still returns `0Fh` and a later BUILD BPB revalidates as before. |
+| ASPICDA | `DISC_CHANGED` (`80h`) is set in the unit's door-state byte. MEDIA CHANGED still issues its TEST UNIT READY (which also invalidates audio state), then returns `0FFh` once and clears the bit. |
+
+A notification reported by MEDIA CHECK/MEDIA CHANGED's own TEST UNIT READY is
+answered directly and not latched again. Nothing is retried or replayed.
+`tests/aspi_result.asm`, `tests/block_params.asm` (ASPIDSK and ASPIFDD builds)
+and `tests/media_control.asm` (ASPICDA) cover these paths.
 
 ## Tape Unit Attention latch
 
