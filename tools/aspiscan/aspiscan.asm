@@ -394,7 +394,13 @@ inquiry_sent:
         ret
 scsi_inquiry endp
 
+; Managers may complete through their hardware IRQ and own command timeouts.
+; Neither the next command nor DOS (on exit) may get the SRB back while the
+; manager still owns it, so wait with IRQs enabled and without a CPU-speed
+; polling budget.
 call_aspi proc near
+        pushf
+        sti
         push    ds
         push    es
         push    cs
@@ -404,12 +410,10 @@ call_aspi proc near
         add     sp, 4
         pop     es
         pop     ds
-        mov     cx, 0FFFFh
 aspi_wait:
         cmp     byte ptr [srb+SRB_Status], SS_PENDING
-        jne     aspi_done
-        loop    aspi_wait
-aspi_done:
+        je      aspi_wait
+        popf
         ret
 call_aspi endp
 

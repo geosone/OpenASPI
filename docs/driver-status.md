@@ -109,10 +109,16 @@ not capabilities established merely by reading a specification.
   HA_ExtFlags with signature AA55h and trust them only after the manager's
   55AAh acknowledgement. Before, no real manager was ever asked, so residual
   checking was active only against the test mocks.
-- [ ] Add pending-completion/abort/reset fault tests around the shared client.
-  IRQ-driven completion must remain possible; SRBs and buffers cannot be
-  reused or released while a manager still owns them. Driver/app cancellation
-  and hardware recovery must have explicit completion states.
+- [x] Pending and aborted completions in the shared client:
+  `tests/aspi_pending.asm` completes SRBs from the timer interrupt while the
+  caller entered with IRQs disabled, and checks aborted, abort-failed,
+  unknown and host-failed completions plus sense written before the status.
+  ASPISCAN gave up on a pending SRB after a CPU-speed polling budget without
+  enabling IRQs and then reused it; it now waits like the drivers. The tape
+  `async` fixture delays ASPISCAN's INQUIRY as well.
+- [ ] Driver/app cancellation and hardware recovery need explicit completion
+  states; reset during a pending command is untested beyond the manager's own
+  timeouts.
 
 ### Device drivers
 

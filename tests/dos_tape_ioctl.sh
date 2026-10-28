@@ -123,7 +123,8 @@ run_fixture() {
             ;;
         async)
             defines=(-DASYNC_COMPLETION)
-            # Delay tape completions by three hardware timer interrupts.
+            # Delay tape completions, ASPISCAN's INQUIRY included, by three
+            # hardware timer interrupts.
             ;;
         tapectl-*)
             defines=(-DBUFFERED_TEST -DBUFFER_ERROR -DBUFFER_WRITE_ERROR)
@@ -626,6 +627,10 @@ run_fixture() {
     tr -d '\r' < "$run_dir/serial.log" | sed '/^[[:space:]]*$/d'
     grep -Fq 'Resident tape sense validation passed' "$run_dir/serial.log"
     ! grep -Fq 'Resident tape sense validation FAILED' "$run_dir/serial.log"
+    if test "$variant" = async; then
+        grep -Fq 'type=01 TAPE vendor="MOCK    " product="ASYNC TAPE      "' \
+            "$run_dir/serial.log"
+    fi
     if [[ "$variant" = no-* || "$variant" = bad-inquiry ]]; then
         grep -q 'Cannot open NRMT0' "$run_dir/serial.log"
     elif [[ "$variant" = options* || "$variant" = invalid-* || "$variant" = buffered-renamed ]]; then

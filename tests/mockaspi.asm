@@ -242,6 +242,14 @@ no_device:
         jmp     aspi_done
 
 execute_scsi:
+ifdef ASYNC_COMPLETION
+        ; a real, delayed INQUIRY reply: ASPISCAN must wait for it too
+        cmp     byte ptr es:[bx+SRB_CDB], 12h
+        jne     execute_not_inquiry
+        call    async_inquiry
+        jmp     aspi_done
+execute_not_inquiry:
+endif
 ifdef NATIVE_PROBE_TEST
         call    native_test_command
         jmp     aspi_done
@@ -533,8 +541,6 @@ aspi_done:
 ifdef ASYNC_COMPLETION
         cmp byte ptr es:[bx+SRB_Cmd], SC_EXEC_SCSI_CMD
         jne async_return
-        cmp byte ptr es:[bx+SRB_CDB], 12h ; scanner has its own polling loop
-        je async_return
         pushf
         cli
         mov al, byte ptr es:[bx+SRB_Status]
@@ -645,6 +651,45 @@ async_timer_done:
         iret
 async_timer endp
 async_old_timer dd 0
+; INQUIRY for ES:BX: 36 bytes, residual when requested. Keeps registers.
+async_inquiry proc near
+        push    ax
+        push    cx
+        push    si
+        push    di
+        push    ds
+        push    es
+        mov     byte ptr es:[bx+SRB_Status], SS_ERR
+        mov     cx, word ptr es:[bx+SRB_BufLen]
+        cmp     word ptr es:[bx+SRB_BufLen+2], 0
+        jne     async_inquiry_done
+        cmp     cx, 36
+        jb      async_inquiry_done
+        test    byte ptr es:[bx+SRB_Flags], SRB_RESIDUAL
+        jz      async_inquiry_copy
+        sub     word ptr es:[bx+SRB_BufLen], 36
+async_inquiry_copy:
+        mov     byte ptr es:[bx+SRB_HaStat], 0
+        mov     byte ptr es:[bx+SRB_TargStat], 0
+        mov     byte ptr es:[bx+SRB_Status], SS_COMP
+        les     di, dword ptr es:[bx+SRB_BufPointer]
+        push    cs
+        pop     ds
+        mov     si, offset async_inquiry_data
+        mov     cx, 36
+        cld
+        rep     movsb
+async_inquiry_done:
+        pop     es
+        pop     ds
+        pop     di
+        pop     si
+        pop     cx
+        pop     ax
+        ret
+async_inquiry endp
+async_inquiry_data db 01h, 80h, 02h, 02h, 31, 0, 0, 0
+        db 'MOCK    ', 'ASYNC TAPE      ', '1.00'
 async_srb dd 0
 async_ticks db 0
 async_status db 0
