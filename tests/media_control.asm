@@ -72,6 +72,7 @@ calls dw 0
 step dw 0
 bad db 0
 fault db 0
+reset_status db SS_COMP
 expected_opcode db 1Eh
 expected_value db 1
 ok db 'Media control resident tests passed',13,10,'$'
@@ -215,6 +216,66 @@ ifdef TEST_CDA
         SEND ST_DONE,1
         cmp byte ptr [control+1], 1
         CHECK_EQ
+        ; RESET is an ASPI device reset of the target. Unit 2 is LUN 1 of
+        ; unit 0's target; unit 1 is another target and keeps its state.
+        mov byte ptr [unit_count], 3
+        mov byte ptr [unit_table+2*UNIT_ENTRY+2], 1
+        mov byte ptr [packet+RH_COMMAND], CMD_IOCTL_OUT
+        mov byte ptr [expected_opcode], 1Eh
+        mov byte ptr [expected_value], 1
+        SET_CONTROL 1,1
+        SEND ST_DONE,1
+        EXPECT_LOCKS DOOR_LOCKED
+        mov byte ptr [unit_table+U_AUDIO_STATE], 2
+        mov byte ptr [unit_table+U_AUDIO_RANGE], 1
+        mov byte ptr [unit_table+UNIT_ENTRY+U_AUDIO_STATE], 2
+        mov byte ptr [unit_table+2*UNIT_ENTRY+U_AUDIO_STATE], 2
+        mov byte ptr [unit_table+2*UNIT_ENTRY+U_DOOR_STATE], DOOR_LOCKED
+        mov byte ptr [expected_opcode], 0FEh  ; SC_RESET_DEV marker
+        ; Rejected by the manager: nothing happened, nothing is invalidated.
+        mov byte ptr [reset_status], SS_INVALID_CMD
+        SET_CONTROL 2,0
+        SEND ST_DONE or ST_ERROR or ERR_UNKNOWN_CMD,1
+        EXPECT_LOCKS DOOR_LOCKED
+        cmp byte ptr [unit_table+U_AUDIO_STATE], 2
+        CHECK_EQ
+        mov byte ptr [reset_status], SS_NO_DEVICE
+        SET_CONTROL 2,0
+        SEND ST_DONE or ST_ERROR or ERR_NOT_READY,1
+        EXPECT_LOCKS DOOR_LOCKED
+        ; Accepted but failed: state is gone, the request still fails.
+        mov byte ptr [reset_status], SS_ERR
+        SET_CONTROL 2,0
+        SEND ST_DONE or ST_ERROR or ERR_GENERAL,1
+        EXPECT_LOCKS DISC_CHANGED
+        cmp byte ptr [unit_table+U_AUDIO_STATE], 0
+        CHECK_EQ
+        cmp byte ptr [unit_table+2*UNIT_ENTRY+U_DOOR_STATE], DISC_CHANGED
+        CHECK_EQ
+        cmp byte ptr [unit_table+UNIT_ENTRY+U_AUDIO_STATE], 2
+        CHECK_EQ
+        cmp byte ptr [unit_table+UNIT_ENTRY+U_DOOR_STATE], 0
+        CHECK_EQ
+        ; Clean reset succeeds and invalidates the same target again.
+        mov byte ptr [unit_table+U_DOOR_STATE], DOOR_LOCKED or DOOR_OPEN
+        mov byte ptr [unit_table+U_AUDIO_RANGE], 1
+        mov byte ptr [reset_status], SS_COMP
+        SET_CONTROL 2,0
+        SEND ST_DONE,1
+        EXPECT_LOCKS DISC_CHANGED or DOOR_OPEN
+        cmp byte ptr [unit_table+U_AUDIO_RANGE], 0
+        CHECK_EQ
+        cmp byte ptr [unit_table+UNIT_ENTRY+U_AUDIO_STATE], 2
+        CHECK_EQ
+        mov byte ptr [unit_table+U_DOOR_STATE], DISC_CHANGED
+        mov byte ptr [packet+RH_COMMAND], CMD_IOCTL_IN
+        mov byte ptr [expected_opcode], 0
+        mov byte ptr [expected_value], 0
+        SET_CONTROL 9,0A5h
+        SEND ST_DONE,1
+        cmp byte ptr [control+1], 0FFh
+        CHECK_EQ
+        EXPECT_LOCKS 0
 else
         mov word ptr [packet+RH_IOCTL_PARAM+2], ax
         mov word ptr [packet+RH_IOCTL_PARAM], offset control-16
@@ -352,6 +413,20 @@ submit endp
 
 fake_aspi proc far
         inc word ptr cs:[calls]
+        cmp byte ptr cs:[srb+SRB_Cmd], SC_RESET_DEV
+        jne fake_exec
+        cmp byte ptr cs:[expected_opcode], 0FEh
+        jne fake_reset_bad
+        cmp byte ptr cs:[srb+SRB_Target], 0
+        jne fake_reset_bad
+        cmp byte ptr cs:[srb+SRB_Lun], 0
+        jne fake_reset_bad
+        mov al, byte ptr cs:[reset_status]
+        mov byte ptr cs:[srb+SRB_Status], al
+        ret
+fake_reset_bad:
+        jmp fake_bad
+fake_exec:
         cmp byte ptr cs:[srb+SRB_Cmd], SC_EXEC_SCSI_CMD
         jne fake_bad
         mov al, byte ptr cs:[packet+RH_UNIT]

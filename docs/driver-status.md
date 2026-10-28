@@ -110,9 +110,13 @@ not capabilities established merely by reading a specification.
   tables and media profiles independently. Probe
   live capacity/protection and unsupported commands without inferring complete
   device behavior from a name or a successful INQUIRY alone.
-- [ ] ASPICDA: replace the reset stub with tested behavior, including failed
-  reset, completion and per-unit media/TOC/audio-cache invalidation. Extend
-  physical media and optional-command qualification after emulator coverage.
+- [x] ASPICDA: reset drive sends ASPI Reset Device once; rejected requests keep
+  state, accepted ones invalidate audio/lock state and latch a disc change on
+  every unit of the target. The TOC is never cached. Resident tests, and
+  `tests/cda_reset.asm` through AHCIASPI in QEMU on AHCI (COMRESET) and IDE
+  (ATAPI DEVICE RESET).
+- [ ] ASPICDA: extend physical media and optional-command qualification after
+  emulator coverage, including reset on other managers and real drives.
 - [ ] ASPITAP: extend real-device qualification of pending rewind, recovery,
   residuals, short records, filemarks and EOM. Use the tape command standards
   and ASPITAPE ABI for tape-specific decisions; the general ASPI book is not

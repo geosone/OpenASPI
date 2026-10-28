@@ -1645,13 +1645,81 @@ media_control_locked:
         mov     al, ERR_GENERAL
         stc
         ret
-; Compatibility no-op: this handler returns success but issues no reset CDB
-; or ASPI reset. Keep that limitation explicit; callers cannot use this request
-; as proof that the hardware, media state or outstanding audio was reset.
+; ASPI Reset Device (a SCSI bus device reset of the whole target). A request
+; the manager rejects (invalid command/HA/device) changed nothing and keeps all
+; state. Once the manager accepted it, every unit on that target lost playback,
+; medium prevention and possibly its disc, whether or not the reset completed
+; cleanly; only a clean completion is reported as success. Never retried.
 reset_drive:
+        call    clear_srb
+        mov     byte ptr [srb+SRB_Cmd], SC_RESET_DEV
+        mov     al, byte ptr [unit_ha]
+        mov     byte ptr [srb+SRB_HaId], al
+        mov     al, byte ptr [unit_target]
+        mov     byte ptr [srb+SRB_Target], al
+        mov     al, byte ptr [unit_lun]
+        mov     byte ptr [srb+SRB_Lun], al
+        call    call_aspi
+        mov     al, byte ptr [srb+SRB_Status]
+        cmp     al, SS_INVALID_CMD
+        jne     reset_issued
+        mov     al, ERR_UNKNOWN_CMD
+        stc
+        ret
+reset_issued:
+        cmp     al, SS_INVALID_HA
+        jb      reset_reached
+        mov     al, ERR_NOT_READY
+        stc
+        ret
+reset_reached:
+        call    reset_invalidate_target
+        cmp     byte ptr [srb+SRB_Status], SS_COMP
+        jne     reset_failed
+        cmp     byte ptr [srb+SRB_HaStat], 0
+        jne     reset_failed
         clc
         ret
+reset_failed:
+        mov     al, ERR_GENERAL
+        stc
+        ret
 ioctl_output endp
+
+; A device reset affects every LUN of the target: clear audio and lock state
+; and latch a disc change for each unit on unit_ha/unit_target.
+reset_invalidate_target proc near
+        push    ax
+        push    cx
+        push    si
+        mov     si, offset unit_table
+        xor     cx, cx
+        mov     cl, byte ptr [unit_count]
+        jcxz    reset_units_done
+reset_unit_next:
+        mov     al, byte ptr [si]
+        cmp     al, byte ptr [unit_ha]
+        jne     reset_unit_skip
+        mov     al, byte ptr [si+1]
+        cmp     al, byte ptr [unit_target]
+        jne     reset_unit_skip
+        mov     byte ptr [si+U_AUDIO_STATE], 0
+        mov     byte ptr [si+U_AUDIO_RANGE], 0
+        mov     word ptr [si+U_AUDIO_START], 0
+        mov     word ptr [si+U_AUDIO_START+2], 0
+        mov     word ptr [si+U_AUDIO_END], 0
+        mov     word ptr [si+U_AUDIO_END+2], 0
+        and     byte ptr [si+U_DOOR_STATE], not DOOR_LOCKED
+        or      byte ptr [si+U_DOOR_STATE], DISC_CHANGED
+reset_unit_skip:
+        add     si, UNIT_ENTRY
+        loop    reset_unit_next
+reset_units_done:
+        pop     si
+        pop     cx
+        pop     ax
+        ret
+reset_invalidate_target endp
 
 ;-----------------------------------------------------------------------------
 ; analog audio: PLAY AUDIO MSF, PAUSE/RESUME

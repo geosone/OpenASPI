@@ -28,6 +28,8 @@ mkdir -p "$OUT/cdroot/SUB"
     -Fo="$OUT/CDACHAN.COM" "$ROOT/tests/cda_audio_channels.asm"
 "$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX \
     -Fo="$OUT/CDAUPC.COM" "$ROOT/tests/cda_upc.asm"
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX \
+    -Fo="$OUT/CDARESET.COM" "$ROOT/tests/cda_reset.asm"
 
 nasm -f bin -w-reloc-abs-word -DE9LOG -I"$AHCIASPI_DIR/src/" \
     -o "$OUT/AHCIASPI.SYS" "$AHCIASPI_DIR/src/ahciaspi.asm"
@@ -60,6 +62,8 @@ printf '%s\r\n' \
     'CDAUDIO OFF > AUX' \
     'CDAUDIO X > AUX' \
     'TYPE R:\README.TXT > AUX' \
+    'CDARESET > AUX' \
+    'TYPE R:\README.TXT > AUX' \
     'COPY R:\SUB\BIG.BIN BIG.BIN > NUL' \
     'IF NOT EXIST BIG.BIN ECHO BIG MISSING > AUX' \
     'TYPE R:\SUB\TAIL.TXT > AUX' \
@@ -74,6 +78,7 @@ mcopy -o -i "$OUT/boot.img" \
     "$OUT/CDASTATE.COM" \
     "$OUT/CDACHAN.COM" \
     "$OUT/CDAUPC.COM" \
+    "$OUT/CDARESET.COM" \
     "$OUT/QEXIT.COM" ::/
 
 printf 'OpenASPI ASPICDA read test\r\n' > "$OUT/cdroot/README.TXT"
@@ -127,6 +132,8 @@ grep -q 'ASPICDA head/Q-channel packet/error/guard tests passed' "$OUT/serial.lo
 grep -q 'ASPICDA per-unit audio state/busy/failure tests passed' "$OUT/serial.log"
 grep -q 'ASPICDA audio channels/masks/preservation/error tests passed' "$OUT/serial.log"
 grep -q 'ASPICDA UPC/MCVAL/BCD/error/guard tests passed' "$OUT/serial.log"
+grep -q 'ASPICDA reset through the ASPI manager passed' "$OUT/serial.log"
+[ "$(grep -c 'OpenASPI ASPICDA read test' "$OUT/serial.log")" -eq 2 ]
 grep -q 'SHSUCDX UPC forwarding in analog/digital modes passed' "$OUT/serial.log"
 ! grep -q 'BIG MISSING' "$OUT/serial.log"
 

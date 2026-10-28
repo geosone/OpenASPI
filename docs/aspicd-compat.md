@@ -64,7 +64,7 @@ extension.  The interrupt routine switches to a private stack.
 |---|---|---|---|
 | 0 | eject disk | yes | yes |
 | 1 | lock/unlock door | yes | yes |
-| 2 | reset drive | yes | yes (no-op) |
+| 2 | reset drive | yes | yes (ASPI device reset) |
 | 3 | audio channel control | yes | checked MODE SELECT(10) |
 | 5 | close tray | yes | yes |
 | 4, 6 | - | no | no |
@@ -235,6 +235,17 @@ even though it returns a media-change byte rather than a DOS error. A UNIT
 ATTENTION consumed by any other request is latched per unit and reported once
 by the next MEDIA CHANGED as `0FFh`
 ([details](aspi-sense.md#block-and-cd-unit-attention-latch)).
+
+IOCTL output 2 (reset drive) sends ASPI Reset Device (`SC_RESET_DEV`), a bus
+device reset of the whole target, once and without retry. If the manager
+rejects it (`80h` invalid command: DOS error 03h; `81h`/`82h` invalid
+adapter/no device: 02h), nothing was reset and no state changes. Otherwise
+every ASPICDA unit on that adapter/target loses its audio state and range and
+its lock bit (a reset releases medium prevention), and records a disc change
+for the next MEDIA CHANGED. Only `SS_COMP` with host status 0 returns success;
+any other completion returns 0Ch after that invalidation. `tests/dos_cda.sh`
+(`BUS=ahci` and `BUS=ide`) locks the drive, resets it through AHCIASPI, checks
+the released lock and the single change report, then reads the CD again.
 A missing/replaced medium cannot reuse the old range.
 Other failed commands preserve the committed state/range and return their
 DOS error. Error-stopped playback is reported as not busy, not successful
@@ -411,7 +422,7 @@ exports every slot, including unsupported ones, so coverage is auditable.
 | `04BAh` / `0715h` | Head-position and Q-channel paths | MMC queries/conversion/error tests implemented; qualify real audio/data discs and legacy alternatives |
 | `072Eh` | UPC path gated by per-drive capability | MMC MCN/CONTROL queries, packed BCD and failure tests implemented; qualify physical/legacy behavior |
 | `0747h` | Audio-status response uses tracked state and play-range values | Per-unit MSF range/pause status and failure tests implemented; qualify physical media/player behavior |
-| `0AF2h`, output 2 | Executes drive/state reset-related operations and lock/state handling | Current success-only no-op is incomplete; a failed operation must not look like a successful reset |
+| `0AF2h`, output 2 | Executes drive/state reset-related operations and lock/state handling | ASPI Reset Device with error propagation and per-target state invalidation implemented/tested; qualify physical drives and managers |
 | `0CD2h` / `15D1h` | Open/close / input flush validate unit and report audio busy state | Active-audio polling and busy/error semantics implemented/tested |
 | `0CEDh`, READ LONG | Checks address/read modes, capacity range and raw support; count zero means 256, values above 255 rejected | Current zero-count no-op and missing explicit capacity check differ; add bounds/overflow/residual tests |
 | `14D9h`, 82h/83h | Shared prefetch/seek handler validates mode/range and issues drive operations | MMC SEEK(10) and fresh-capacity validation implemented/tested; legacy command sets remain |
@@ -430,7 +441,7 @@ exports every slot, including unsupported ones, so coverage is auditable.
 | Channel routing/volume | Four-port MMC page read/set, change masks, readback and preservation tests | Physical/bridge/player qualification, legacy MODE(6)/vendor paths |
 | Device status and lock state | Dynamic playing/channel-control bits; per-unit committed lock/tray state and tested control/error transitions | Live manual/media/capability status and hardware qualification |
 | Seek/prefetch | Real MMC SEEK(10), current bounds and error propagation | Audio-only/legacy media qualification, alternate command sets |
-| Reset | Success-only no-op | Real operations and error propagation; no false capability claims |
+| Reset | ASPI Reset Device (`SC_RESET_DEV`); rejected requests keep state, accepted ones invalidate the target's units; resident tests and AHCIASPI in QEMU (AHCI and IDE) | Other managers, real drives and their settle time after reset |
 | Legacy command sets / XA | Not implemented | Reference-verified profiles; vendor commands must not be sent based on broad vendor-name guesses |
 | Selection and compatibility options | /D and /V baseline | /ID, LUN selection/limits and remaining reference options, with defined supported behavior |
 
