@@ -32,7 +32,7 @@ INIT_DATA segment word public 'INIT'
 INIT_DATA ends
 DGROUP  group _HDR, _TEXT, CONST, CONST2, _DATA, _BSS, _STK, INIT_TEXT, INIT_DATA
 
-        public  _int13, _int21, _old2f, _old21, _bss_start, _resident_end
+        public  _int13, _int21, _int1a, _old2f, _old21, _bss_start, _resident_end
         public  _svc_call, _aspi_callback_off
 
         extern  _redir:near, _drv_init:near, _assign:near, _aspi_notify:near
@@ -292,8 +292,9 @@ endif
 assigned db     0
 int21   endp
 
-; int __cdecl int13(struct iregs *) and int21(struct iregs *): AX BX CX DX
-; SI DI DS ES in and out; returns the carry flag.
+; int __cdecl int13(struct iregs *), int21(struct iregs *) and
+; int1a(struct iregs *): AX BX CX DX SI DI DS ES in and out; returns the
+; carry flag.
 iregs   struc
 r_ax    dw      ?
 r_bx    dw      ?
@@ -309,6 +310,10 @@ _int13  proc near
         mov     cs:intno, 13h
         jmp     short do_int
 _int13  endp
+_int1a  proc near
+        mov     cs:intno, 1Ah
+        jmp     short do_int
+_int1a  endp
 _int21  proc near
         mov     cs:intno, 21h
 _int21  endp
@@ -333,6 +338,10 @@ do_int  proc near
         cmp     cs:intno, 13h
         jne     @F
         int     13h
+        jmp     short int_ret
+@@:     cmp     cs:intno, 1Ah
+        jne     @F
+        int     1Ah
         jmp     short int_ret
 @@:     int     21h
 int_ret:

@@ -6,7 +6,10 @@
 # subdirectory), changes into a directory by its long name and shows the
 # current directory long, TRUENAME in its three forms, opens and reads files
 # by long and 8.3 names, reads attributes and the volume information;
-# deleting and making a directory must give error 5.  C: is not EXFAT.SYS's:
+# makes, replaces, renames (into a new directory), protects and removes
+# files and directories by long names; read-only refuses DEL and the full
+# directory RD (error 5); fsck.exfat and the Linux driver check the result.
+# C: is not EXFAT.SYS's:
 # without DOSLFN the call goes on to DOS (7100h).  COMMAND.COM's DIR on D:
 # shows long names and dates (71A7h), and "> AUX" there is the device.
 #   DOSLFN=FILE: DOSLFN.COM -f- loaded after it (from Calmira's
@@ -47,7 +50,15 @@ L='A:\LFNTEST'
         'ECHO === INFO' "$L INFO \"D:\\Ärger über Größe.txt\"" \
         'ECHO === LEAK' "$L LEAK D:\\*" "$L DIR \"D:\\Ein langer Name 1?.txt\"" \
         'ECHO === MISSING' "$L TYPE D:\\gibt-es-nicht.txt" "$L DIR D:\\Fehlt\\*" \
-        'ECHO === WRITE' "$L DEL D:\\README.TXT" "$L MD \"D:\\Neuer Ordner\"" \
+        'ECHO === WRITE' "$L MAKE \"D:\\Neue lange Datei.txt\" Inhalt" \
+        "$L MAKE \"D:\\Neue lange Datei.txt\" Ersetzt" "$L MD \"D:\\Neuer Ordner\"" \
+        "$L REN \"D:\\Neue lange Datei.txt\" \"D:\\Neuer Ordner\\Umbenannt mit Länge.txt\"" \
+        "$L SETATTR \"D:\\Neuer Ordner\\Umbenannt mit Länge.txt\" 21" \
+        'ECHO === PROTECT' "$L DEL \"D:\\Neuer Ordner\\Umbenannt mit Länge.txt\"" "$L RD \"D:\\Neuer Ordner\"" \
+        'ECHO === REMOVE' "$L SETATTR \"D:\\Neuer Ordner\\Umbenannt mit Länge.txt\" 20" \
+        "$L DEL \"D:\\Neuer Ordner\\Umbenannt mit Länge.txt\"" "$L RD \"D:\\Neuer Ordner\"" \
+        "$L DELW \"D:\\Ein langer Name 1?.txt\"" "$L DEL D:\\README.TXT" \
+        "$L MD \"D:\\Bleibt hier\"" "$L MAKE \"D:\\Bleibt hier\\Lange Datei.txt\" bleibt" \
         'ECHO === OTHER' "$L DIR C:\\*" \
         'ECHO === CMDDIR' 'D:' 'DIR' 'A:' \
         'ECHO === END'
@@ -110,7 +121,26 @@ need LEAK MISSING 'leak 8 searches'
 need LEAK MISSING 'Ein langer Name 12.txt|'
 need MISSING WRITE 'error 2'
 need MISSING WRITE 'error 3'
-test "$(section WRITE OTHER | grep -c 'error 5')" = 2 || { echo "WRITE: not two times error 5"; fail=1; }
+need WRITE PROTECT 'action 2'
+need WRITE PROTECT 'action 3'
+need WRITE PROTECT 'wrote 7'
+test "$(section WRITE PROTECT | grep -c 'done')" = 3 || { echo "WRITE: not three times done"; fail=1; }
+test "$(section PROTECT REMOVE | grep -c 'error 5')" = 2 || { echo "PROTECT: not two times error 5"; fail=1; }
+test "$(section REMOVE OTHER | grep -c 'done')" = 6 || { echo "REMOVE: not six times done"; fail=1; }
+need REMOVE OTHER 'wrote 6'
+# what was written, through the Linux exFAT driver and fsck.exfat
+dd if="$OUT/exfat-disk.img" of="$OUT/after.img" bs=512 skip=2048 count=$((64 * 2048)) status=none
+fsck.exfat -n "$OUT/after.img" > "$OUT/fsck.txt" 2>&1 || { cat "$OUT/fsck.txt"; echo "fsck.exfat finds errors"; fail=1; }
+loop=$(udisksctl loop-setup --no-user-interaction -r -f "$OUT/after.img" | sed -n 's/.* as \(\/dev\/[a-z0-9]*\)\.$/\1/p')
+udisksctl mount --no-user-interaction -b "$loop" >/dev/null
+mnt=$(lsblk -no MOUNTPOINT "$loop")
+test "$(cat "$mnt/Bleibt hier/Lange Datei.txt" 2>/dev/null)" = bleibt || { echo "Lange Datei.txt is wrong"; fail=1; }
+for gone in README.TXT "Neuer Ordner" "Neue lange Datei.txt" "Ein langer Name 10.txt" "Ein langer Name 12.txt"; do
+    test ! -e "$mnt/$gone" || { echo "still there: $gone"; fail=1; }
+done
+cmp -s "$mnt/Ein langer Name 1.txt" "$OUT/x/files/Ein langer Name 1.txt" || { echo "Ein langer Name 1.txt is lost"; fail=1; }
+udisksctl unmount --no-user-interaction -b "$loop" >/dev/null
+udisksctl loop-delete --no-user-interaction -b "$loop" >/dev/null
 # COMMAND.COM's DIR with long names and dates (71A7h); its "> AUX" on D:
 # is a device (716Ch passes it to DOS)
 section CMDDIR END | grep -q '[0-9][0-9][.-][0-9][0-9][.-][0-9][0-9].*Ein langer Name 1.txt' ||

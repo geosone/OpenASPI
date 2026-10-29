@@ -5,6 +5,7 @@ DOSEXFAT := $(BUILD)/dos/EXFAT.SYS
 # installs one of the two as EXFAT.SYS
 DOSEXFATL := $(BUILD)/dos/EXFATL.SYS
 EXFATTESTBIN := $(BUILD)/host/test_exfat
+EXFATWRITETESTBIN := $(BUILD)/host/test_exfat_write
 EXCHKTESTBIN := $(BUILD)/host/test_exchk
 EXFMTTESTBIN := $(BUILD)/host/test_exfmt
 FATCHKTESTBIN := $(BUILD)/host/test_fatchk
@@ -18,6 +19,10 @@ EXFATWCC := $(WCC) -q -ms -0 -os -s -zl -zdp -wx -we -Iinclude -I$(WATCOM)/h
 $(EXFATTESTBIN): tests/exfat_test.c $(EXFATCORE) $(EXFATHDR)
 	mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/exfat_test.c $(EXFATCORE)
+
+$(EXFATWRITETESTBIN): tests/exfat_write_test.c $(EXFATCORE) $(EXFATHDR)
+	mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/exfat_write_test.c $(EXFATCORE)
 
 $(EXCHKTESTBIN): tests/exchk_test.c common/exfat/exfat_check.c $(EXFATCORE) $(EXFATHDR)
 	mkdir -p $(@D)

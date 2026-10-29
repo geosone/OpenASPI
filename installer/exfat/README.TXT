@@ -1,7 +1,7 @@
-OpenASPI exFAT 0.3 - exFAT drives for DOS
+OpenASPI exFAT 0.4 - exFAT drives for DOS
 ==========================================
 
-  EXFAT.SYS  exFAT volumes as DOS drives (read only)
+  EXFAT.SYS  exFAT volumes as DOS drives
   EXFMT.EXE  formats exFAT
   EXCHK.EXE  checks and repairs exFAT
 
@@ -9,13 +9,14 @@ EXFAT.SYS is a redirector: it works with every DOS that has one (MS-DOS 5
 and later, FreeDOS, EDR-DOS). It finds exFAT volumes on the BIOS disks
 (superfloppy or MBR partition of type 07h) and, with OpenASPI, the exFAT
 media of ASPIDSK.SYS and ASPIFDD.SYS, also when a medium is changed. It
-needs about 14 KB (22 KB with long file names) and can be loaded high:
+needs about 24 KB (34 KB with long file names) and can be loaded high:
 
-  DEVICE=C:\EXFAT\EXFAT.SYS [/L:x] [/Q] [/C]
+  DEVICE=C:\EXFAT\EXFAT.SYS [/L:x] [/Q] [/C] [/R]
 
   /L:x  first drive letter to use (default: the first free one)
   /Q    no messages
   /C    BIOS disks through CHS only, without the INT 13h extensions
+  /R    read-only: writing, creating, deleting and renaming are refused
 
 With OpenASPI, EXFAT.SYS must come after ASPIDSK.SYS and ASPIFDD.SYS.
 DOS shows long names as 8.3 names (LETTER~1.TXT) in code page 437 or 850.
@@ -23,8 +24,10 @@ With the setup option "Long file names" (EXFATL.SYS, installed as
 EXFAT.SYS), programs for long file names (INT 21h AX=71xxh, as with DOSLFN
 or Windows 95: the DIR of MS-DOS 7, file managers) see the long names;
 DOSLFN may be loaded after EXFAT.SYS for the other drives.
-Writing, creating, deleting and renaming give "access denied". Files of
-4 GB and more show the size FFFFFFFFh. CHKDSK, SCANDISK and DEFRAG do not
+Files and directories can be written, created, deleted and renamed, also
+on TexFAT. While a change is under way the volume is marked dirty; after a
+crash EXCHK /F frees lost clusters. Files of 4 GB and more show the size
+FFFFFFFFh. CHKDSK, SCANDISK and DEFRAG do not
 work on the drives; EXFMT and EXCHK take their place.
 
 EXFMT d: | /D:nn [/P:n | /WHOLE] [/V:label] [/A:size] [/TEXFAT] [/Q] [/YES]

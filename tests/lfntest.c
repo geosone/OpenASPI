@@ -1,7 +1,11 @@
 /* LFNTEST: the long file name calls (INT 21h AX=71xxh) for the DOS tests
    of EXFAT.SYS; one line per result, "error n" for a failed call.
    LFNTEST DIR pattern | TRUE path | CD dir | TYPE file | ATTR path |
-           VOL X:\ | DEL file | MD dir | INFO file | LEAK pattern */
+           VOL X:\ | DEL file | MD dir | INFO file | LEAK pattern |
+           MAKE file text | REN old new | RD dir | SETATTR path hex |
+           DELW pattern | DOSATTR path hex (4301h, without long names) |
+           XOPEN file action text (6C00h for writing) */
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <dos.h>
@@ -122,11 +126,48 @@ int main(int argc, char **argv)
         printf("fs %s flags %04X name %u path %u\n", buf, r.x.bx, r.x.cx, r.x.dx);
         return 0;
     }
-    if (!strcmp(op, "DEL") || !strcmp(op, "MD")) {
-        r.x.ax = op[0] == 'D' ? 0x7141 : 0x7139; r.x.dx = (unsigned)arg;
+    if (!strcmp(op, "DEL") || !strcmp(op, "MD") || !strcmp(op, "RD") || !strcmp(op, "DELW")) {
+        r.x.ax = op[0] == 'M' ? 0x7139 : op[0] == 'R' ? 0x713A : 0x7141; r.x.dx = (unsigned)arg;
+        if (op[3] == 'W') r.x.si = 1;   /* wildcards */
         if (!call(&r, &s)) printf("done\n");
         return 0;
     }
-    printf("LFNTEST DIR|TRUE|CD|TYPE|ATTR|VOL|DEL|MD|INFO|LEAK arg\n");
+    if (!strcmp(op, "MAKE")) {          /* 716Ch create or replace, write the text, close */
+        const char *text = argc > 3 ? argv[3] : "";
+        r.x.ax = 0x716C; r.x.bx = 2; r.x.dx = 0x12; r.x.si = (unsigned)arg;
+        if (call(&r, &s)) return 1;
+        h = r.x.ax;
+        printf("action %u\n", r.x.cx);
+        memset(&r, 0, sizeof(r));
+        r.h.ah = 0x40; r.x.bx = h; r.x.cx = strlen(text); r.x.dx = (unsigned)text;
+        if (!call(&r, &s)) printf("wrote %u\n", r.x.ax);
+        r.h.ah = 0x3E; r.x.bx = h;
+        return call(&r, &s) ? 1 : 0;
+    }
+    if (!strcmp(op, "XOPEN")) {         /* 6C00h for writing with an action, write, close */
+        const char *text = argc > 4 ? argv[4] : "";
+        r.x.ax = 0x6C00; r.x.bx = 1; r.x.si = (unsigned)arg;
+        r.x.dx = (unsigned)strtoul(argc > 3 ? argv[3] : "1", NULL, 16);
+        if (call(&r, &s)) return 1;
+        h = r.x.ax;
+        printf("action %u\n", r.x.cx);
+        memset(&r, 0, sizeof(r));
+        r.h.ah = 0x40; r.x.bx = h; r.x.cx = strlen(text); r.x.dx = (unsigned)text;
+        if (!call(&r, &s)) printf("wrote %u\n", r.x.ax);
+        r.h.ah = 0x3E; r.x.bx = h;
+        return call(&r, &s) ? 1 : 0;
+    }
+    if (!strcmp(op, "REN")) {
+        r.x.ax = 0x7156; r.x.dx = (unsigned)arg; r.x.di = (unsigned)(argc > 3 ? argv[3] : "");
+        if (!call(&r, &s)) printf("done\n");
+        return 0;
+    }
+    if (!strcmp(op, "SETATTR") || !strcmp(op, "DOSATTR")) {
+        r.x.ax = op[0] == 'S' ? 0x7143 : 0x4301; r.x.bx = 1; r.x.dx = (unsigned)arg;
+        r.x.cx = (unsigned)strtoul(argc > 3 ? argv[3] : "0", NULL, 16);
+        if (!call(&r, &s)) printf("done\n");
+        return 0;
+    }
+    printf("LFNTEST DIR|TRUE|CD|TYPE|ATTR|VOL|DEL|MD|INFO|LEAK|MAKE|REN|RD|SETATTR|DELW|DOSATTR|XOPEN arg\n");
     return 2;
 }

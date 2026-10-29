@@ -95,9 +95,7 @@ address the whole medium (PREAD, PWRITE, CAPACITY, RELOAD).
 TexFAT (two FATs and allocation bitmaps, ActiveFat in the boot sector) is
 worth it for aging removable media such as ZIP and SuperDisk: EXFAT.SYS
 reads it, EXCHK repairs one FAT from the other, EXFMT `/TEXFAT` creates
-it.  Still to come: the writing of EXFAT.SYS keeps both copies (write
-the inactive one, then switch ActiveFat, then bring the other one up to
-date).
+it.  The writing of EXFAT.SYS changes both copies alike.
 
 - **EXFMT** (done): creates exFAT (boot region with its backup and
   checksum, allocation bitmap, upcase table, root directory with volume
@@ -112,8 +110,8 @@ date).
   lost and cross linked clusters, the VolumeDirty flag; `/F` repairs.
 - After a tool has written, EXFAT.SYS reads the volume again (`changed`).
   Still missing: a lock while the tool writes (no open files on the drive,
-  caches flushed); until EXFAT.SYS writes, only reading programs can be
-  disturbed.
+  caches flushed); now that EXFAT.SYS writes, a tool writing at the same
+  time as a program on the drive can damage the volume.
 - ASPIFMT stays the FAT formatter for ASPIFDD; it can get `/FS:EXFAT`
   calling the same format code.
 
@@ -122,16 +120,17 @@ date).
 The same for both back ends; the back ends only give "read sector n of
 volume v" and "has the medium changed".
 
-- First version read-only: directories, open/read/seek/close, find
-  first/next, file attributes and times, free space.
+- Reading (done): directories, open/read/seek/close, find first/next, file
+  attributes and times, free space.
 - exFAT names are long Unicode names without 8.3 names: EXFAT.SYS makes
   short names (`LETTER~1.TXT`) and converts the characters to the DOS code
   page (CP437/CP850, upcase table of the volume).  Long names (done)
   through INT 21h 71xxh, as DOSLFN, for DOS 7 and LFN programs.
 - Files of 4 GB and more cannot be opened by DOS: hidden or shown with their
   size cut, to be decided.
-- Writing as a second step: allocation bitmap, FAT chains and contiguous
-  (NoFatChain) files, entry set checksums, directory growth.
+- Writing (done, EXFAT.SYS 0.4): allocation bitmap, FAT chains and
+  contiguous (NoFatChain) files, entry set checksums and name hashes,
+  directory growth, VolumeDirty; `/R` keeps a drive read-only.
 - Tools that read sectors themselves (CHKDSK, SCANDISK, DEFRAG) do not work
   on the drive, as on CD-ROM drives; EXFMT and EXCHK take their place.
 - No exFAT in a DOS kernel: EXFAT.SYS works with every DOS that has a

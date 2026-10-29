@@ -44,9 +44,9 @@ See tools/aspifmt/README.md and tools/aspidd/README.md in the source tree.
 
 EXFAT.SYS (setup option "exFAT drives") gives exFAT volumes drive letters:
 BIOS disks, and the exFAT media of ASPIDSK and ASPIFDD (USB sticks, ZIP).
-It reads only; writing and creating files give "access denied". It needs
-about 14 KB and can load high; the option "exFAT with long file names"
-installs it with the long names for LFN programs (about 22 KB). EXFMT D:
+It reads and writes (/R: read-only). It needs about 24 KB and can load
+high; the option "exFAT with long file names" installs it with the long
+names for LFN programs (about 34 KB). EXFMT D:
 formats a drive as exFAT (layout only without /YES; /TEXFAT keeps two FATs,
 worth it for old ZIP and SuperDisk media), EXCHK D: checks it and
 EXCHK D: /F repairs it.

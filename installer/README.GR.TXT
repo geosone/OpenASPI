@@ -45,10 +45,10 @@ Auch lange Dateinamen innerhalb des Abbilds bleiben bei der Sektorkopie erhalten
 
 EXFAT.SYS (Option "exFAT-Laufwerke") gibt exFAT-Datentraegern Laufwerks-
 buchstaben: BIOS-Festplatten und die exFAT-Medien von ASPIDSK und ASPIFDD
-(USB-Sticks, ZIP). Es liest nur; Schreiben und Anlegen von Dateien melden
-"Zugriff verweigert". Es braucht etwa 14 KB und kann hoch geladen werden;
-die Option "exFAT mit langen Dateinamen" installiert es mit den langen
-Namen fuer LFN-Programme (etwa 22 KB). EXFMT D: formatiert ein Laufwerk mit
+(USB-Sticks, ZIP). Es liest und schreibt (/R: nur lesen). Es braucht etwa
+24 KB und kann hoch geladen werden; die Option "exFAT mit langen
+Dateinamen" installiert es mit den langen Namen fuer LFN-Programme (etwa
+34 KB). EXFMT D: formatiert ein Laufwerk mit
 exFAT (ohne /YES nur der Aufbau; /TEXFAT haelt zwei FATs, sinnvoll fuer
 alte ZIP- und SuperDisk-Medien), EXCHK D: prueft es und EXCHK D: /F
 repariert es.

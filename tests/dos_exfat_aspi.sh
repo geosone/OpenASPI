@@ -8,6 +8,8 @@
 # FDD=1: ASPIFDD instead of ASPIDSK, the stick named as a ZIP drive
 # DAMAGE=hash: damage of tests/exchk_corrupt.py, repaired by EXCHK D: /F
 #   through the WRITE function of the exFAT service
+# COPY and MD on D: write through that function too; the files must be
+# there after the swaps, and fsck.exfat must find the stick clean
 
 set -euo pipefail
 
@@ -21,7 +23,7 @@ if test -n "${FDD:-}"; then BLK=ASPIFDD; PRODUCT='ZIP 100'; fi
 DAMAGE=${DAMAGE:-}
 FIX=; test -z "$DAMAGE" || FIX=' /F'
 
-make -C "$ROOT" build/dos/EXFAT.SYS build/dos/EXCHK.EXE build/dos/$BLK.SYS >/dev/null
+make -C "$ROOT" build/dos/EXFAT.SYS build/dos/EXCHK.EXE build/dos/$BLK.SYS build/host/test_exfat >/dev/null
 rm -rf "$OUT"
 mkdir -p "$OUT"
 nasm -f bin -o "$OUT/QEXIT.COM" "$AHCIASPI_DIR/tools/qexit.asm"
@@ -40,14 +42,15 @@ printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' 'DEVICE=A:\EUSBASPI.SYS' \
     "DEVICE=A:\\$BLK.SYS" 'DEVICE=A:\EXFAT.SYS' > "$OUT/CONFIG.SYS"
 printf '%s > AUX\r\n' \
     'ECHO === EXFAT1' 'DIR D:' 'TYPE D:\EINLA~11.TXT' 'MD C:\OUT' 'COPY D:\*.* C:\OUT' \
-    "EXCHK D:$FIX" 'EXCHK D:' 'ECHO === SWAP1' > "$OUT/AUTOEXEC.BAT"
+    "EXCHK D:$FIX" 'EXCHK D:' 'COPY A:\QEXIT.COM D:\NEU.COM' 'MD D:\NEU' 'COPY C:\OUT\FRAG.BIN D:\NEU' \
+    'EXCHK D:' 'ECHO === SWAP1' > "$OUT/AUTOEXEC.BAT"
 printf '%s\r\n' 'WAIT' >> "$OUT/AUTOEXEC.BAT"
 printf '%s > AUX\r\n' \
     'ECHO === FAT' 'DIR D:' 'DIR D:' 'TYPE D:\FATTEST.TXT' \
     'ECHO === SWAP2' >> "$OUT/AUTOEXEC.BAT"
 printf '%s\r\n' 'WAIT' >> "$OUT/AUTOEXEC.BAT"
 printf '%s > AUX\r\n' \
-    'ECHO === EXFAT2' 'DIR D:' 'DIR D:' 'TYPE D:\README.TXT' \
+    'ECHO === EXFAT2' 'DIR D:' 'DIR D:' 'TYPE D:\README.TXT' 'DIR D:\NEU' \
     'ECHO === END' >> "$OUT/AUTOEXEC.BAT"
 printf '%s\r\n' 'QEXIT' >> "$OUT/AUTOEXEC.BAT"
 mcopy -o -i "$OUT/boot.img" "$OUT/CONFIG.SYS" "$OUT/AUTOEXEC.BAT" "$OUT/EUSBASPI.SYS" \
@@ -120,4 +123,12 @@ mkdir -p "$OUT/copies"
 mcopy -n -i "$OUT/fat.img@@32256" '::/OUT/*' "$OUT/copies/" 2>/dev/null || fail=1
 cmp -s "$OUT/copies/FRAG.BIN" "$OUT/x/files/frag.bin" || { echo "differs: FRAG.BIN"; fail=1; }
 cmp -s "$OUT/copies/ZUFALL.BIN" "$OUT/x/files/zufall.bin" || { echo "differs: ZUFALL.BIN"; fail=1; }
+# written through the exFAT service, and still there after the swaps
+need EXFAT2 END 'FRAG     BIN       200'
+test "$(section EXFAT1 SWAP1 | grep -c 'No errors found')" -ge 2 || { echo "EXCHK after writing"; fail=1; }
+dd if="$OUT/exstick.img" of="$OUT/after.img" bs=512 skip=2048 count=$((64 * 2048)) status=none
+fsck.exfat -n "$OUT/after.img" > "$OUT/fsck.txt" 2>&1 || { cat "$OUT/fsck.txt"; echo "fsck.exfat finds errors"; fail=1; }
+"$ROOT/build/host/test_exfat" "$OUT/after.img" > "$OUT/list.txt" 2>/dev/null
+grep -qE '^  NEU\.COM +20 +9 ' "$OUT/list.txt" || { echo "NEU.COM is missing"; fail=1; }
+grep -qE '^  FRAG\.BIN +20 +200000 ' <(sed -n '/^\\NEU\\$/,/^\\/p' "$OUT/list.txt") || { echo "NEU\\FRAG.BIN is missing"; fail=1; }
 if test "$fail" = 0; then echo "EXFAT.SYS with $BLK test passed (qemu rc=$rc)"; else cat "$OUT/serial.txt"; exit 1; fi

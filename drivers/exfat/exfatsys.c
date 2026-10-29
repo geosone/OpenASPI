@@ -1,5 +1,5 @@
 /* EXFAT.SYS: exFAT drives for DOS through the network redirector interface
-   (INT 2Fh AH=11h), read-only.  The volumes are found on the BIOS disks
+   (INT 2Fh AH=11h), read and write (/R: read-only).  The volumes are found on the BIOS disks
    (INT 13h): superfloppies, MBR partitions of type 07h (also logical ones)
    and GPT basic data partitions; and on the units of ASPIDSK and ASPIFDD,
    whose drive letters EXFAT.SYS takes over while an exFAT medium is in
@@ -12,7 +12,7 @@
 #include "openaspi/exfat.h"
 #include "openaspi/exfatsys.h"
 
-#define VERSION "0.3"
+#define VERSION "0.4"
 #define MAXVOL 8
 #define STACKSIZE 1024                  /* as in exfatsys.asm */
 
@@ -27,10 +27,12 @@ struct packet { oa_u8 func, unit; oa_u16 status; oa_u32 lba; oa_u16 count; void 
 #define SVC_READ     1
 #define SVC_CHECK    2
 #define SVC_CALLBACK 3
+#define SVC_WRITE    4
 #define UF_EXFAT     0x80
 
 extern int __cdecl int13(struct iregs *);
 extern int __cdecl int21(struct iregs *);
+extern int __cdecl int1a(struct iregs *);
 extern void __cdecl hook(void);
 extern int __cdecl svc_call(oa_u16 off, oa_u16 seg, struct packet *);
 extern oa_u16 aspi_callback_off;      /* far procedure in exfatsys.asm */
@@ -40,7 +42,6 @@ struct drive {
     struct oa_exfatsys_vol pub; /* for the tools; ASPIDSK/ASPIFDD units: the
                                    letter is DOS's while the medium is FAT */
     struct oa_exfat v;
-    oa_u32 free_clusters;       /* 0FFFFFFFFh: not counted yet */
     oa_u16 checked;             /* BIOS tick of the last media check */
 };
 #define ST_OURS    OA_EXFATSYS_OURS
@@ -52,8 +53,8 @@ static unsigned ndrv;
 const struct { oa_u16 version; unsigned *count; struct drive *table; oa_u16 stride; }
     exfat_info = { 1, &ndrv, drv, sizeof(struct drive) };
 static oa_u8 __far *sda;
+static oa_u8 __far *nul_dev;          /* the DOS device chain */
 #ifdef EXFAT_LFN
-static oa_u8 __far *nul_dev;          /* the DOS device chain, for 71xxh */
 static oa_u8 __far *sft_list;         /* the first SFT block, for 71A6h */
 #endif
 static oa_u8 first_letter;
@@ -71,6 +72,16 @@ static int gone;                        /* the medium of a drive was taken out *
 static struct { struct drive *d; oa_u32 first, idx, clu; } walks[4];
 static unsigned next_walk;
 
+/* files open for writing: where their entry is */
+#define NOPEN 8
+static struct wopen { oa_u8 __far *sft; struct drive *d; struct oa_exfat_where w; } wopen[NOPEN];
+static oa_u8 readonly;                  /* /R */
+static oa_u16 werr;                     /* DOS error of the last failed write */
+static struct oa_exfat_file pdir;       /* the directory of the last part of a path */
+static struct oa_exfat_where pdw;       /* where pdir's own entry is */
+static oa_u32 avoid;                    /* rename: a directory may not go into itself */
+static oa_u16 uname[13];                /* an 8.3 name in UTF-16 */
+
 #define DS_SEG() FP_SEG((void __far *)&ndrv)
 #define W(p, o) (*(oa_u16 __far *)((p) + (o)))
 #define D(p, o) (*(oa_u32 __far *)((p) + (o)))
@@ -78,36 +89,43 @@ static unsigned next_walk;
 /* DOS errors */
 #define E_NOTFOUND 2
 #define E_PATH     3
+#define E_TOOMANY  4
 #define E_ACCESS   5
+#define E_CURDIR   0x10
+#define E_DIFFDEV  0x11
 #define E_NOMORE   0x12
+#define E_PROTECT  0x13
 #define E_NOTREADY 0x15
+#define E_WFAULT   0x1D
 #define E_GENERAL  0x1F
 #define E_EXISTS   0x50
 
 /* SDA offsets, DOS 4 and later */
 #define SDA_DTA    0x0C
 #define SDA_FN1    0x9E
+#define SDA_FN2    0x11E
 #define SDA_SDB    0x19E
 #define SDA_SATTR  0x24D
 #define SDA_ACTION 0x2DD
+#define SDA_ATTR   0x2DF
 #define SDA_MODE   0x2E1
+#define SDA_USER   0x264                        /* SS:SP of the caller's registers */
 
 /* ---- BIOS disks ---- */
 
-static int bios_read(void *dev, oa_u32 lba, void __far *buf)
+static int bios_io(struct drive *d, oa_u32 lba, void __far *buf, int write)
 {
-    struct drive *d = dev;
     struct iregs r;
     struct dap p;
     unsigned tries;
-    oa_u16 cx = 0, dx = d->pub.bios;
+    oa_u16 cx = 0, dx = d->pub.bios, op = write ? 0x0301 : 0x0201;
     oa_u32 t;
     if (!d->pub.ext) {
         t = lba / d->pub.spt;
         cx = (oa_u16)(lba - t * d->pub.spt + 1);
         dx |= (oa_u16)(t % d->pub.heads) << 8;
         t /= d->pub.heads;
-        if (t > 1023) return -1;
+        if (t > 1023) { werr = E_WFAULT; return -1; }
         cx |= (oa_u16)((t & 0xFF) << 8 | (t >> 2 & 0xC0));
     }
     for (tries = 0; tries < 3; ++tries) {
@@ -115,24 +133,37 @@ static int bios_read(void *dev, oa_u32 lba, void __far *buf)
         r.dx = dx;
         if (d->pub.ext) {
             p.size = 16; p.res = 0; p.count = 1; p.buf = buf; p.lba = lba; p.lba_hi = 0;
-            r.ax = 0x4200; r.si = (oa_u16)&p; r.ds = DS_SEG();
+            r.ax = write ? 0x4300 : 0x4200; r.si = (oa_u16)&p; r.ds = DS_SEG();
             if (!int13(&r)) return 0;
         } else {
-            r.ax = 0x0201; r.cx = cx;
+            r.ax = op; r.cx = cx;
             r.bx = FP_OFF(buf); r.es = FP_SEG(buf);
             if (!int13(&r)) return 0;
-            /* DMA boundary: through ent, unused while a file is read into
-               DOS's buffer (the sector cache itself is not moved) */
+            /* DMA boundary: through ent, unused while file data goes to or
+               from DOS's buffer (the sector cache itself is not moved) */
             if (r.ax >> 8 == 0x09 && FP_OFF(buf) != (oa_u16)secbuf) {
-                r.ax = 0x0201; r.cx = cx; r.dx = dx; r.bx = (oa_u16)&ent; r.es = DS_SEG();
-                if (!int13(&r)) { _fmemcpy(buf, &ent, 512); return 0; }
+                if (write) _fmemcpy(&ent, buf, 512);
+                r.ax = op; r.cx = cx; r.dx = dx; r.bx = (oa_u16)&ent; r.es = DS_SEG();
+                if (!int13(&r)) { if (!write) _fmemcpy(buf, &ent, 512); return 0; }
             }
         }
+        if (write && r.ax >> 8 == 0x03) { werr = E_PROTECT; return -1; }
         memset(&r, 0, sizeof(r));
         r.dx = d->pub.bios;
         int13(&r);                              /* reset */
     }
+    werr = E_WFAULT;
     return -1;
+}
+
+static int bios_read(void *dev, oa_u32 lba, void __far *buf)
+{
+    return bios_io(dev, lba, buf, 0);
+}
+
+static int bios_write(void *dev, oa_u32 lba, const void __far *buf)
+{
+    return bios_io(dev, lba, (void __far *)buf, 1);
 }
 
 static int aspi_read(void *dev, oa_u32 lba, void __far *buf)
@@ -144,13 +175,28 @@ static int aspi_read(void *dev, oa_u32 lba, void __far *buf)
     return svc_call(d->pub.svc_off, d->pub.svc_seg, &k) ? -1 : 0;
 }
 
+static int aspi_write(void *dev, oa_u32 lba, const void __far *buf)
+{
+    struct drive *d = dev;
+    struct packet k;
+    oa_u16 st;
+    memset(&k, 0, sizeof(k));
+    k.func = SVC_WRITE; k.unit = d->pub.unit; k.lba = lba; k.count = 1; k.buf = (void __far *)buf;
+    if (!(st = svc_call(d->pub.svc_off, d->pub.svc_seg, &k))) return 0;
+    werr = (st & 0xFF) ? E_WFAULT : E_PROTECT;  /* driver error 0: write protected */
+    return -1;
+}
+
 static int mount(struct drive *d)
 {
     unsigned i;
+    int rc;
     for (i = 0; i < 4; ++i) if (walks[i].d == d) walks[i].d = 0;
-    d->free_clusters = 0xFFFFFFFFUL;
+    for (i = 0; i < NOPEN; ++i) if (wopen[i].d == d) wopen[i].d = 0;   /* another medium */
     buf_owner = d;
-    return oa_exfat_mount(&d->v, d->pub.aspi ? aspi_read : bios_read, d, d->pub.aspi ? 0 : d->pub.start, cp, secbuf);
+    rc = oa_exfat_mount(&d->v, d->pub.aspi ? aspi_read : bios_read, d, d->pub.aspi ? 0 : d->pub.start, cp, secbuf);
+    if (!readonly) d->v.write = d->pub.aspi ? aspi_write : bios_write;
+    return rc;
 }
 
 /* The drive letter to EXFAT.SYS: the DOS entry is kept for give_back. */
@@ -259,6 +305,8 @@ static void dir_file(struct oa_exfat_file *f, const struct oa_exfat_file *from)
 static int split_path(struct drive *d, const char __far *p, struct oa_exfat_file *dir, char fcb[11])
 {
     oa_exfat_rootdir(&d->v, dir);
+    memset(&pdw, 0, sizeof(pdw));
+    pdw.none = 1;
     p += 3;                                     /* "X:\" */
     memset(fcb, ' ', 11);
     while (*p) {
@@ -266,24 +314,37 @@ static int split_path(struct drive *d, const char __far *p, struct oa_exfat_file
         if (!*p) return 0;
         ++p;
         if (oa_exfat_lookup(&d->v, dir, fcb, &ent) || !(ent.attr & OA_EXFAT_DIR)) return E_PATH;
+        if (avoid && ent.file.first == avoid) return E_ACCESS;
+        oa_exfat_where_of(dir, ent.pos, &pdw);
         dir_file(dir, &ent.file);
         memset(fcb, ' ', 11);
     }
     return 0;
 }
 
+/* name (8 characters, blank padded) is a DOS character device: AUX, NUL, ... */
+static int dev_name(const char *name)
+{
+    oa_u8 __far *dev;
+    for (dev = nul_dev; dev && FP_OFF(dev) != 0xFFFF; dev = *(oa_u8 __far * __far *)dev)
+        if ((W(dev, 4) & 0x8000) && !_fmemcmp(dev + 10, name, 8)) return 1;
+    return 0;
+}
+
 static char last_fcb[11];
 
-/* Finds a path: 0 and ent (last_fcb its 8.3 name), -1 for the root
-   directory, or a DOS error. */
+/* Finds a path: 0 and ent (last_fcb its 8.3 name, pdir its directory),
+   -1 for the root directory, or a DOS error; E_NOTFOUND: pdir and last_fcb
+   for a new entry. */
 static int find_path(struct drive *d, const char __far *p)
 {
-    struct oa_exfat_file dir;
     char *fcb = last_fcb;
-    int r = split_path(d, p, &dir, fcb);
+    int r = split_path(d, p, &pdir, fcb);
     if (r) return r;
     if (fcb[0] == ' ') return -1;
-    r = oa_exfat_lookup(&d->v, &dir, fcb, &ent);
+    /* EDR-DOS sends "> AUX" on our drive as D:\...\AUX: no such file */
+    if (dev_name(fcb)) return E_ACCESS;
+    r = oa_exfat_lookup(&d->v, &pdir, fcb, &ent);
     if (r == OA_EXFAT_END) return E_NOTFOUND;
     return r ? E_NOTREADY : 0;
 }
@@ -426,9 +487,9 @@ static int disk_space(struct regs *r, struct drive *d)
 {
     oa_u32 total = d->v.clusters, avail, bytes = 1UL << (d->v.sshift + d->v.cshift);
     oa_u16 bps = 512;
-    if (d->free_clusters == 0xFFFFFFFFUL && oa_exfat_free(&d->v, &d->free_clusters))
+    if (d->v.free == 0xFFFFFFFFUL && oa_exfat_free(&d->v, &avail))
         return error(r, E_NOTREADY);
-    avail = d->free_clusters;
+    avail = d->v.free;
     while (total > 0xFFFF) { total >>= 1; avail >>= 1; bytes <<= 1; }
     while (bytes / bps > 128 && bps < 0x8000) bps <<= 1;
     if (bytes / bps > 128) { bytes = 128UL * bps; }
@@ -437,15 +498,294 @@ static int disk_space(struct regs *r, struct drive *d)
     return ok(r);
 }
 
+/* ---- writing ---- */
+
+static int fail(struct regs *r, struct drive *d, int rc)
+{
+    /* the volume stays marked dirty: the change may be half done */
+    if (rc == OA_EXFAT_EWRITE) return error(r, d->v.write ? werr : E_ACCESS);
+    return error(r, rc == OA_EXFAT_EFULL ? E_ACCESS : E_NOTREADY);
+}
+
+static int clean_ok(struct regs *r, struct drive *d)
+{
+    return oa_exfat_clean(&d->v) ? fail(r, d, OA_EXFAT_EWRITE) : ok(r);
+}
+
+static unsigned bcd(oa_u8 v) { return (v >> 4) * 10 + (v & 15); }
+
+/* the date and time of the real-time clock, as DOS stores them */
+static void now(oa_u16 *time, oa_u16 *date)
+{
+    struct iregs q;
+    unsigned y;
+    *time = 0; *date = 0x21;                    /* 1.1.1980 */
+    memset(&q, 0, sizeof(q));
+    q.ax = 0x0200;
+    if (!int1a(&q)) *time = (oa_u16)(bcd((oa_u8)(q.cx >> 8)) << 11 | bcd((oa_u8)q.cx) << 5 | bcd((oa_u8)(q.dx >> 8)) / 2);
+    memset(&q, 0, sizeof(q));
+    q.ax = 0x0400;
+    if (int1a(&q)) return;
+    y = bcd((oa_u8)(q.cx >> 8)) * 100 + bcd((oa_u8)q.cx);
+    if (y >= 1980 && y < 2108) *date = (oa_u16)((y - 1980) << 9 | bcd((oa_u8)(q.dx >> 8)) << 5 | bcd((oa_u8)q.dx));
+}
+
+/* an 8.3 name in FCB form as the exFAT name ("NAME.EXT"), 0 if invalid */
+static unsigned fcb_uni(const char *fcb)
+{
+    unsigned i, n = 0;
+    oa_u8 c;
+    for (i = 0; i < 11; ++i) {
+        c = (oa_u8)fcb[i];
+        if (i == 8 && c != ' ') uname[n++] = '.';
+        if (c == ' ') continue;
+        if (c < 0x20 || strchr("\"*/:<>?\\|", c)) return 0;
+        uname[n++] = c < 0x80 ? c : cp->uni[c - 0x80];
+    }
+    return uname[0] == '.' ? 0 : n;
+}
+
+/* a cluster chain no longer as cached */
+static void forget(struct drive *d, oa_u32 first)
+{
+    unsigned i;
+    for (i = 0; i < 4; ++i) if (walks[i].d == d && walks[i].first == first) walks[i].d = 0;
+}
+
+static struct wopen *open_of(const oa_u8 __far *sft)
+{
+    struct wopen *o;
+    for (o = wopen; o < wopen + NOPEN; ++o) if (o->d && o->sft == sft) return o;
+    return 0;
+}
+
+/* ent (in pdir) opened for writing with sft: 0 or a DOS error */
+static oa_u16 open_write(struct drive *d, oa_u8 __far *sft, int created)
+{
+    struct wopen *o;
+    if ((o = open_of(sft)) != 0) o->d = 0;      /* left over */
+    if (!d->v.write || (!created && (ent.attr & OA_EXFAT_RDONLY)) || ent.file.big) return E_ACCESS;
+    for (o = wopen; o < wopen + NOPEN && o->d; ++o) ;
+    if (o == wopen + NOPEN) return E_TOOMANY;
+    o->d = d; o->sft = sft;
+    oa_exfat_where_of(&pdir, ent.pos, &o->w);
+    return 0;
+}
+
 static int do_open(struct regs *r, struct drive *d, oa_u16 mode)
 {
-    int rc;
-    if (mode & 3) return error(r, E_ACCESS);
-    rc = find_path(d, (const char __far *)(sda + SDA_FN1));
+    oa_u8 __far *sft = (oa_u8 __far *)MK_FP(r->es, r->di);
+    oa_u16 err;
+    int rc = find_path(d, (const char __far *)(sda + SDA_FN1));
     if (rc < 0 || (!rc && (ent.attr & OA_EXFAT_DIR))) return error(r, E_ACCESS);
     if (rc) return error(r, (oa_u16)rc);
-    fill_sft((oa_u8 __far *)MK_FP(r->es, r->di), d);
+    if ((mode & 3) && (err = open_write(d, sft, 0)) != 0) return error(r, err);
+    fill_sft(sft, d);
     return ok(r);
+}
+
+/* create, or empty an existing file (create/truncate, replace); attr
+   100h: create new only, an existing file is an error (5Bh; EDR-DOS's 6Ch
+   tries this first, then opens) */
+static int do_create(struct regs *r, struct drive *d, oa_u16 attr)
+{
+    oa_u8 __far *sft = (oa_u8 __far *)MK_FP(r->es, r->di);
+    struct oa_exfat_where w;
+    oa_u16 time, date, err;
+    oa_u32 pos;
+    unsigned n;
+    int rc;
+    oa_u16 mknew = attr & 0x100;
+    if (!d->v.write || (attr & 0x18)) return error(r, E_ACCESS);
+    attr &= OA_EXFAT_RDONLY | OA_EXFAT_HIDDEN | OA_EXFAT_SYSTEM | OA_EXFAT_ARCH;
+    rc = find_path(d, (const char __far *)(sda + SDA_FN1));
+    if (rc < 0) return error(r, E_ACCESS);
+    if (rc && rc != E_NOTFOUND) return error(r, (oa_u16)rc);
+    if (!rc && mknew) return error(r, E_EXISTS);
+    now(&time, &date);
+    if (!rc) {
+        if (ent.attr & (OA_EXFAT_DIR | OA_EXFAT_RDONLY)) return error(r, E_ACCESS);
+        oa_exfat_where_of(&pdir, ent.pos, &w);
+        forget(d, ent.file.first);
+        if ((rc = oa_exfat_resize(&d->v, &ent.file, &w, 0)) != 0 ||
+            (rc = oa_exfat_attr(&d->v, &pdir, ent.pos, attr)) != 0 ||
+            (rc = oa_exfat_time(&d->v, &pdir, ent.pos, OA_EXFAT_MODIFIED, time, date, 0)) != 0)
+            return fail(r, d, rc);
+    } else {
+        if (!(n = fcb_uni(last_fcb))) return error(r, E_PATH);
+        if ((rc = oa_exfat_create(&d->v, &pdir, &pdw, uname, n, attr, time, date, &pos)) != 0) return fail(r, d, rc);
+        memset(&ent.file, 0, sizeof(ent.file));
+        ent.pos = pos;
+    }
+    ent.attr = attr; ent.time = time; ent.date = date;
+    if ((err = open_write(d, sft, 1)) != 0) return error(r, err);
+    fill_sft(sft, d);
+    return clean_ok(r, d);
+}
+
+static int do_write(struct regs *r, struct drive *d, oa_u8 __far *sft)
+{
+    struct wopen *o = open_of(sft);
+    struct oa_exfat_file f;
+    oa_u32 pos = D(sft, 0x15);
+    oa_u16 n = 0;
+    int rc;
+    if (!o || o->d != d) return error(r, E_ACCESS);
+    sft_file(d, sft, &f);
+    forget(d, f.first);
+    if (r->cx) rc = oa_exfat_write(&d->v, &f, &o->w, pos, *(void __far * __far *)(sda + SDA_DTA), r->cx, &n);
+    else rc = oa_exfat_resize(&d->v, &f, &o->w, pos);   /* CX 0: the size is the position */
+    D(sft, 7) = f.valid; W(sft, 0x0B) = f.nofat;
+    D(sft, 0x11) = f.size; D(sft, 0x1B) = f.first;
+    sft_walk(d, &f);
+    if (rc && rc != OA_EXFAT_EFULL) return fail(r, d, rc);
+    D(sft, 0x15) = pos + n;
+    W(sft, 5) &= ~0x40;                         /* written */
+    r->cx = n;
+    return ok(r);
+}
+
+/* the last close of a file written: time (of 5701h, else now), archive bit */
+static int do_close(struct regs *r, struct drive *d, oa_u8 __far *sft)
+{
+    struct oa_exfat_file dir;
+    struct wopen *o;
+    oa_u16 time, date;
+    int rc;
+    if (W(sft, 0)) --W(sft, 0);
+    if (W(sft, 0) || !(o = open_of(sft))) return ok(r);
+    o->d = 0;
+    if (!(W(sft, 5) & 0x40)) {
+        if (W(sft, 5) & 0x4000) { time = W(sft, 0x0D); date = W(sft, 0x0F); }
+        else now(&time, &date);
+        oa_exfat_where_dir(&o->w, &dir);
+        if ((rc = oa_exfat_time(&d->v, &dir, o->w.pos, OA_EXFAT_MODIFIED, time, date, 0)) != 0 ||
+            (rc = oa_exfat_attr(&d->v, &dir, o->w.pos, (oa_u16)(sft[4] | OA_EXFAT_ARCH))) != 0)
+            return fail(r, d, rc);
+    }
+    return clean_ok(r, d);
+}
+
+/* the template of a path's last part against the 8.3 names: files only;
+   read-only ones are kept */
+static int do_delete(struct regs *r, struct drive *d)
+{
+    char tpl[11], name[11];
+    oa_u32 pos = 0;
+    unsigned found = 0, denied = 0;
+    int rc;
+    if (!d->v.write) return error(r, E_ACCESS);
+    if ((rc = split_path(d, (const char __far *)(sda + SDA_FN1), &pdir, tpl)) != 0) return error(r, (oa_u16)rc);
+    for (;;) {
+        rc = oa_exfat_dir_next(&d->v, &pdir, &pos, &ent);
+        if (rc == OA_EXFAT_END) break;
+        if (rc || oa_exfat_short(&d->v, &pdir, &ent, name)) return error(r, E_NOTREADY);
+        if ((ent.attr & OA_EXFAT_DIR) || !match(name, (const oa_u8 __far *)tpl)) continue;
+        if ((ent.attr & ~sda[SDA_SATTR]) & (OA_EXFAT_HIDDEN | OA_EXFAT_SYSTEM)) continue;
+        ++found;
+        if (ent.attr & OA_EXFAT_RDONLY) { ++denied; continue; }
+        forget(d, ent.file.first);
+        if ((rc = oa_exfat_remove(&d->v, &pdir, ent.pos)) != 0) return fail(r, d, rc);
+    }
+    if (!found) return error(r, E_NOTFOUND);
+    if (denied == found) return error(r, E_ACCESS);
+    return clean_ok(r, d);
+}
+
+/* the current directory of the drive is p or below it */
+static int is_current(struct drive *d, const char __far *p)
+{
+    const char __far *c = (const char __far *)(cds + 0x58 * d->pub.letter);
+    unsigned i;
+    for (i = 0; p[i]; ++i) if (c[i] != p[i]) return 0;
+    return !c[i] || c[i] == '\\';
+}
+
+static int do_rmdir(struct regs *r, struct drive *d)
+{
+    const char __far *fn1 = (const char __far *)(sda + SDA_FN1);
+    struct oa_exfat_file sub;
+    int rc;
+    if (!d->v.write) return error(r, E_ACCESS);
+    rc = find_path(d, fn1);
+    if (rc < 0) return error(r, E_ACCESS);
+    if (rc) return error(r, rc == E_NOTFOUND ? E_PATH : (oa_u16)rc);
+    if (!(ent.attr & OA_EXFAT_DIR)) return error(r, E_PATH);
+    if (is_current(d, fn1)) return error(r, E_CURDIR);
+    dir_file(&sub, &ent.file);
+    rc = oa_exfat_empty(&d->v, &sub);
+    if (rc < 0) return error(r, E_NOTREADY);
+    if (!rc) return error(r, E_ACCESS);
+    if ((rc = oa_exfat_remove(&d->v, &pdir, ent.pos)) != 0) return fail(r, d, rc);
+    return clean_ok(r, d);
+}
+
+static int do_mkdir(struct regs *r, struct drive *d)
+{
+    oa_u16 time, date;
+    oa_u32 pos;
+    unsigned n;
+    int rc;
+    if (!d->v.write) return error(r, E_ACCESS);
+    rc = find_path(d, (const char __far *)(sda + SDA_FN1));
+    if (rc <= 0) return error(r, E_ACCESS);     /* there, or the root */
+    if (rc != E_NOTFOUND) return error(r, (oa_u16)rc);
+    if (!(n = fcb_uni(last_fcb))) return error(r, E_PATH);
+    now(&time, &date);
+    if ((rc = oa_exfat_create(&d->v, &pdir, &pdw, uname, n, OA_EXFAT_DIR, time, date, &pos)) != 0) return fail(r, d, rc);
+    return clean_ok(r, d);
+}
+
+static int do_attr(struct regs *r, struct drive *d, oa_u16 attr)
+{
+    int rc;
+    if (!d->v.write || (attr & 0x08)) return error(r, E_ACCESS);
+    rc = find_path(d, (const char __far *)(sda + SDA_FN1));
+    if (rc < 0) return error(r, E_ACCESS);
+    if (rc) return error(r, (oa_u16)rc);
+    if ((rc = oa_exfat_attr(&d->v, &pdir, ent.pos, (oa_u16)(attr & 0x27))) != 0) return fail(r, d, rc);
+    return clean_ok(r, d);
+}
+
+/* rename and move within the drive */
+static int do_rename(struct regs *r, struct drive *d)
+{
+    const char __far *fn2 = (const char __far *)(sda + SDA_FN2);
+    struct oa_exfat_file odir;
+    oa_u32 opos, npos;
+    char nfcb[11];
+    unsigned n;
+    int rc;
+    if (!d->v.write) return error(r, E_ACCESS);
+    if (drive_of_path(fn2) != d) return error(r, E_DIFFDEV);
+    rc = find_path(d, (const char __far *)(sda + SDA_FN1));
+    if (rc < 0) return error(r, E_ACCESS);
+    if (rc) return error(r, (oa_u16)rc);
+    odir = pdir; opos = ent.pos;
+    avoid = ent.attr & OA_EXFAT_DIR ? ent.file.first : 0;
+    rc = split_path(d, fn2, &pdir, nfcb);
+    avoid = 0;
+    if (rc) return error(r, (oa_u16)rc);
+    if (!(n = fcb_uni(nfcb))) return error(r, nfcb[0] == ' ' ? E_ACCESS : E_PATH);
+    rc = oa_exfat_lookup(&d->v, &pdir, nfcb, &ent);
+    if (!rc && (pdir.first != odir.first || ent.pos != opos)) return error(r, E_ACCESS);
+    if (rc && rc != OA_EXFAT_END) return error(r, E_NOTREADY);
+    rc = oa_exfat_rename(&d->v, pdir.first == odir.first ? &pdir : &odir, opos, &pdir, &pdw, uname, n, &npos);
+    if (rc) return fail(r, d, rc);
+    return clean_ok(r, d);
+}
+
+/* The action of an extended open in CX.  MS-DOS does not take it from us
+   but leaves it to the redirector to set in the caller's registers, the
+   frame at user SS:SP (SDA 264h); only when it is 6C00h's frame. */
+static int action(struct regs *r, oa_u16 cx)
+{
+    oa_u16 __far *user;
+    if (r->flags & 1) return 0;
+    r->cx = cx;
+    user = MK_FP(W(sda, SDA_USER + 2), W(sda, SDA_USER));
+    if (user[0] == 0x6C00) user[2] = cx;
+    return 0;
 }
 
 static int redir2(struct regs *r);
@@ -493,9 +833,24 @@ static int redir2(struct regs *r)
     case 0x00:                                  /* installation check */
         r->ax = 0x11FF;
         return 0;
-    case 0x01: case 0x03: case 0x0E: case 0x11: case 0x13: case 0x17:  /* changes */
+    case 0x01:                                  /* remove directory */
         if (!(d = drive_of_path(fn1))) return 1;
-        return error(r, E_ACCESS);
+        return do_rmdir(r, d);
+    case 0x03:                                  /* make directory */
+        if (!(d = drive_of_path(fn1))) return 1;
+        return do_mkdir(r, d);
+    case 0x0E:                                  /* set attributes */
+        if (!(d = drive_of_path(fn1))) return 1;
+        return do_attr(r, d, *(oa_u16 __far *)MK_FP(r->ss, r->sp + 6));
+    case 0x11:                                  /* rename */
+        if (!(d = drive_of_path(fn1))) return 1;
+        return do_rename(r, d);
+    case 0x13:                                  /* delete */
+        if (!(d = drive_of_path(fn1))) return 1;
+        return do_delete(r, d);
+    case 0x17:                                  /* create or truncate */
+        if (!(d = drive_of_path(fn1))) return 1;
+        return do_create(r, d, *(oa_u16 __far *)MK_FP(r->ss, r->sp + 6));
     case 0x05:                                  /* change directory */
         if (!(d = drive_of_path(fn1))) return 1;
         rc = find_path(d, fn1);
@@ -503,9 +858,11 @@ static int redir2(struct regs *r)
         return ok(r);
     case 0x06:                                  /* close */
         if (!(d = sft_drive(sft))) return 1;
-        if (W(sft, 0)) --W(sft, 0);
-        return ok(r);
-    case 0x07: case 0x0A: case 0x0B:            /* commit, lock, unlock */
+        return do_close(r, d, sft);
+    case 0x07:                                  /* commit */
+        if (!(d = sft_drive(sft))) return 1;
+        return clean_ok(r, d);
+    case 0x0A: case 0x0B:                       /* lock, unlock */
         if (!(d = sft_drive(sft))) return 1;
         return ok(r);
     case 0x08:                                  /* read */
@@ -520,7 +877,7 @@ static int redir2(struct regs *r)
         return ok(r);
     case 0x09:                                  /* write */
         if (!(d = sft_drive(sft))) return 1;
-        return error(r, E_ACCESS);
+        return do_write(r, d, sft);
     case 0x0C:                                  /* disk space */
         if (!(d = drive_of_path((const char __far *)sft))) return 1;
         return disk_space(r, d);
@@ -551,12 +908,18 @@ static int redir2(struct regs *r)
     case 0x2E:                                  /* extended open/create */
         if (!(d = drive_of_path(fn1))) return 1;
         rc = find_path(d, fn1);
-        if (rc == E_NOTFOUND && (sda[SDA_ACTION] & 0x10)) return error(r, E_ACCESS);
+        if (rc == E_NOTFOUND) {
+            if (!(sda[SDA_ACTION] & 0x10)) return error(r, E_NOTFOUND);
+            do_create(r, d, W(sda, SDA_ATTR));
+            return action(r, 2);                /* created */
+        }
         if (!rc && (sda[SDA_ACTION] & 0x0F) == 0) return error(r, E_EXISTS);
-        if (!rc && (sda[SDA_ACTION] & 0x0F) == 2) return error(r, E_ACCESS);
+        if (!rc && (sda[SDA_ACTION] & 0x0F) == 2) {
+            do_create(r, d, W(sda, SDA_ATTR));
+            return action(r, 3);                /* replaced */
+        }
         do_open(r, d, sda[SDA_MODE]);
-        if (!(r->flags & 1)) r->cx = 1;
-        return 0;
+        return action(r, 1);
     }
     return 1;
 }
@@ -620,8 +983,8 @@ int __cdecl assign(void __far *unused)
     int21(&q);
     lol = (oa_u8 __far *)MK_FP(q.es, q.bx);
     cds = *(oa_u8 __far * __far *)(lol + 0x16);
-#ifdef EXFAT_LFN
     nul_dev = lol + 0x22;
+#ifdef EXFAT_LFN
     sft_list = *(oa_u8 __far * __far *)(lol + 4);
 #endif
     last = lol[0x21];
@@ -647,9 +1010,9 @@ int __cdecl assign(void __far *unused)
 #ifdef EXFAT_LFN
 /* ---- long file names: INT 21h AX=71xxh for the own drives (EXFATL.SYS,
    installed as EXFAT.SYS when the long names are chosen) ----
-   The calls of DOSLFN and Windows 95 (find, open, change directory,
-   attributes, current directory, TRUENAME, volume information); the ones
-   that write give "access denied".  Paths may use the long names and the
+   The calls of DOSLFN and Windows 95 (find, open and create, change, make
+   and remove directory, delete, rename, attributes and times, current
+   directory, TRUENAME, volume information).  Paths may use the long names and the
    8.3 names of EXFAT.SYS.  Other drives go on to the next handler.  DOSLFN
    loaded later passes these calls on: it has no DPB for a redirector drive
    and knows its own find handles by a mark byte, which the handles here
@@ -740,16 +1103,13 @@ static int device;                      /* full_path: the path is a device on on
 
 static int is_device(void)
 {
-    oa_u8 __far *dev = nul_dev;
     const char *p = strrchr(lpath, '\\') + 1;
     char name[8];
     unsigned i;
     memset(name, ' ', 8);
     for (i = 0; p[i] && p[i] != '.' && i < 8; ++i) name[i] = (char)up((oa_u8)p[i]);
     if (p[i] && p[i] != '.') return 0;
-    for (; dev && FP_OFF(dev) != 0xFFFF; dev = *(oa_u8 __far * __far *)dev)
-        if ((W(dev, 4) & 0x8000) && !_fmemcmp(dev + 10, name, 8)) return 1;
-    return 0;
+    return dev_name(name);
 }
 
 /* p made absolute in lpath ("." and ".." resolved); its drive if ours */
@@ -831,6 +1191,8 @@ static int resolve(struct drive *d, struct oa_exfat_file *dir)
     memcpy(spath, lpath, 3); memcpy(lout, lpath, 3);
     *s = *l = 0;
     oa_exfat_rootdir(&d->v, dir);
+    memset(&pdw, 0, sizeof(pdw));
+    pdw.none = 1;
     if (!*p) return -1;
     for (;;) {
         for (q = p; *q && *q != '\\'; ++q) ;
@@ -848,6 +1210,8 @@ static int resolve(struct drive *d, struct oa_exfat_file *dir)
         strcpy(l, lname); l += strlen(lname);
         if (!*q) return 0;
         if (!(ent.attr & OA_EXFAT_DIR)) return E_PATH;
+        if (avoid && ent.file.first == avoid) return E_ACCESS;
+        oa_exfat_where_of(dir, ent.pos, &pdw);
         dir_file(dir, &ent.file);
         p = q + 1;
     }
@@ -1067,7 +1431,7 @@ static int dos_path(struct regs *r, oa_u16 ax)
     if (ax == 0x6C00) q.dx = r->dx;
     if (int21(&q)) return error(r, q.ax);
     r->ax = q.ax;
-    if (ax == 0x6C00) r->cx = 1;                /* opened */
+    if (ax == 0x6C00) r->cx = q.cx;             /* the action */
     return ok(r);
 }
 
@@ -1083,6 +1447,119 @@ static int dos_device(struct regs *r, oa_u16 ax)
     return ok(r);
 }
 
+/* comp (a long name in the code page) in UTF-16 in ent.name: its length,
+   0 if invalid; trailing dots and spaces go, as under Windows */
+static unsigned comp_uni(void)
+{
+    unsigned n = strlen(comp), i;
+    oa_u8 c;
+    while (n && (comp[n-1] == '.' || comp[n-1] == ' ')) --n;
+    for (i = 0; i < n; ++i) {
+        c = (oa_u8)comp[i];
+        if (c < 0x20 || strchr("\"*/:<>?\\|", c)) return 0;
+        ent.name[i] = c < 0x80 ? c : cp->uni[c - 0x80];
+    }
+    return n;
+}
+
+/* comp as a new file or directory in dir (from resolve, E_NOTFOUND);
+   *pos its entry */
+static int lfn_new(struct drive *d, struct oa_exfat_file *dir, oa_u16 attr, oa_u32 *pos)
+{
+    oa_u16 time, date;
+    unsigned n;
+    int rc;
+    if (!d->v.write) return E_ACCESS;
+    if (!(n = comp_uni())) return E_PATH;
+    now(&time, &date);
+    rc = oa_exfat_create(&d->v, dir, &pdw, ent.name, n, attr, time, date, pos);
+    if (rc) return rc == OA_EXFAT_EWRITE ? werr : rc == OA_EXFAT_EFULL ? E_ACCESS : E_NOTREADY;
+    return oa_exfat_clean(&d->v) ? werr : 0;
+}
+
+/* 7141h: the files of a pattern (long or 8.3 names) */
+static int lfn_delete(struct regs *r, struct drive *d)
+{
+    struct oa_exfat_file dir;
+    char pat[PATMAX], fcb[11], *last = strrchr(lpath, '\\');
+    oa_u32 pos = 0;
+    unsigned found = 0, denied = 0;
+    oa_u8 allow = (oa_u8)r->cx, need = (oa_u8)(r->cx >> 8);
+    int rc;
+    if (!d->v.write) return error(r, E_ACCESS);
+    if (!last[1]) return error(r, E_NOTFOUND);
+    if (strlen(last + 1) >= PATMAX) return error(r, E_PATH);
+    strcpy(pat, last + 1);
+    if (!(r->si & 1) && (strchr(pat, '*') || strchr(pat, '?'))) return error(r, E_NOTFOUND);
+    if (r->si & 1) allow |= OA_EXFAT_RDONLY | OA_EXFAT_ARCH;
+    else allow = OA_EXFAT_RDONLY | OA_EXFAT_ARCH, need = 0;
+    if (last == lpath + 2) last[1] = 0; else *last = 0;
+    rc = resolve(d, &dir);
+    if (rc > 0) return error(r, rc == E_NOTFOUND ? E_PATH : (oa_u16)rc);
+    if (!rc) {
+        if (!(ent.attr & OA_EXFAT_DIR)) return error(r, E_PATH);
+        dir_file(&dir, &ent.file);
+    }
+    for (;;) {
+        rc = oa_exfat_dir_next(&d->v, &dir, &pos, &ent);
+        if (rc == OA_EXFAT_END) break;
+        if (rc) return error(r, E_NOTREADY);
+        if ((ent.attr & OA_EXFAT_DIR) || (ent.attr & need) != need) continue;
+        if ((ent.attr & ~allow) & (OA_EXFAT_HIDDEN | OA_EXFAT_SYSTEM)) continue;
+        ent_name();
+        if (oa_exfat_short(&d->v, &dir, &ent, fcb)) return error(r, E_NOTREADY);
+        fcb_name(fcb, sname);
+        if (!glob(pat, lname) && !glob(pat, sname)) continue;
+        ++found;
+        if (ent.attr & OA_EXFAT_RDONLY) { ++denied; continue; }
+        forget(d, ent.file.first);
+        if ((rc = oa_exfat_remove(&d->v, &dir, ent.pos)) != 0) return fail(r, d, rc);
+    }
+    if (!found) return error(r, E_NOTFOUND);
+    if (denied == found) return error(r, E_ACCESS);
+    return clean_ok(r, d);
+}
+
+/* 7156h: the new name may be long, the directory another one */
+static int lfn_rename(struct regs *r, struct drive *d)
+{
+    struct oa_exfat_file odir, ndir;
+    oa_u32 opos, npos;
+    unsigned n;
+    int rc;
+    if (!d->v.write) return error(r, E_ACCESS);
+    rc = resolve(d, &odir);
+    if (rc < 0) return error(r, E_ACCESS);
+    if (rc) return error(r, (oa_u16)rc);
+    opos = ent.pos;
+    avoid = ent.attr & OA_EXFAT_DIR ? ent.file.first : 0;
+    if (full_path((const char __far *)MK_FP(r->es, r->di)) != d) { avoid = 0; return error(r, E_DIFFDEV); }
+    rc = resolve(d, &ndir);
+    avoid = 0;
+    if (!rc && (ndir.first != odir.first || ent.pos != opos)) return error(r, E_ACCESS);
+    if (rc < 0) return error(r, E_ACCESS);
+    if (rc && rc != E_NOTFOUND) return error(r, rc == E_PATH ? E_PATH : (oa_u16)rc);
+    if (!(n = comp_uni())) return error(r, E_PATH);
+    rc = oa_exfat_rename(&d->v, ndir.first == odir.first ? &ndir : &odir, opos, &ndir, &pdw, ent.name, n, &npos);
+    if (rc) return fail(r, d, rc);
+    return clean_ok(r, d);
+}
+
+/* 7143h BL=1, 3, 5, 7: attributes and the three times */
+static int lfn_set(struct regs *r, struct drive *d, struct oa_exfat_file *dir)
+{
+    oa_u8 bl = (oa_u8)r->bx;
+    int rc;
+    if (!d->v.write) return error(r, E_ACCESS);
+    if (bl == 1) {
+        if (r->cx & 0x08) return error(r, E_ACCESS);
+        rc = oa_exfat_attr(&d->v, dir, ent.pos, (oa_u16)(r->cx & 0x27));
+    } else rc = oa_exfat_time(&d->v, dir, ent.pos, bl == 3 ? OA_EXFAT_MODIFIED : bl == 5 ? OA_EXFAT_ACCESSED : OA_EXFAT_CREATED,
+                              bl == 5 ? 0 : r->cx, r->di, (oa_u8)(bl == 7 ? r->si : 0));
+    if (rc) return fail(r, d, rc);
+    return clean_ok(r, d);
+}
+
 int __cdecl lfn(struct regs *r)
 {
     struct oa_exfat_file dir;
@@ -1092,6 +1569,7 @@ int __cdecl lfn(struct regs *r)
     const char __far *si = (const char __far *)MK_FP(r->ds, r->si);
     char __far *out;
     oa_u8 fn = (oa_u8)r->ax;
+    oa_u32 pos;
     int rc;
     unsigned n;
     switch (fn) {
@@ -1100,12 +1578,26 @@ int __cdecl lfn(struct regs *r)
         if ((oa_u8)r->bx != 1) return 1;
         put_time((oa_u8 __far *)MK_FP(r->es, r->di), r->cx, r->dx, 0, r->bx >> 8);
         return ok(r);
-    case 0x39: case 0x3A: case 0x41:            /* make and remove directory, delete */
-        if (!full_path(dx)) return 1;
-        return error(r, E_ACCESS);
+    case 0x39:                                  /* make directory */
+        if (!(d = full_path(dx))) return 1;
+        rc = resolve(d, &dir);
+        if (rc <= 0) return error(r, E_ACCESS);   /* there, or the root */
+        if (rc != E_NOTFOUND) return error(r, (oa_u16)rc);
+        if ((rc = lfn_new(d, &dir, OA_EXFAT_DIR, &pos)) != 0) return error(r, (oa_u16)rc);
+        return ok(r);
+    case 0x3A:                                  /* remove directory: DOS with the 8.3 path */
+        if (!(d = full_path(dx))) return 1;
+        rc = resolve(d, &dir);
+        if (rc < 0) return error(r, E_ACCESS);
+        if (rc) return error(r, rc == E_NOTFOUND ? E_PATH : (oa_u16)rc);
+        if (!(ent.attr & OA_EXFAT_DIR)) return error(r, E_PATH);
+        return dos_path(r, 0x3A00);
+    case 0x41:                                  /* delete */
+        if (!(d = full_path(dx))) return 1;
+        return lfn_delete(r, d);
     case 0x56:                                  /* rename */
-        if (!full_path(dx) && !full_path((const char __far *)MK_FP(r->es, r->di))) return 1;
-        return error(r, E_ACCESS);
+        if (!(d = full_path(dx))) return full_path((const char __far *)MK_FP(r->es, r->di)) ? error(r, E_DIFFDEV) : 1;
+        return lfn_rename(r, d);
     case 0x3B:                                  /* change directory */
         if (!(d = full_path(dx))) return 1;
         rc = resolve(d, &dir);
@@ -1122,7 +1614,9 @@ int __cdecl lfn(struct regs *r)
         case 2: r->ax = (oa_u16)ent.file.size; r->dx = (oa_u16)(ent.file.size >> 16); break;
         case 6: r->di = ent.date; break;
         case 8: r->cx = ent.time; r->di = ent.date; r->si = 0; break;
-        case 1: case 3: case 5: case 7: return error(r, E_ACCESS);
+        case 1: case 3: case 5: case 7:
+            if (rc < 0) return error(r, E_ACCESS);
+            return lfn_set(r, d, &dir);
         default: return error(r, E_FUNC);
         }
         return ok(r);
@@ -1161,7 +1655,24 @@ int __cdecl lfn(struct regs *r)
     case 0x6C:                                  /* extended open/create */
         if (!(d = full_path(si))) return device ? dos_device(r, 0x6C00) : 1;
         rc = resolve(d, &dir);
-        if (rc == E_NOTFOUND) return error(r, (oa_u16)(r->dx & 0x10 ? E_ACCESS : E_NOTFOUND));
+        if (rc == E_NOTFOUND) {
+            /* created here with the long name, then opened by DOS through
+               its 8.3 name */
+            char fcb[11];
+            oa_u16 action = r->dx;
+            if (!(r->dx & 0x10)) return error(r, E_NOTFOUND);
+            if ((rc = lfn_new(d, &dir, (oa_u16)(r->cx & 0x27), &pos)) != 0) return error(r, (oa_u16)rc);
+            if (oa_exfat_dir_next(&d->v, &dir, &pos, &ent) || oa_exfat_short(&d->v, &dir, &ent, fcb)) return error(r, E_NOTREADY);
+            fcb_name(fcb, sname);
+            n = strlen(spath);
+            if (n > 3) spath[n++] = '\\';
+            strcpy(spath + n, sname);
+            r->dx = 0x0001;                     /* open it */
+            rc = dos_path(r, 0x6C00);
+            r->dx = action;
+            if (!(r->flags & 1)) r->cx = 2;     /* created */
+            return rc;
+        }
         if (rc) return error(r, (oa_u16)(rc < 0 ? E_ACCESS : rc));
         if (ent.attr & OA_EXFAT_DIR) return error(r, E_ACCESS);
         return dos_path(r, 0x6C00);
@@ -1185,10 +1696,11 @@ int __cdecl lfn(struct regs *r)
 /* string literals would stay resident in CONST */
 static char efi_part[] = "EFI PART", hexdig[] = "0123456789ABCDEF";
 #ifdef EXFAT_LFN
-static char msg_hello[] = "EXFAT " VERSION " - exFAT drives, read-only, long names\r\n$";
+static char msg_hello[] = "EXFAT " VERSION " - exFAT drives, long names\r\n$";
 #else
-static char msg_hello[] = "EXFAT " VERSION " - exFAT drives, read-only\r\n$";
+static char msg_hello[] = "EXFAT " VERSION " - exFAT drives\r\n$";
 #endif
+static char msg_ro[] = "  read-only (/R)\r\n$";
 static char msg_none[] = "No exFAT volumes and no ASPIDSK/ASPIFDD - EXFAT not installed\r\n$";
 static char msg_bios[] = "  exFAT volume on BIOS disk $", msg_h[] = "h\r\n$";
 static char msg_aspi[] = "  exFAT media on the drives of ASPIDSK/ASPIFDD\r\n$";
@@ -1204,7 +1716,8 @@ static void add_volume(oa_u32 start)
     if (ndrv >= MAXVOL || read_sec(start) || !oa_exfat_probe(sec)) return;
     *d = *probe_disk;
     if (oa_exfat_mount(&d->v, bios_read, d, start, cp, secbuf)) return;
-    d->pub.letter = 0xFF; d->pub.start = start; d->free_clusters = 0xFFFFFFFFUL;
+    if (!readonly) d->v.write = bios_write;
+    d->pub.letter = 0xFF; d->pub.start = start;
     ++ndrv;
 }
 
@@ -1294,12 +1807,14 @@ int __cdecl drv_init(void __far *req)
             first_letter = (oa_u8)((p[3] | 32) - 'a');
         if (p[1] == 'Q' || p[1] == 'q') quiet = 1;
         if (p[1] == 'C' || p[1] == 'c') chs = 1;
+        if (p[1] == 'R' || p[1] == 'r') readonly = 1;
     }
     memset(&q, 0, sizeof(q));
     q.ax = 0x6601;
     cptab = !int21(&q) && q.bx == 850 ? oa_exfat_cp850 : oa_exfat_cp437;
     cp = &cptab;
     if (!quiet) print(msg_hello);
+    if (!quiet && readonly) print(msg_ro);
     disks = *(oa_u8 __far *)MK_FP(0x40, 0x75);
     for (i = 0; i < disks && i < 8; ++i) {
         memset(&probe, 0, sizeof(probe));

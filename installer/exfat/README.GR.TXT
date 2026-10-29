@@ -1,7 +1,7 @@
-OpenASPI exFAT 0.3 - exFAT-Laufwerke fuer DOS
+OpenASPI exFAT 0.4 - exFAT-Laufwerke fuer DOS
 ==============================================
 
-  EXFAT.SYS  exFAT-Datentraeger als DOS-Laufwerke (nur lesen)
+  EXFAT.SYS  exFAT-Datentraeger als DOS-Laufwerke
   EXFMT.EXE  formatiert exFAT
   EXCHK.EXE  prueft und repariert exFAT
 
@@ -9,14 +9,15 @@ EXFAT.SYS ist ein Redirector: es laeuft mit jedem DOS, das einen kennt
 (MS-DOS 5 und neuer, FreeDOS, EDR-DOS). Es findet exFAT-Datentraeger auf
 den BIOS-Festplatten (Superfloppy oder MBR-Partition vom Typ 07h) und, mit
 OpenASPI, die exFAT-Medien von ASPIDSK.SYS und ASPIFDD.SYS, auch nach einem
-Medienwechsel. Es braucht etwa 14 KB (22 KB mit langen Dateinamen) und
+Medienwechsel. Es braucht etwa 24 KB (34 KB mit langen Dateinamen) und
 kann hoch geladen werden:
 
-  DEVICE=C:\EXFAT\EXFAT.SYS [/L:x] [/Q] [/C]
+  DEVICE=C:\EXFAT\EXFAT.SYS [/L:x] [/Q] [/C] [/R]
 
   /L:x  erster zu verwendender Laufwerksbuchstabe (sonst der erste freie)
   /Q    keine Meldungen
   /C    BIOS-Festplatten nur ueber CHS, ohne die INT-13h-Erweiterungen
+  /R    nur lesen: Schreiben, Anlegen, Loeschen und Umbenennen abgelehnt
 
 Mit OpenASPI muss EXFAT.SYS nach ASPIDSK.SYS und ASPIFDD.SYS stehen. DOS
 zeigt lange Namen als 8.3-Namen (LETTER~1.TXT) in Codepage 437 oder 850.
@@ -24,8 +25,10 @@ Mit der Option "Lange Dateinamen" (EXFATL.SYS, als EXFAT.SYS installiert)
 sehen Programme fuer lange Dateinamen (INT 21h AX=71xxh, wie mit DOSLFN
 oder Windows 95: das DIR von MS-DOS 7, Dateimanager) die langen Namen;
 DOSLFN kann fuer die anderen Laufwerke nach EXFAT.SYS geladen werden.
-Schreiben, Anlegen, Loeschen und Umbenennen melden "Zugriff verweigert".
-Dateien ab 4 GB zeigen die Groesse FFFFFFFFh. CHKDSK, SCANDISK und DEFRAG
+Dateien und Verzeichnisse koennen geschrieben, angelegt, geloescht und
+umbenannt werden, auch auf TexFAT. Waehrend einer Aenderung ist der
+Datentraeger als unsauber markiert; nach einem Absturz gibt EXCHK /F
+verlorene Cluster frei. Dateien ab 4 GB zeigen die Groesse FFFFFFFFh. CHKDSK, SCANDISK und DEFRAG
 arbeiten nicht auf diesen Laufwerken; dafuer gibt es EXFMT und EXCHK.
 
 EXFMT d: | /D:nn [/P:n | /WHOLE] [/V:Name] [/A:Groesse] [/TEXFAT] [/Q] [/YES]

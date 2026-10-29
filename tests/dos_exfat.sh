@@ -60,7 +60,6 @@ printf '%s > AUX\r\n' \
     'ECHO === LABEL' 'VOL D:' \
     'ECHO === TYPE' 'TYPE D:\README.TXT' 'TYPE D:\EINLA~11.TXT' \
     'ECHO === CD' 'D:' 'CD \UNTERO~1\TIEFER' 'CD' 'TYPE DATEI.DAT' 'CD ..' 'CD' 'CD \NIX' 'A:' \
-    'ECHO === WRITE' 'COPY A:\QEXIT.COM D:\NEU.COM' 'MD D:\NEU' 'DEL D:\README.TXT' \
     'ECHO === COPY' 'MD C:\OUT' 'COPY D:\*.* C:\OUT' 'COPY D:\SUB\*.* C:\OUT' \
     'ECHO === EXCHK' 'EXCHK D:' 'IF ERRORLEVEL 1 ECHO EXCHK FAILED' \
     'ECHO === EXCHK /F' 'EXCHK D: /F' 'EXCHK D:' 'IF ERRORLEVEL 1 ECHO AFTER FIX FAILED' 'DIR D:\SUB' \
