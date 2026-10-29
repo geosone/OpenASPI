@@ -9,6 +9,8 @@
 # checks D:, and on the host fsck.exfat checks the volume and the Linux
 # exFAT driver must read what DOS wrote.  COPY keeps the time of the file.
 #   OPTS=/R: read-only; every change must fail and the volume stay unchanged
+#   FREEDOS=1: FreeDOS 1.4 (FD14LITE.img) as C:, which also holds the files
+#   to copy; the programs are on C: instead of A:
 #   HIGH=DIR: HIMEM.SYS and EMM386.EXE from DIR, DEVICEHIGH=EXFAT.SYS
 #   LFN=1: EXFATL.SYS (long file names) as EXFAT.SYS
 #   TEXFAT=0|1: the exFAT disk as TexFAT (tests/exfat_texfat.py, 1: the
@@ -21,6 +23,8 @@ OUT=${OUT:-$ROOT/build/dos-exfat-write}
 AHCIASPI_DIR=${AHCIASPI_DIR:-$ROOT/../ahciaspi}
 MSDOS_IMG=${MSDOS_IMG:-$ROOT/../msdosinst/out/DISK1.IMG}
 SVARDOS=${SVARDOS:-0}
+FREEDOS=${FREEDOS:-}
+FREEDOS_IMG=${FREEDOS_IMG:-$HOME/Iso/Dos/freedos/FD14LITE.img}
 OPTS=${OPTS:-}
 TEXFAT=${TEXFAT:-}
 HIGH=${HIGH:-}
@@ -33,6 +37,17 @@ rm -rf "$OUT"
 mkdir -p "$OUT"
 nasm -f bin -o "$OUT/QEXIT.COM" "$AHCIASPI_DIR/tools/qexit.asm"
 
+# B: the drive with the programs; FAT: C:, the files to copy
+B=A
+FAT="$OUT/fat.img@@32256"
+if test -n "$FREEDOS"; then
+    B=C
+    cp "$FREEDOS_IMG" "$OUT/boot.img"
+    FAT="$OUT/boot.img@@32256"
+    printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' "DEVICE=C:\\EXFAT.SYS $OPTS" \
+        'SHELL=C:\COMMAND.COM C:\ /P=C:\FDAUTO.BAT' > "$OUT/FDCONFIG.SYS"
+    mcopy -o -i "$FAT" "$OUT/FDCONFIG.SYS" ::/
+else
 if test "$SVARDOS" = 1; then
     unzip -p "$SVARDOS_ZIP" svdos-1.44M-disk-1.img > "$OUT/boot.img"
 else
@@ -44,6 +59,7 @@ while IFS= read -r file; do
         *) mdel -i "$OUT/boot.img" "$file" ;;
     esac
 done < <(mdir -b -i "$OUT/boot.img" ::/)
+fi
 if test -n "$HIGH"; then
     printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' 'DEVICE=A:\HIMEM.SYS' 'DEVICE=A:\EMM386.EXE NOEMS' \
         'DOS=HIGH,UMB' "DEVICEHIGH=A:\\EXFAT.SYS $OPTS" > "$OUT/CONFIG.SYS"
@@ -51,10 +67,10 @@ if test -n "$HIGH"; then
 else
     printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' "DEVICE=A:\\EXFAT.SYS $OPTS" > "$OUT/CONFIG.SYS"
 fi
-L='A:\LFNTEST'
+L="$B:\\LFNTEST"
 {
 printf '%s > AUX\r\n' \
-    'ECHO === COPY' 'COPY A:\QEXIT.COM D:\NEU.COM' 'COPY C:\BIG.BIN D:\' \
+    'ECHO === COPY' "COPY $B:\\QEXIT.COM D:\\NEU.COM" 'COPY C:\BIG.BIN D:\' \
     'COPY C:\BIG.BIN D:\UNTERO~1\TIEFER\BIG2.BIN' \
     'ECHO === MD' 'MD D:\NEU' 'MD D:\NEU\TIEF' 'COPY C:\SMALL.TXT D:\NEU\TIEF' \
     'ECHO === APPEND'
@@ -75,18 +91,26 @@ printf '%s\r\n' 'QEXIT'
 } > "$OUT/AUTOEXEC.BAT"
 sys=EXFAT.SYS
 if test -n "$LFN"; then sys=EXFATL.SYS; fi
+if test -n "$FREEDOS"; then
+    mv "$OUT/AUTOEXEC.BAT" "$OUT/FDAUTO.BAT"
+    mcopy -o -i "$FAT" "$ROOT/build/dos/$sys" ::/EXFAT.SYS
+    mcopy -o -i "$FAT" "$OUT/FDAUTO.BAT" "$ROOT/build/dos/EXCHK.EXE" "$ROOT/build/dos/LFNTEST.EXE" \
+        "$OUT/QEXIT.COM" ::/
+else
 mcopy -o -i "$OUT/boot.img" "$ROOT/build/dos/$sys" ::/EXFAT.SYS
 mcopy -o -i "$OUT/boot.img" "$OUT/CONFIG.SYS" "$OUT/AUTOEXEC.BAT" \
     "$ROOT/build/dos/EXCHK.EXE" "$ROOT/build/dos/LFNTEST.EXE" "$OUT/QEXIT.COM" ::/
 
-# C: FAT16 with the files to copy; BIG.BIN with a fixed time
+# C: FAT16 with the files to copy
 truncate -s 32M "$OUT/fat.img"
 echo 'start=63, type=6' | sfdisk -q "$OUT/fat.img"
 mkfs.fat -F16 -n FATDISK --offset 63 "$OUT/fat.img" $(( (32*2048 - 63) / 2 )) >/dev/null
+fi
+# BIG.BIN with a fixed time
 head -c 400000 /dev/urandom > "$OUT/BIG.BIN"
 touch -d '2021-03-04 05:06:08' "$OUT/BIG.BIN"
 printf 'klein und fein\r\n' > "$OUT/SMALL.TXT"
-mcopy -m -i "$OUT/fat.img@@32256" "$OUT/BIG.BIN" "$OUT/SMALL.TXT" ::/
+mcopy -m -i "$FAT" "$OUT/BIG.BIN" "$OUT/SMALL.TXT" ::/
 
 sh "$ROOT/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
 if test -n "$TEXFAT"; then python3 "$ROOT/tests/exfat_texfat.py" "$OUT/x/exfat.img" "$TEXFAT"; fi
@@ -95,10 +119,14 @@ truncate -s 65M "$OUT/exfat-disk.img"
 echo 'start=2048, type=7' | sfdisk -q "$OUT/exfat-disk.img"
 dd if="$OUT/x/exfat.img" of="$OUT/exfat-disk.img" bs=512 seek=2048 conv=notrunc status=none
 
+if test -n "$FREEDOS"; then
+    disks=(-drive if=ide,index=0,format=raw,file="$OUT/boot.img" -boot c)
+else
+    disks=(-drive if=floppy,format=raw,file="$OUT/boot.img" -boot a
+           -drive if=ide,index=0,format=raw,file="$OUT/fat.img")
+fi
 set +e
-timeout "${TIMEOUT:-180}" qemu-system-i386 -machine pc -m 32 -display none \
-    -drive if=floppy,format=raw,file="$OUT/boot.img" -boot a \
-    -drive if=ide,index=0,format=raw,file="$OUT/fat.img" \
+timeout "${TIMEOUT:-180}" qemu-system-i386 -machine pc -m 32 -display none "${disks[@]}" \
     -drive if=ide,index=1,format=raw,file="$OUT/exfat-disk.img" \
     -serial file:"$OUT/serial.log" -device isa-debug-exit,iobase=0xf4,iosize=0x04
 rc=$?
@@ -110,7 +138,7 @@ fail=0
 grep -q '=== END' "$OUT/serial.txt" || { echo "the batch did not end"; fail=1; }
 if test -n "$OPTS"; then
     cmp -s "$OUT/before.img" "$OUT/after.img" || { echo "/R: the volume was changed"; fail=1; }
-    mcopy -n -i "$OUT/fat.img@@32256" ::/BACK.BIN "$OUT/BACK.BIN" 2>/dev/null &&
+    mcopy -n -i "$FAT" ::/BACK.BIN "$OUT/BACK.BIN" 2>/dev/null &&
         { echo "/R: BIG.BIN was copied to D:"; fail=1; }
     if test "$fail" = 0; then echo "EXFAT.SYS /R test passed (qemu rc=$rc)"; else cat "$OUT/serial.txt"; exit 1; fi
     exit 0
@@ -162,7 +190,7 @@ grep -qE '^  BIG\.BIN +20 +400000  04\.03\.2021 05:06' "$OUT/list.txt" ||
     { echo "BIG.BIN lost its time"; grep BIG "$OUT/list.txt"; fail=1; }
 grep -qE '^  NEU +10 ' "$OUT/list.txt" || { echo "NEU is no directory"; fail=1; }
 # the copies back to C:
-mcopy -n -i "$OUT/fat.img@@32256" ::/BACK.BIN ::/SMALL2.TXT "$OUT/" || fail=1
+mcopy -n -i "$FAT" ::/BACK.BIN ::/SMALL2.TXT "$OUT/" || fail=1
 cmp -s "$OUT/BACK.BIN" "$OUT/BIG.BIN" || { echo "differs: C:\\BACK.BIN"; fail=1; }
 cmp -s "$OUT/SMALL2.TXT" "$OUT/SMALL.TXT" || { echo "differs: C:\\SMALL2.TXT"; fail=1; }
-if test "$fail" = 0; then echo "EXFAT.SYS write test (SvarDOS=$SVARDOS${TEXFAT:+, TexFAT=$TEXFAT}${HIGH:+, high}${LFN:+, LFN}) passed (qemu rc=$rc)"; else cat "$OUT/serial.txt"; exit 1; fi
+if test "$fail" = 0; then echo "EXFAT.SYS write test (SvarDOS=$SVARDOS${TEXFAT:+, TexFAT=$TEXFAT}${FREEDOS:+, FreeDOS}${HIGH:+, high}${LFN:+, LFN}) passed (qemu rc=$rc)"; else cat "$OUT/serial.txt"; exit 1; fi

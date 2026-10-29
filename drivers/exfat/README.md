@@ -91,7 +91,8 @@ it), `tests/exfat_image.sh` makes images through the Linux exFAT driver,
 (`tests/exfat_write_test.c`, also TexFAT and a full volume) and checks
 them with fsck.exfat and the Linux exFAT driver,
 `tests/dos_exfat_write.sh` writes through EXFAT.SYS under MS-DOS 7.1
-(`SVARDOS=1`, `TEXFAT=0|1`, `OPTS=/R`, `LFN=1`: EXFATL.SYS, `HIGH=DIR`:
+(`SVARDOS=1`, `FREEDOS=1`: FreeDOS 1.4, `TEXFAT=0|1`, `OPTS=/R`, `LFN=1`:
+EXFATL.SYS, `HIGH=DIR`:
 DEVICEHIGH) with COPY, MD, RD, REN, DEL, ">>" and 6C00h, and checks the
 result on the host,
 `tests/dos_exfat.sh` boots MS-DOS 7.1 (`SVARDOS=1`: SvarDOS) in QEMU with
