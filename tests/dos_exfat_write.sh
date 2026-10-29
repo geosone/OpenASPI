@@ -9,6 +9,8 @@
 # checks D:, and on the host fsck.exfat checks the volume and the Linux
 # exFAT driver must read what DOS wrote.  COPY keeps the time of the file.
 #   OPTS=/R: read-only; every change must fail and the volume stay unchanged
+#   HIGH=DIR: HIMEM.SYS and EMM386.EXE from DIR, DEVICEHIGH=EXFAT.SYS
+#   LFN=1: EXFATL.SYS (long file names) as EXFAT.SYS
 #   TEXFAT=0|1: the exFAT disk as TexFAT (tests/exfat_texfat.py, 1: the
 #   second FAT active); both FATs must stay equal and test_exchk find no
 #   error (fsck.exfat and Linux do not take TexFAT)
@@ -21,9 +23,11 @@ MSDOS_IMG=${MSDOS_IMG:-$ROOT/../msdosinst/out/DISK1.IMG}
 SVARDOS=${SVARDOS:-0}
 OPTS=${OPTS:-}
 TEXFAT=${TEXFAT:-}
+HIGH=${HIGH:-}
+LFN=${LFN:-}
 SVARDOS_ZIP=${SVARDOS_ZIP:-$HOME/Iso/Dos/svardos-20250427-floppy-1.44M.zip}
 
-make -C "$ROOT" build/dos/EXFAT.SYS build/dos/EXCHK.EXE build/dos/LFNTEST.EXE \
+make -C "$ROOT" build/dos/EXFAT.SYS build/dos/EXFATL.SYS build/dos/EXCHK.EXE build/dos/LFNTEST.EXE \
     build/host/test_exfat build/host/test_exchk >/dev/null
 rm -rf "$OUT"
 mkdir -p "$OUT"
@@ -40,7 +44,13 @@ while IFS= read -r file; do
         *) mdel -i "$OUT/boot.img" "$file" ;;
     esac
 done < <(mdir -b -i "$OUT/boot.img" ::/)
-printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' "DEVICE=A:\\EXFAT.SYS $OPTS" > "$OUT/CONFIG.SYS"
+if test -n "$HIGH"; then
+    printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' 'DEVICE=A:\HIMEM.SYS' 'DEVICE=A:\EMM386.EXE NOEMS' \
+        'DOS=HIGH,UMB' "DEVICEHIGH=A:\\EXFAT.SYS $OPTS" > "$OUT/CONFIG.SYS"
+    mcopy -o -i "$OUT/boot.img" "$HIGH/HIMEM.SYS" "$HIGH/EMM386.EXE" ::/
+else
+    printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' "DEVICE=A:\\EXFAT.SYS $OPTS" > "$OUT/CONFIG.SYS"
+fi
 L='A:\LFNTEST'
 {
 printf '%s > AUX\r\n' \
@@ -63,7 +73,10 @@ printf '%s > AUX\r\n' 'TYPE D:\NEU\LOG.TXT' \
     'ECHO === END'
 printf '%s\r\n' 'QEXIT'
 } > "$OUT/AUTOEXEC.BAT"
-mcopy -o -i "$OUT/boot.img" "$OUT/CONFIG.SYS" "$OUT/AUTOEXEC.BAT" "$ROOT/build/dos/EXFAT.SYS" \
+sys=EXFAT.SYS
+if test -n "$LFN"; then sys=EXFATL.SYS; fi
+mcopy -o -i "$OUT/boot.img" "$ROOT/build/dos/$sys" ::/EXFAT.SYS
+mcopy -o -i "$OUT/boot.img" "$OUT/CONFIG.SYS" "$OUT/AUTOEXEC.BAT" \
     "$ROOT/build/dos/EXCHK.EXE" "$ROOT/build/dos/LFNTEST.EXE" "$OUT/QEXIT.COM" ::/
 
 # C: FAT16 with the files to copy; BIG.BIN with a fixed time
@@ -152,4 +165,4 @@ grep -qE '^  NEU +10 ' "$OUT/list.txt" || { echo "NEU is no directory"; fail=1; 
 mcopy -n -i "$OUT/fat.img@@32256" ::/BACK.BIN ::/SMALL2.TXT "$OUT/" || fail=1
 cmp -s "$OUT/BACK.BIN" "$OUT/BIG.BIN" || { echo "differs: C:\\BACK.BIN"; fail=1; }
 cmp -s "$OUT/SMALL2.TXT" "$OUT/SMALL.TXT" || { echo "differs: C:\\SMALL2.TXT"; fail=1; }
-if test "$fail" = 0; then echo "EXFAT.SYS write test (SvarDOS=$SVARDOS${TEXFAT:+, TexFAT=$TEXFAT}) passed (qemu rc=$rc)"; else cat "$OUT/serial.txt"; exit 1; fi
+if test "$fail" = 0; then echo "EXFAT.SYS write test (SvarDOS=$SVARDOS${TEXFAT:+, TexFAT=$TEXFAT}${HIGH:+, high}${LFN:+, LFN}) passed (qemu rc=$rc)"; else cat "$OUT/serial.txt"; exit 1; fi

@@ -1560,7 +1560,23 @@ static int lfn_set(struct regs *r, struct drive *d, struct oa_exfat_file *dir)
     return clean_ok(r, d);
 }
 
+static int lfn_call(struct regs *r);
+
+/* An error of ours must also be DOS's last error (SDA 3: locus, 4: code,
+   6: action, 7: class): COMMAND.COM of MS-DOS 7 asks AH=59h for it. */
 int __cdecl lfn(struct regs *r)
+{
+    int rc = lfn_call(r);
+    if (!rc && (r->flags & 1) && r->ax != 0x7100) {
+        W(sda, 4) = r->ax;
+        sda[3] = 2;                             /* block device */
+        sda[6] = 4;                             /* abort with cleanup */
+        sda[7] = r->ax == E_NOTFOUND || r->ax == E_PATH ? 8 : r->ax == E_ACCESS ? 3 : 13;
+    }
+    return rc;
+}
+
+static int lfn_call(struct regs *r)
 {
     struct oa_exfat_file dir;
     struct lfind *f;
