@@ -520,13 +520,25 @@ load_volume proc near
         and     byte ptr [di+U_XFLAGS], not XF_WPROT
         mov     byte ptr [part_missing], 1      ; until part_select finds it
         call    read_sectors
-        jc      load_failed
+        jnc     load_sector0
+        jmp     load_failed
+load_sector0:
         call    probe_wprot                     ; a medium: protected?
         cmp     word ptr [sector_buf+510], 0AA55h
-        jne     load_bad
+        je      load_signed
+        jmp     load_bad
+load_signed:
         ; a boot sector (superfloppy): jump and 512 bytes per sector
         call    check_boot_sector
         jnc     load_boot_ok
+        call    is_exfat_boot                   ; an exFAT superfloppy:
+        jne     load_table                      ; exfat_detect's (volume 0)
+        cmp     byte ptr [di+U_PART], 0
+        jne     load_exfat_super                ; part_missing still 1
+        mov     byte ptr [part_missing], 0
+load_exfat_super:
+        jmp     load_bad
+load_table:
         ; a partition table: volume U_PART of part_select
         call    part_select                     ; DX:AX start, part_len/type
         jc      load_failed

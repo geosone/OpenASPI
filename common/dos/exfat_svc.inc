@@ -49,7 +49,11 @@ load_volume_x proc near
         call    load_volume
         jnc     load_x_done
         cmp     al, ERR_UNKNOWN_MEDIA
-        je      load_x_exfat
+        jne     load_x_not_unknown
+        cmp     byte ptr [part_missing], 0      ; no such volume: no exFAT
+        jne     load_x_failed
+        jmp     load_x_exfat
+load_x_not_unknown:
         test    byte ptr [di+U_FLAGS], UF_REMOVABLE
         jz      load_x_failed
         ; a changed medium answers NOT READY / UNIT ATTENTION once each
@@ -64,6 +68,8 @@ load_x_again:
         call    load_volume
         jnc     load_x_done
         cmp     al, ERR_UNKNOWN_MEDIA
+        jne     load_x_failed
+        cmp     byte ptr [part_missing], 0
         jne     load_x_failed
 load_x_exfat:
         call    exfat_detect
