@@ -33,7 +33,7 @@ buffer acceptance is not proof of tape finalization.
   or variable-track-table compatibility.
 - Device-specific physical format/media profiles for LS-120/240 and ZIP,
   vendor protection/password operations, and non-512-byte sectors.
-- Detailed capability/live protection sensing, failed/short transport replies,
+- Detailed capability sensing, failed/short transport replies,
   residual-count handling and real mechanism qualification.
 - Runtime attachment like GUEST, original private caller ABIs, selection/
   spin-up options and Windows 9x storage ownership/handover.
@@ -128,6 +128,9 @@ not capabilities established merely by reading a specification.
   MS-DOS 7.1, EUSBASPI, read-only QEMU USB disk answering DATA PROTECT).
   Absolute writes fail with DOS error 00h, DOS writes reach INT 24h with
   error 00h, the unit stays readable and the medium unchanged.
+- [x] Hardware WP sensing: each volume load reads the MODE SENSE WP bit, and
+  writes to a protected medium fail without a command. The 86Box SyQuest test
+  (`WP=1`) checks this with a write-protected cartridge through AHCIASPI.
 - [ ] Qualify MS-DOS track/verify conventions and standard formatting/track
   tables and media profiles independently. Probe live capacity and
   unsupported commands without inferring complete device behavior from a
