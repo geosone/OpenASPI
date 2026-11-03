@@ -106,7 +106,8 @@ else
         'ECHO OPENASPI 86BOX SYQUEST DONE > AUX' > "$OUT/AUTOEXEC.BAT"
 fi
 if [ "$ASPI" = 1 ] && [ "$WP" = 0 ]; then
-    sed -i '1a ASPITEST > AUX\r' "$OUT/AUTOEXEC.BAT"
+    # /R: REASSIGN BLOCKS too; the drive has no SyQuest super-user mode
+    sed -i '1a ASPITEST /R > AUX\r' "$OUT/AUTOEXEC.BAT"
 fi
 mcopy -o -i "$OUT/boot.img" "$OUT/CONFIG.SYS" "$OUT/AUTOEXEC.BAT" ::/
 if [ "$ASPI" != 0 ]; then
@@ -139,6 +140,10 @@ if [ "$ASPI" = 1 ]; then
     want=00
     [ "$WP" = 0 ] || want=80
     tr -d '\r' < "$OUT/serial.log" | grep -q "mode header: .. .. $want "
+fi
+if [ "$ASPI" = 1 ] && [ "$WP" = 0 ]; then
+    # refused at the super-user confirmation: invalid opcode, no F8h sent
+    tr -d '\r' < "$OUT/serial.log" | grep -q 'reassign: .*sense 05/20/00'
 fi
 if [ "$WP" = 1 ]; then
     grep -q 'Live block write protection passed' "$OUT/serial.log"
