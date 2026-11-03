@@ -18,17 +18,23 @@
 ;
 ; ASPIDSK: one DOS unit per volume of a device (part_select: FAT partitions,
 ; then exFAT ones; primaries, then logical drives), or the whole medium of a
-; superfloppy. ASPIFDD: one unit per device, its first volume.  512-byte sectors only.  WRITE uses WRITE(10), WRITE WITH
-; VERIFY uses WRITE AND VERIFY(10) (WRITE(10) + VERIFY(10) without it); a
+; superfloppy. ASPIFDD: one unit per device, its first volume. Sectors of
+; 512, 1024 or 2048 bytes are passed to DOS unchanged (512 shl U_SHIFT, from
+; READ CAPACITY at each volume load); DOS sizes its buffers by the largest BPB
+; seen at INIT (sec_shift_max: media present then, or /SEC:n). A medium with
+; larger sectors than that is refused (not ready); FreeDOS stays at 512.
+; Raw RAW1 access, exFAT, track IOCTLs and SET PARAMETERS take 512 only.
+; WRITE uses WRITE(10), WRITE WITH VERIFY uses WRITE AND VERIFY(10) (WRITE(10) + VERIFY(10) without it); a
 ; write-protected medium reports DOS error 00h. Each volume load reads the
 ; medium's MODE SENSE WP bit (XF_WPROT); writes to it then fail at once.
 ;
-; ASPIFDD takes the type-00 devices with the removable bit whose INQUIRY
+; ASPIFDD takes the type-00/07 devices with the removable bit whose INQUIRY
 ; names a known removable-media drive (fdd_models), ASPIDSK all other type-00
-; devices, so the two drivers never claim the same device.
+; and type-07 (MO) devices, so the two drivers never claim the same device.
 
 MAX_UNITS       equ     16
-CHUNK_SECTORS   equ     64              ; 32 KB per READ(10)
+CHUNK_SECTORS   equ     64              ; 32 KB per READ(10) of 512-byte sectors
+MAX_SHIFT       equ     2               ; sectors of up to 512 shl 2 bytes
 
 ; unit table entry
 ; Per-unit persistent state, not a wire packet. U_START is a physical LBA;
@@ -49,7 +55,8 @@ U_RAW_TOKEN     equ     119
 U_XLEN          equ     121             ; dword: sectors of an exFAT volume
 U_XFLAGS        equ     125
 U_PART          equ     126             ; which volume of the device (part_select)
-UNIT_SIZE       equ     127
+U_SHIFT         equ     127             ; sector size 512 shl n (READ CAPACITY)
+UNIT_SIZE       equ     128
 
 UF_REMOVABLE    equ     01h
 UF_MEDIA        equ     02h
@@ -101,13 +108,17 @@ request_ptr     dd      0
 bpb_pointers    dw      MAX_UNITS dup (0)
 unit_table      db      MAX_UNITS * UNIT_SIZE dup (0)
 unit_ptr        dw      0               ; entry of the current request
-sector_buf      db      512 dup (0)
+; The sector size DOS's buffers hold (512 shl n): the largest of the units
+; at INIT, or /SEC:n. A medium with larger sectors is refused afterwards.
+sec_shift_max   db      0
+sec_shift_grow  db      0               ; INIT: a larger medium raises it
+capacity_fresh  db      0               ; READ CAPACITY done in this request
 fat32_enabled   db      0
 ioctl_bpb_size  dw      BPB_SIZE
 volume_extent   dd      0               ; selected MBR partition length, or 0
 media_id_value  db      23 dup (0)
-media_id_primary db     512 dup (0)
-media_id_verify db      512 dup (0)
+media_id_primary dw     offset sector_buf + 512 ; after sector_buf; INIT sets
+media_id_verify dw      offset sector_buf + 1024 ; them for larger sectors
 media_id_offset dw      0
 media_id_backup dd      0
 media_id_target dd      0
@@ -165,6 +176,7 @@ found_command:
         call    select_unit
         jc      request_failed
         mov     byte ptr [aspi_attention], 0
+        mov     byte ptr [capacity_fresh], 0
         les     bx, [request_ptr]
 ifdef FDD_DRIVER
         mov     di, word ptr [unit_ptr]
@@ -436,8 +448,7 @@ xfer_direction:
         push    dx
         cmp     byte ptr [xfer_opcode], 2Fh
         je      xfer_submit                     ; VERIFY: no payload or pointer
-        mov     ax, 512
-        mul     cx
+        call    sector_bytes                    ; CX sectors -> DX:AX bytes
         mov     word ptr [srb+SRB_BufLen], ax
         mov     word ptr [srb+SRB_BufLen+2], dx
         mov     ax, word ptr [xfer_buffer]
@@ -459,6 +470,52 @@ read_sectors_ok:
         pop     ax
         ret
 xfer_sectors endp
+
+; CX sectors of the current unit -> DX:AX bytes. Preserves all else.
+sector_bytes proc near
+        push    cx
+        push    di
+        mov     di, word ptr [unit_ptr]
+        mov     ax, cx
+        xor     dx, dx
+        mov     cl, byte ptr [di+U_SHIFT]
+        add     cl, 9
+sector_bytes_shift:
+        shl     ax, 1
+        rcl     dx, 1
+        dec     cl
+        jnz     sector_bytes_shift
+        pop     di
+        pop     cx
+        ret
+sector_bytes endp
+
+; Bytes per sector of DI's unit -> AX. Preserves all else.
+unit_bytes proc near
+        push    cx
+        mov     cl, byte ptr [di+U_SHIFT]
+        mov     ax, 512
+        shl     ax, cl
+        pop     cx
+        ret
+unit_bytes endp
+
+; CX sectors for one READ/WRITE(10) of DI's unit -> CX, at most 32 KB.
+; Preserves all else.
+chunk_limit proc near
+        push    ax
+        push    cx
+        mov     ax, CHUNK_SECTORS
+        mov     cl, byte ptr [di+U_SHIFT]
+        shr     ax, cl
+        pop     cx
+        cmp     cx, ax
+        jbe     chunk_limit_done
+        mov     cx, ax
+chunk_limit_done:
+        pop     ax
+        ret
+chunk_limit endp
 
 ; TEST UNIT READY: CF and AL = sense key on failure
 test_unit_ready proc near
@@ -513,13 +570,20 @@ load_volume proc near
         and     byte ptr [di+U_FLAGS], not (UF_MEDIA or UF_FAT32 or UF_BPB_OVERRIDE)
         mov     word ptr [volume_extent], 0
         mov     word ptr [volume_extent+2], 0
+        mov     byte ptr [part_missing], 1      ; until part_select finds it
+        cmp     byte ptr [capacity_fresh], 0    ; the request just read it
+        jne     load_capacity
+        call    block_read_capacity             ; the sector size (U_SHIFT)
+        jnc     load_capacity
+        jmp     load_failed
+load_capacity:
+        mov     byte ptr [capacity_fresh], 0
         mov     word ptr [xfer_buffer], offset sector_buf
         mov     word ptr [xfer_buffer+2], cs
         xor     ax, ax
         xor     dx, dx
         mov     cx, 1
         and     byte ptr [di+U_XFLAGS], not XF_WPROT
-        mov     byte ptr [part_missing], 1      ; until part_select finds it
         call    read_sectors
         jnc     load_sector0
         jmp     load_failed
@@ -872,7 +936,8 @@ check_boot_sector proc near
         cmp     al, 0E9h
         jne     check_no
 check_bpb:
-        cmp     word ptr [sector_buf+0Bh+BPB_BYTES], 512
+        call    unit_bytes
+        cmp     word ptr [sector_buf+0Bh+BPB_BYTES], ax
         jne     check_no
         cmp     byte ptr [sector_buf+0Bh+BPB_SPC], 0
         je      check_no
@@ -936,7 +1001,9 @@ fat32_copies_valid:
         mov     dx, word ptr [sector_buf+34]
         sub     bx, ax
         sbb     dx, 0
-        jc      fat32_size_bad
+        jnc     fat32_data_left
+        jmp     fat32_size_bad
+fat32_data_left:
         xor     ax, ax
         mov     al, byte ptr [sector_buf+16]
         mov     si, ax
@@ -980,8 +1047,8 @@ fat32_check_root:
         jb      fat32_check_fat_entries
         cmp     word ptr [sector_buf+44], bx
         ja      fat32_size_bad
-; A 512-byte FAT32 sector holds 128 entries: shift FAT sectors left seven
-; bits and compare against cluster_count+2. If the high word of FAT sectors is
+; A FAT32 sector holds bytes/4 entries (128 for 512 bytes): shift FAT sectors
+; left 7+U_SHIFT bits and compare against cluster_count+2. If the high word of FAT sectors is
 ; already >=20h, capacity covers the supported cluster range; avoid overflowing
 ; a 32-bit shift just to prove a bound that is already satisfied.
 fat32_check_fat_entries:
@@ -991,7 +1058,12 @@ fat32_check_fat_entries:
         mov     cx, word ptr [sector_buf+38]
         cmp     cx, 20h                        ; already covers max FAT32 clusters
         jae     fat32_size_ok
-        mov     si, 7
+        push    ax
+        mov     al, byte ptr [di+U_SHIFT]
+        add     al, 7
+        xor     ah, ah
+        mov     si, ax
+        pop     ax
 fat32_entry_count:
         shl     ax, 1
         rcl     cx, 1
@@ -1295,9 +1367,7 @@ read_loop:
         or      si, si
         jz      read_done
         mov     cx, si
-        cmp     cx, CHUNK_SECTORS
-        jbe     read_chunk
-        mov     cx, CHUNK_SECTORS
+        call    chunk_limit
 read_chunk:
         push    es
         push    bx
@@ -1351,10 +1421,12 @@ read_chunk_ok:
         adc     dx, 0
         push    ax
         push    cx
-        mov     ax, cx
-        mov     cl, 5                           ; 512 bytes = 32 paragraphs
-        shl     ax, cl
+        push    dx
+        call    sector_bytes                    ; < 64 KB: chunk_limit
+        mov     cl, 4
+        shr     ax, cl                          ; paragraphs
         add     word ptr [xfer_buffer+2], ax
+        pop     dx
         pop     cx
         pop     ax
         jmp     read_loop
@@ -1757,7 +1829,9 @@ set_id_volume_ready:
         xor     dx, dx
         add     ax, word ptr [di+U_START]
         adc     dx, word ptr [di+U_START+2]
-        jc      set_id_media_bad
+        jnc     set_id_backup_lba
+        jmp     set_id_media_bad
+set_id_backup_lba:
         mov     word ptr [media_id_backup], ax
         mov     word ptr [media_id_backup+2], dx
 set_id_signature:
@@ -1766,9 +1840,10 @@ set_id_signature:
         jne     set_id_media_bad
         push    cs
         pop     es
+        call    unit_bytes
+        mov     cx, ax
         mov     si, offset sector_buf
-        mov     di, offset media_id_primary
-        mov     cx, 512
+        mov     di, word ptr [media_id_primary]
         rep     movsb
         mov     ax, word ptr [media_id_backup]
         mov     dx, word ptr [media_id_backup+2]
@@ -1783,7 +1858,8 @@ set_id_signature:
         cmp     byte ptr [sector_buf+42h], 29h
         jne     set_id_media_bad
         mov     si, offset sector_buf+0Bh
-        mov     di, offset media_id_primary+0Bh
+        mov     di, word ptr [media_id_primary]
+        add     di, 0Bh
         mov     cx, BPB_STORE_SIZE
         repe    cmpsb
         jne     set_id_media_bad
@@ -1792,9 +1868,11 @@ set_id_signature:
         call    write_media_id_sector
         jc      set_id_failed
 set_id_primary:
-        mov     si, offset media_id_primary
+        mov     di, word ptr [unit_ptr]
+        call    unit_bytes
+        mov     cx, ax
+        mov     si, word ptr [media_id_primary]
         mov     di, offset sector_buf
-        mov     cx, 512
         rep     movsb
         mov     di, word ptr [unit_ptr]
         mov     ax, word ptr [di+U_START]
@@ -1829,16 +1907,19 @@ write_media_id_sector proc near
         mov     cx, 1
         call    xfer_sectors
         jc      write_id_done
-        mov     word ptr [xfer_buffer], offset media_id_verify
+        mov     ax, word ptr [media_id_verify]
+        mov     word ptr [xfer_buffer], ax
         mov     word ptr [xfer_buffer+2], cs
         mov     ax, word ptr [media_id_target]
         mov     dx, word ptr [media_id_target+2]
         mov     cx, 1
         call    read_sectors
         jc      write_id_done
+        mov     di, word ptr [unit_ptr]
+        call    unit_bytes
+        mov     cx, ax
         mov     si, offset sector_buf
-        mov     di, offset media_id_verify
-        mov     cx, 512
+        mov     di, word ptr [media_id_verify]
         repe    cmpsb
         je      write_id_ok
         mov     al, ERR_WRITE
@@ -2005,10 +2086,19 @@ default_bpb     dw      512
                 dd      0,0
                 db      BPB_STORE_SIZE-BPB_SIZE dup (0)
 
+; INIT: the largest sector size for DOS's buffers, when no unit's BPB has it
+; (/SEC:n for media inserted later); default_bpb scaled to it
+big_bpb         db      BPB_STORE_SIZE dup (0)
+
 caller_ss       dw      0
 caller_sp       dw      0
 driver_stack    db      768 dup (0)
 driver_stack_top label byte
+
+; Three sector buffers, last: sector_buf, then the Media-ID primary and verify
+; copies. INIT uses room for the largest sectors; what stays resident is three
+; of sec_shift_max (init_installed), so 512-byte setups do not pay for it.
+sector_buf      db      3 * (512 shl MAX_SHIFT) dup (0)
 
 resident_end label byte
 
@@ -2030,9 +2120,13 @@ dev_units       db      0               ; units of the device being added
 ;   /PAUSE                wait for a key after the messages
 ;   /R:n                  ASPIDSK: letters for each removable device, at
 ;                         least n (1..8, default 1); an empty reader gets one
+;   /SEC:n                sectors of up to n bytes (512, 1024, 2048) for media
+;                         inserted later; DOS's buffers grow to n (not on
+;                         FreeDOS, whose kernel keeps 512-byte buffers)
 opt_nospinup    db      0
 opt_pause       db      0
 opt_reserve     db      1
+opt_sec         db      0               ; /SEC:n given
 ID_MAX          equ     8
 id_count        db      0
 id_list         dw      ID_MAX dup (0)  ; low byte target, high byte HA or 0FFh
@@ -2041,8 +2135,155 @@ kw_nospinup     db      'NOSPINUP', 0
 kw_pause        db      'PAUSE', 0
 kw_id           db      'ID', 0
 kw_r            db      'R', 0
+kw_sec          db      'SEC', 0
 msg_pause       db      'Press any key to continue . . .', 13, 10, '$'
 msg_bad_option  db      '  Unknown option ignored', 13, 10, '$'
+
+; DOS sizes its sector buffers by the largest bytes-per-sector of the BPBs
+; drivers hand over at INIT. If no unit's BPB has sec_shift_max (/SEC:n, or
+; a larger medium gone again), the first removable unit hands over big_bpb
+; instead and is marked changed, so its first MEDIA CHECK asks for a BPB.
+; Without a removable unit nothing can grow, and sec_shift_max drops to what
+; the units have. Then the Media-ID buffers follow sector_buf. -> AX = the
+; end of the resident part.
+init_sector_size proc near
+        push    bx
+        push    cx
+        push    si
+        push    di
+        mov     cl, byte ptr [sec_shift_max]
+        mov     ax, 512
+        shl     ax, cl
+        mov     dx, ax                          ; bytes DOS needs to learn
+        xor     bx, bx                          ; largest handed over
+        mov     di, offset unit_table
+        xor     si, si
+iss_scan:
+        mov     ax, si
+        cmp     al, byte ptr [unit_count]
+        jae     iss_scanned
+        shl     si, 1
+        push    di
+        mov     di, word ptr [bpb_pointers+si]
+        mov     ax, word ptr [di+BPB_BYTES]
+        pop     di
+        shr     si, 1
+        cmp     ax, bx
+        jbe     iss_scan_next
+        mov     bx, ax
+iss_scan_next:
+        inc     si
+        jmp     short iss_scan
+iss_scanned:
+        cmp     bx, dx
+        jae     iss_sized
+        ; a removable unit to hand over big_bpb
+        mov     di, offset unit_table
+        xor     si, si
+iss_removable:
+        mov     ax, si
+        cmp     al, byte ptr [unit_count]
+        jae     iss_shrink
+        test    byte ptr [di+U_FLAGS], UF_REMOVABLE
+        jnz     iss_big
+        add     di, UNIT_SIZE
+        inc     si
+        jmp     short iss_removable
+iss_shrink:
+        xor     cl, cl                          ; 512 shl CL >= BX
+iss_shrink_next:
+        mov     ax, 512
+        shl     ax, cl
+        cmp     ax, bx
+        jae     iss_shrunk
+        inc     cl
+        jmp     short iss_shrink_next
+iss_shrunk:
+        mov     byte ptr [sec_shift_max], cl
+        jmp     short iss_sized
+iss_big:
+        or      byte ptr [di+U_XFLAGS], XF_CHANGED
+        shl     si, 1
+        mov     word ptr [bpb_pointers+si], offset big_bpb
+        push    es
+        push    cs
+        pop     es
+        push    di
+        mov     si, offset default_bpb
+        mov     di, offset big_bpb
+        mov     cx, BPB_STORE_SIZE
+        rep     movsb
+        pop     di
+        pop     es
+        ; default_bpb (1.44 MB, 512-byte sectors) in sectors of DX bytes
+        mov     word ptr [big_bpb+BPB_BYTES], dx
+        mov     cl, byte ptr [sec_shift_max]
+        shr     word ptr [big_bpb+BPB_TOTAL16], cl
+        mov     ax, 1
+        shl     ax, cl
+        dec     ax
+        add     ax, word ptr [big_bpb+BPB_FATSIZE]
+        shr     ax, cl
+        mov     word ptr [big_bpb+BPB_FATSIZE], ax
+iss_sized:
+        mov     cl, byte ptr [sec_shift_max]
+        mov     ax, 512
+        shl     ax, cl
+        mov     bx, offset sector_buf
+        add     bx, ax
+        mov     word ptr [media_id_primary], bx
+        add     bx, ax
+        mov     word ptr [media_id_verify], bx
+        add     bx, ax
+        mov     ax, bx
+        pop     di
+        pop     si
+        pop     cx
+        pop     bx
+        ret
+init_sector_size endp
+
+; decimal number at DS:SI -> AX; CF if none or above 65535
+po_word proc near
+        push    bx
+        push    cx
+        push    dx
+        xor     bx, bx
+        mov     cx, 0FFFFh                      ; no digit yet
+po_word_next:
+        mov     al, byte ptr [si]
+        sub     al, '0'
+        jb      po_word_end
+        cmp     al, 9
+        ja      po_word_end
+        inc     si
+        xor     cx, cx
+        xor     ah, ah
+        push    ax
+        mov     ax, 10
+        mul     bx
+        pop     bx
+        jc      po_word_bad
+        add     ax, bx
+        jc      po_word_bad
+        mov     bx, ax
+        jmp     short po_word_next
+po_word_end:
+        cmp     cx, 0FFFFh
+        je      po_word_bad
+        mov     ax, bx
+        pop     dx
+        pop     cx
+        pop     bx
+        clc
+        ret
+po_word_bad:
+        pop     dx
+        pop     cx
+        pop     bx
+        stc
+        ret
+po_word endp
 
 ; Parse the CONFIG.SYS line after the driver path. Unknown options are
 ; reported and ignored.
@@ -2111,16 +2352,40 @@ po_not_pause:
         call    po_is
         jne     po_not_r
         call    po_value
-        jc      po_bad
+        jc      po_bad_near
         call    po_number
-        jc      po_bad
+        jc      po_bad_near
         or      al, al
-        jz      po_bad
+        jz      po_bad_near
         cmp     al, 8
-        ja      po_bad
+        ja      po_bad_near
         mov     byte ptr cs:[opt_reserve], al
         jmp     po_next
+po_bad_near:
+        jmp     po_bad
 po_not_r:
+        mov     di, offset kw_sec
+        call    po_is
+        jne     po_not_sec
+        call    po_value
+        jc      po_bad_near
+        call    po_word
+        jc      po_bad_near
+        xor     cl, cl
+po_sec_size:
+        mov     dx, 512
+        shl     dx, cl
+        cmp     ax, dx
+        je      po_sec_ok
+        inc     cl
+        cmp     cl, MAX_SHIFT
+        jbe     po_sec_size
+        jmp     po_bad
+po_sec_ok:
+        mov     byte ptr cs:[sec_shift_max], cl
+        mov     byte ptr cs:[opt_sec], 1
+        jmp     po_next
+po_not_sec:
         mov     di, offset kw_id
         call    po_is
         jne     po_bad
@@ -2316,8 +2581,8 @@ init_pause_done:
         ret
 init_pause endp
 
-; INIT registers devices, not merely inserted media. Classify type-00
-; candidates, check manager/DOS ownership, and allocate at most MAX_UNITS.
+; INIT registers devices, not merely inserted media. Classify type-00 and
+; type-07 (MO) candidates, check manager/DOS ownership, and allocate at most MAX_UNITS.
 ; ASPIFDD can register a placeholder for an empty/unrecognized drive; ASPIDSK
 ; requires a supported FAT volume before adding a unit. Runtime BPB refresh
 ; must not call this transient discovery code after DOS has reclaimed it.
@@ -2327,6 +2592,7 @@ init_request:
         mov     al, byte ptr es:[bx+RH_INIT_DRIVE]
         mov     byte ptr [first_drive], al
         call    parse_options
+        call    detect_sector_kernel            ; larger sectors: which DOS
         mov     dx, offset msg_banner
         mov     ah, 09h
         int     21h
@@ -2342,7 +2608,10 @@ init_next_device:
         jmp     init_scan_done
 init_device:
         cmp     byte ptr [scan_type], ASPI_DEV_DISK
+        je      init_disk_type
+        cmp     byte ptr [scan_type], ASPI_DEV_OPTICAL  ; MO: a disk too
         jne     init_next_device
+init_disk_type:
         call    id_selected                     ; /ID: one of these?
         jc      init_next_device
         mov     al, byte ptr [unit_count]
@@ -2366,6 +2635,8 @@ endif
         mul     ah
         add     ax, offset unit_table
         mov     di, ax
+        mov     word ptr [unit_ptr], di         ; for the transfers below
+        mov     byte ptr [di+U_SHIFT], 0
         mov     al, byte ptr [scan_ha]
         mov     byte ptr [di+U_HA], al
         mov     al, byte ptr [scan_target]
@@ -2461,6 +2732,9 @@ ifndef FDD_DRIVER
         jae     init_device_full
         mov     si, di
         add     di, UNIT_SIZE
+        mov     word ptr [unit_ptr], di
+        mov     al, byte ptr [si+U_SHIFT]
+        mov     byte ptr [di+U_SHIFT], al
         mov     al, byte ptr [si+U_HA]
         mov     byte ptr [di+U_HA], al
         mov     al, byte ptr [si+U_TARGET]
@@ -2484,6 +2758,7 @@ init_scan_done:
         jne     init_installed
         mov     dx, offset msg_no_device
 init_failed:
+        mov     byte ptr [sec_shift_grow], 0
         mov     ah, 09h
         int     21h
         les     bx, [request_ptr]
@@ -2494,10 +2769,12 @@ init_failed:
         call    init_pause
         jmp     request_done
 init_installed:
+        mov     byte ptr [sec_shift_grow], 0
+        call    init_sector_size                ; -> AX = resident end
         les     bx, [request_ptr]
+        mov     word ptr es:[bx+RH_INIT_END], ax
         mov     al, byte ptr [unit_count]
         mov     byte ptr es:[bx+RH_INIT_UNITS], al
-        mov     word ptr es:[bx+RH_INIT_END], offset resident_end
         mov     word ptr es:[bx+RH_INIT_END+2], cs
         mov     word ptr es:[bx+RH_INIT_ARGS], offset bpb_pointers
         mov     word ptr es:[bx+RH_INIT_ARGS+2], cs
@@ -2700,6 +2977,31 @@ print_digit endp
 ; Initialization-only feature gate: a FAT32-looking BPB alone cannot make an
 ; older DOS kernel understand the extended block interface. Record a positive
 ; kernel qualification before advertising the corresponding IOCTL capability.
+; Can the kernel take sectors larger than 512 bytes? MS-DOS 7.1 and EDR-DOS
+; (SvarDOS) size their buffers by the BPBs drivers hand over at INIT. The
+; FreeDOS kernel (OEM FDh) keeps 512-byte buffers, and a larger BPB breaks its
+; other drives: there ASPIDSK stays at 512 bytes, /SEC:n is ignored, larger
+; media are refused.
+detect_sector_kernel proc near
+        mov     ah, 30h
+        int     21h
+        cmp     bh, 0FDh                        ; FreeDOS
+        jne     sector_kernel_large
+        mov     byte ptr [sec_shift_max], 0
+        mov     byte ptr [sec_shift_grow], 0
+        cmp     byte ptr [opt_sec], 0
+        je      sector_kernel_done
+        mov     dx, offset msg_sec_freedos
+        mov     ah, 09h
+        int     21h
+        ret
+sector_kernel_large:
+        mov     byte ptr [sec_shift_grow], 1    ; media found now size DOS
+sector_kernel_done:
+        ret
+detect_sector_kernel endp
+msg_sec_freedos db      '  /SEC ignored: FreeDOS takes 512-byte sectors only', 13, 10, '$'
+
 detect_fat32_kernel proc near
         push    es
         push    ds

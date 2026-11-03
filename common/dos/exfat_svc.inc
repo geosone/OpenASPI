@@ -127,6 +127,10 @@ is_exfat_boot endp
 
 ; Finds an exFAT volume on DI's unit: CF clear, U_START and U_XLEN set.
 exfat_detect proc near
+        cmp     byte ptr [di+U_SHIFT], 0        ; EXFAT.SYS: 512-byte sectors
+        je      exfat_sector_size
+        jmp     exfat_none
+exfat_sector_size:
         mov     word ptr [xfer_buffer], offset sector_buf
         mov     word ptr [xfer_buffer+2], cs
         xor     ax, ax

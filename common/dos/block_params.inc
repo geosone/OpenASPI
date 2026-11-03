@@ -72,10 +72,12 @@ params_size_ready:
         jne params_classic
         cmp word ptr [parameter_size],BPB_STORE_SIZE
         PB_CHECK je,params_media_bad
+        mov di,word ptr [unit_ptr]
         call check_boot_sector
         PB_CHECK jnc,params_media_bad
         jmp short params_bpb_valid
 params_classic:
+        mov di,word ptr [unit_ptr]
         call check_boot_sector
         PB_CHECK jnc,params_media_bad
         call validate_classic_parameters
@@ -101,6 +103,8 @@ params_bpb_valid:
         mov di,offset parameter_shadow
         call block_read_capacity
         PB_CHECK jnc,params_device_failed
+        cmp byte ptr [parameter_shadow+U_SHIFT],0 ; the FAT checks above
+        PB_CHECK je,params_media_bad              ; assume 512-byte sectors
         call load_volume
         PB_CHECK jnc,params_device_failed
         mov ax,word ptr [parameter_candidate+7+BPB_HIDDEN]

@@ -117,6 +117,13 @@ dos-disk-smoke: all
 	FDD=1 bash tests/dos_disk_protect.sh
 	bash tests/dos_partitions.sh
 	bash tests/dos_aspidsk_options.sh
+	bash tests/dos_sector2048.sh
+	LAYOUT=mbr bash tests/dos_sector2048.sh
+	SEC=1 bash tests/dos_sector2048.sh
+	SEC=none bash tests/dos_sector2048.sh
+	KERNEL=freedos bash tests/dos_sector2048.sh
+	KERNEL=svardos bash tests/dos_sector2048.sh
+	KERNEL=svardos SEC=1 bash tests/dos_sector2048.sh
 
 dos-media-smoke: all
 	bash tests/dos_media_control.sh

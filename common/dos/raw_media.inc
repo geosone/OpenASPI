@@ -59,6 +59,12 @@ raw_info:
         call    raw_set_error
         ret
 raw_capacity_ready:
+        cmp     byte ptr [di+U_SHIFT], 0        ; RAW1 counts 512-byte sectors
+        je      raw_sector_size_ok
+        mov     al, ERR_UNKNOWN_MEDIA
+        stc
+        ret
+raw_sector_size_ok:
         call    load_volume
         jnc     raw_volume_ready
         cmp     al, ERR_UNKNOWN_MEDIA

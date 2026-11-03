@@ -100,3 +100,4 @@ ASPI_SRB_SIZE           equ     SRB_CDB + 16 + 32
 ASPI_DEV_DISK           equ     00h
 ASPI_DEV_TAPE           equ     01h
 ASPI_DEV_CDA            equ     05h
+ASPI_DEV_OPTICAL        equ     07h     ; optical memory (MO)

@@ -278,7 +278,10 @@ match_not_tape:
         ret
 match_direct:
         cmp     byte ptr [device_type], ASPI_DEV_DISK
+        je      match_disk_type
+        cmp     byte ptr [device_type], ASPI_DEV_OPTICAL ; MO: ASPIDSK's too
         jne     match_done
+match_disk_type:
         cmp     byte ptr [srb+SRB_Status], SS_COMP
         jne     match_done
         call    is_fdd_model

@@ -11,6 +11,7 @@
         include common/aspi/dos_aspi.inc
         include common/dos/devreq.inc
         include common/dos/blkdrv.inc
+        include tests/fake_capacity.inc
 msg_banner db '$'
 msg_no_device db '$'
 CHECK_EQUAL macro
@@ -200,6 +201,7 @@ BAD_IF_NOT_EQUAL macro
 expected:
 endm
 fake_aspi proc far
+        FAKE_CAPACITY
         inc word ptr cs:[calls]
         cmp word ptr cs:[srb+SRB_CDB+2], 3412h
         BAD_IF_NOT_EQUAL

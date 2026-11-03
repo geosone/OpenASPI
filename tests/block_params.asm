@@ -197,7 +197,7 @@ invalid_done:
         EQCHECK
         mov byte ptr [fault],0
         mov byte ptr [packet+RH_COMMAND],CMD_BUILD_BPB
-        SEND ST_DONE,1
+        SEND ST_DONE,2                  ; READ CAPACITY, then the boot sector
         cmp word ptr [unit_table+U_BPB+BPB_SPT],18
         EQCHECK
         ; A READ that consumes UNIT ATTENTION must still yield one changed
@@ -232,7 +232,7 @@ else
 endif
         EQCHECK
         mov byte ptr [packet+RH_COMMAND],CMD_BUILD_BPB
-        SEND ST_DONE,1
+        SEND ST_DONE,2                  ; READ CAPACITY, then the boot sector
         cmp word ptr [unit_table+U_BPB+BPB_SPT],18
         EQCHECK
         push cs
@@ -308,7 +308,7 @@ endif
         cmp byte ptr [packet+RH_MEDIA_RET],0
         EQCHECK
         mov byte ptr [packet+RH_COMMAND],CMD_BUILD_BPB
-        SEND ST_DONE,1
+        SEND ST_DONE,2                  ; READ CAPACITY, then the boot sector
         cmp word ptr [unit_table+U_BPB+BPB_SPT],32
         EQCHECK
         cmp byte ptr [bad],0

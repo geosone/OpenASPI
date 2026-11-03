@@ -27,6 +27,7 @@ FDD_DRIVER equ 1
 msg_banner db '$'
 msg_no_device db '$'
 endif
+        include tests/fake_capacity.inc
 
 CHECK_EQ macro
         local good
@@ -412,6 +413,7 @@ submit proc near
 submit endp
 
 fake_aspi proc far
+        FAKE_CAPACITY
         inc word ptr cs:[calls]
         cmp byte ptr cs:[srb+SRB_Cmd], SC_RESET_DEV
         jne fake_exec

@@ -11,6 +11,7 @@ endif
         include common/aspi/dos_aspi.inc
         include common/dos/devreq.inc
         include common/dos/blkdrv.inc
+        include tests/fake_capacity.inc
 msg_banner db '$'
 msg_no_device db '$'
 EQUAL macro
@@ -225,6 +226,7 @@ data_packet proc near
         ret
 data_packet endp
 fake_aspi proc far
+        FAKE_CAPACITY
         inc word ptr [calls]
         mov byte ptr [srb+SRB_Status],SS_COMP
         cmp byte ptr [fault],0

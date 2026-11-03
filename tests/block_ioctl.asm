@@ -12,6 +12,7 @@ endif
         include common/aspi/dos_aspi.inc
         include common/dos/devreq.inc
         include common/dos/blkdrv.inc
+        include tests/fake_capacity.inc
 msg_banner db '$'
 msg_no_device db '$'
 
@@ -425,6 +426,7 @@ unchanged_id_bytes::
 unchanged_id endp
 
 fake_aspi proc far
+        FAKE_CAPACITY
         ; MODE SENSE, the WP probe of each volume load: not counted, no WP
         cmp byte ptr cs:[srb+SRB_CDB],1Ah
         jne fake_not_wp_probe

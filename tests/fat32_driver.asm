@@ -9,6 +9,7 @@ FDD_DRIVER equ 1
         include common/aspi/dos_aspi.inc
         include common/dos/devreq.inc
         include common/dos/blkdrv.inc
+        include tests/fake_capacity.inc
 msg_banner db '$'
 msg_no_device db '$'
 CHECK_EQ macro
@@ -80,6 +81,7 @@ start:
         mov di, offset sector_buf
         mov cx, 512
         rep movsb
+        mov di, offset unit_table               ; check_boot_sector: DI = unit
         VALID
         mov byte ptr [sector_buf+13], 3
         INVALID
@@ -155,6 +157,7 @@ failed:
         mov ax, 4C01h
         int 21h
 fake_aspi proc far
+        FAKE_CAPACITY
         push cs
         pop ds
         ; MODE SENSE, the WP probe: a 4-byte buffer, no WP bit

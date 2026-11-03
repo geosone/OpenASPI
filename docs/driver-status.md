@@ -34,12 +34,13 @@ buffer acceptance is not proof of tape finalization.
 - Physical formatting on real LS-120/240 and ZIP drives (ASPIFDD sends
   FORMAT UNIT through 42h, tested against a mock and 86Box only; see
   [formatting](block-format.md)), vendor protection/password operations,
-  and non-512-byte sectors.
+  and real MO drives (1024/2048-byte sectors are tested in QEMU with
+  MS-DOS 7.1 and EDR-DOS/SvarDOS; raw, exFAT and track access take 512-byte sectors only).
 - Detailed capability sensing, failed/short transport replies,
   residual-count handling and real mechanism qualification.
 - Runtime attachment like GUEST, original private caller ABIs and Windows
-  9x storage ownership/handover. (`/ID:`, `/NOSPINUP`, `/PAUSE` and `/R:n`
-  are implemented.)
+  9x storage ownership/handover. (`/ID:`, `/NOSPINUP`, `/PAUSE`, `/R:n`
+  and `/SEC:n` are implemented.)
 
 FAT32 now has a tested FreeDOS path. Broad MS-DOS 7.1 and Windows 9x/me
 compatibility still needs dedicated qualification. A read surface scan can

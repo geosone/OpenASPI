@@ -67,7 +67,8 @@ ASPIDSK needs at least 60h, 66h, 46h, 47h/67h and 61h.
 
 ## ASPIDISK behavior
 
-- Options `/pause`, `/nospinup`, `/id=` (targets to use).
+- Options `/pause`, `/nospinup`, `/id=` (targets to use). OpenASPI adds
+  `/R:n` and `/SEC:n` (sector size for media inserted after boot).
 - Devices handled by the host adapter BIOS (INT 13h) are skipped ("Handled
   by Host Adapter BIOS"); ASPIDSK must do the same to avoid two drive
   letters for one disk with Adaptec BIOS adapters.  AHCIASPI and EUSBASPI do
@@ -112,7 +113,7 @@ because Ghidra found a function.
 
 | Area | Current ASPIDSK | Required evidence before full compatibility |
 |---|---|---|
-| FAT12/FAT16 data I/O | Implemented for one selected volume, 512-byte sectors | Retain success/error, large-LBA, buffer/chunk and image-consistency tests |
+| FAT12/FAT16 data I/O | Implemented per volume, 512-, 1024- and 2048-byte sectors | Retain success/error, large-LBA, buffer/chunk and image-consistency tests |
 | WRITE WITH VERIFY | Combined command, with WRITE+VERIFY fallback | Memory tests check both chunks, no-data VERIFY and failures of WRITE/VERIFY; device qualification remains |
 | Parameters / Media-ID | 40h/60h logical BPBs, 66h reads, verified 46h writes including FAT32 backup | Track-table modes and real device qualification remain open; see [parameter scope](block-parameters.md) |
 | Software access flag / logical mapping | Per-unit 47h/67h with normal block-I/O enforcement; 17h/18h report no alternate mapping | Resident tests for both variants and live DOS calls pass; see [access behavior](block-access.md). Hardware protection and Windows locks remain separate |
@@ -121,8 +122,8 @@ because Ghidra found a function.
 | Multiple primary/extended partitions | One unit per FAT/exFAT volume: primaries, then the extended chain (loop guard), tested in `tests/dos_partitions.sh` | GPT is not read |
 | Removable reserved letters / identity | `/R:n` letters per removable device; siblings share media change | Empty-media boot, replacement media with changed partitioning, stable letters and stale-cache rejection |
 | BIOS-owned devices | GET DISK INFO filtering and unsupported-manager fallback, tested through INIT | Actual Adaptec hardware and accurate motherboard/USB BIOS mappings in managers remain unqualified; see [ownership details](block-ownership.md) |
-| Spin-up and options | `/ID:`, `/NOSPINUP`, `/PAUSE`, `/R:n` (reserved letters); START STOP UNIT for drives reporting 02/04 | `tests/block_ownership.asm` (spin-up, `/NOSPINUP`), `tests/dos_aspidsk_options.sh` |
-| Floptical and other sector sizes | Generic 512-byte path only | Device profiles, logical/physical sector translation and separately qualified formatting |
+| Spin-up and options | `/ID:`, `/NOSPINUP`, `/PAUSE`, `/R:n` (reserved letters), `/SEC:n`; START STOP UNIT for drives reporting 02/04 | `tests/block_ownership.asm` (spin-up, `/NOSPINUP`), `tests/dos_aspidsk_options.sh` |
+| Other sector sizes (MO) | Native 1024/2048-byte sectors passed to DOS (no translation); type-07 devices accepted; DOS buffers sized at INIT from present media or `/SEC:n`; too large media refused. `tests/dos_sector2048.sh`: MS-DOS 7.1 and EDR-DOS (SvarDOS) read/write/verify, superfloppy and MBR, medium inserted later; FreeDOS 1.4 refuses (512-byte kernel buffers) | Raw RAW1, exFAT, track IOCTLs and SET PARAMETERS stay 512-only; real MO drives and formatting unqualified; Floptical profiles open |
 | Private 7-byte ABI | Not implemented | Exact fields and behavior verified with callers; never expose unchecked internal state |
 
 The two core drivers intentionally share implementation and tests. ZIP and
@@ -150,7 +151,8 @@ services must not make ASPIDSK claim those same targets.
    ([formatting](block-format.md)).
 3. ASPIDSK: remaining FAT32/category-48
    compatibility and MS-DOS 7.1 qualification.
-4. Sector sizes other than 512 (MO media with 2048-byte sectors).
+4. Done: sector sizes other than 512 (MO media with 2048-byte sectors), see
+   the table above. Open: 2048-byte raw/exFAT/track paths and real MO drives.
 
 ## Iomega GUEST.EXE
 
