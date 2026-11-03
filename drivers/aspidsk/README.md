@@ -16,6 +16,9 @@ Implemented behavior:
   VERIFY(10), WRITE(10) followed by VERIFY(10) where the combined command is
   unsupported); 512-byte sectors, up to
   64 sectors per command.  A write-protected medium reports DOS error 00h.
+  When a medium is read in, MODE SENSE asks for its WP bit; a protected
+  medium then fails writes at once, without sending them. A device that
+  doesn't report the bit is written to, and its own refusal gives the error.
 - Media check and BUILD BPB for devices with the removable bit (USB
   sticks, card readers): a new medium is read again.
 - exFAT media (superfloppy or primary MBR partition of type 07h) for

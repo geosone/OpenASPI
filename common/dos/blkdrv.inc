@@ -20,7 +20,8 @@
 ; medium, or the whole medium of a superfloppy (no partition table, as on
 ; LS-120 disks).  512-byte sectors only.  WRITE uses WRITE(10), WRITE WITH
 ; VERIFY uses WRITE AND VERIFY(10) (WRITE(10) + VERIFY(10) without it); a
-; write-protected medium reports DOS error 00h.
+; write-protected medium reports DOS error 00h. Each volume load reads the
+; medium's MODE SENSE WP bit (XF_WPROT); writes to it then fail at once.
 ;
 ; ASPIFDD takes the type-00 devices with the removable bit whose INQUIRY
 ; names a known removable-media drive (fdd_models), ASPIDSK all other type-00
@@ -61,6 +62,10 @@ UF_EXFAT        equ     80h            ; exFAT volume for EXFAT.SYS, no DOS I/O
 ; Change not yet reported by MEDIA CHECK: seen first by EXFAT.SYS, or a
 ; removable UNIT ATTENTION. DOS data I/O waits for that report.
 XF_CHANGED      equ     01h
+; The medium's MODE SENSE header has WP set: writes fail at once with DOS
+; error 00h, as the drive would refuse them. Probed with each volume load,
+; cleared with the medium. A device without the bit just leaves it clear.
+XF_WPROT        equ     02h
 
 ; BPB offsets (from the boot sector offset 0Bh)
 BPB_BYTES       equ     0
@@ -225,6 +230,7 @@ latch_unit_attention proc near
         jz      latch_attention_fixed
         and     byte ptr [di+U_FLAGS], not (UF_MEDIA or UF_BPB_OVERRIDE)
         or      byte ptr [di+U_XFLAGS], XF_CHANGED
+        and     byte ptr [di+U_XFLAGS], not XF_WPROT
 latch_attention_fixed:
         pop     di
 latch_attention_done:
@@ -313,6 +319,20 @@ read_sectors endp
 ; the same LBA/count path. This transport helper does not add U_START or apply
 ; DOS volume policy; its caller must validate the chosen address space first.
 xfer_sectors proc near
+        cmp     byte ptr [xfer_opcode], 2Ah     ; WRITE / WRITE AND VERIFY
+        je      xfer_write
+        cmp     byte ptr [xfer_opcode], 2Eh
+        jne     xfer_go
+xfer_write:
+        push    di
+        mov     di, word ptr [unit_ptr]
+        test    byte ptr [di+U_XFLAGS], XF_WPROT
+        pop     di
+        jz      xfer_go
+        mov     al, ERR_WRITE_PROTECT           ; protected medium
+        stc
+        ret
+xfer_go:
         push    ax
         push    cx
         mov     al, SRB_DIR_NONE
@@ -376,6 +396,39 @@ test_unit_ready proc near
         jmp     aspi_result
 test_unit_ready endp
 
+; MODE SENSE(6), header only (DBD, all pages, 4 bytes): WP of DI's medium ->
+; XF_WPROT. A failure (no such page, no MODE SENSE) leaves it clear; a
+; UNIT ATTENTION stays in aspi_attention for the request to latch. Preserves
+; all registers except flags.
+probe_wprot proc near
+        push    ax
+        push    cx
+        and     byte ptr [di+U_XFLAGS], not XF_WPROT
+        mov     byte ptr [wp_header+2], 0
+        mov     al, SRB_DIR_IN
+        mov     cl, 6
+        call    aspi_prepare
+        mov     byte ptr [srb+SRB_CDB], 1Ah
+        mov     byte ptr [srb+SRB_CDB+1], 08h   ; DBD
+        mov     byte ptr [srb+SRB_CDB+2], 3Fh
+        mov     byte ptr [srb+SRB_CDB+4], 4
+        mov     word ptr [srb+SRB_BufLen], 4
+        mov     word ptr [srb+SRB_BufPointer], offset wp_header
+        mov     word ptr [srb+SRB_BufPointer+2], cs
+        call    call_aspi
+        call    aspi_result
+        jc      probe_wprot_done
+        test    byte ptr [wp_header+2], 80h     ; device-specific: WP
+        jz      probe_wprot_done
+        or      byte ptr [di+U_XFLAGS], XF_WPROT
+probe_wprot_done:
+        pop     cx
+        pop     ax
+        ret
+probe_wprot endp
+
+wp_header       db      4 dup (0)
+
         include common/dos/block_capacity.inc
 
 ; Load BPB/volume mapping for DI's unit; CF if no supported volume is usable.
@@ -392,8 +445,10 @@ load_volume proc near
         xor     ax, ax
         xor     dx, dx
         mov     cx, 1
+        and     byte ptr [di+U_XFLAGS], not XF_WPROT
         call    read_sectors
         jc      load_failed
+        call    probe_wprot                     ; a medium: protected?
         cmp     word ptr [sector_buf+510], 0AA55h
         jne     load_bad
         ; a boot sector (superfloppy): jump and 512 bytes per sector

@@ -142,19 +142,16 @@ services must not make ASPIDSK claim those same targets.
 
 ## To do in ASPIDSK and ASPIFDD
 
-1. Hardware write-protection sensing (MODE SENSE) separately from DOS
-   software access flags 47h/67h. The original ASPIDISK getter does not itself
-   probe hardware write protection.
-2. Extend generic IOCTL beyond logical 40h/60h, 46h/66h and 47h/67h:
+1. Extend generic IOCTL beyond logical 40h/60h, 46h/66h and 47h/67h:
    qualify variable parameter track tables and remaining format/media operations.
    Basic 61h/41h/62h and independent mapping requests 17h/18h are implemented.
    See [current block IOCTL behavior](block-ioctl.md).
-3. ASPIFDD: 42h format with FORMAT UNIT, 68h media type, eject/lock, the
+2. ASPIFDD: 42h format with FORMAT UNIT, 68h media type, eject/lock, the
    LS-120 media types (sensed with READ FORMAT CAPACITIES).
-4. ASPIDSK: all partitions (extended partitions), remaining FAT32/category-48
+3. ASPIDSK: all partitions (extended partitions), remaining FAT32/category-48
    compatibility and MS-DOS 7.1 qualification, reserved letters for removable disks, skip
    disks handled by INT 13h, spin-up, `/ID=`.
-5. Sector sizes other than 512 (MO media with 2048-byte sectors).
+4. Sector sizes other than 512 (MO media with 2048-byte sectors).
 
 ## Iomega GUEST.EXE
 

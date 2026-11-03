@@ -365,6 +365,8 @@ fake_mixed_data:
 fake_data_allowed:
         cmp byte ptr [srb+SRB_CDB],0
         BRANCH jne, fake_done
+        cmp byte ptr [srb+SRB_CDB],1Ah      ; MODE SENSE (WP probe): no bit
+        BRANCH jne, fake_done
         cmp byte ptr [srb+SRB_CDB],28h
         BRANCH je, fake_bad
         inc word ptr [reads]

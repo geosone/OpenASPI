@@ -1,7 +1,11 @@
-; Live write protection of D: (tests/dos_disk_protect.sh: a read-only QEMU
+; Live write protection of D: or PROTECT_DRIVE (tests/dos_disk_protect.sh: a read-only QEMU
 ; USB disk, so the target answers WRITE with DATA PROTECT). Absolute writes
 ; must fail with DOS error 00h without INT 24h, DOS writes must reach INT 24h
 ; with error 00h, and the unit must stay readable with unchanged data.
+; PROTECT_DRIVE (jwasm -D): 0-based drive number, D: by default.
+ifndef PROTECT_DRIVE
+PROTECT_DRIVE   equ     3
+endif
         .8086
         option casemap:none
         .model tiny
@@ -40,12 +44,12 @@ start:
         ; DOS rejects the lock call, which is harmless.
         inc     byte ptr [stage]
         mov     ax, 440Dh
-        mov     bx, 0004h                       ; D:, level 0
+        mov     bx, PROTECT_DRIVE+1             ; the drive, level 0
         mov     cx, 084Ah                       ; lock logical volume
         xor     dx, dx
         int     21h
         mov     word ptr [packet+6], offset sector_a
-        mov     al, 3
+        mov     al, PROTECT_DRIVE
         mov     cx, 0FFFFh
         mov     bx, offset packet
         int     26h
@@ -107,7 +111,7 @@ failed:
 
 ; INT 25h with the large-disk packet; CF from DOS.
 absolute_read proc near
-        mov     al, 3
+        mov     al, PROTECT_DRIVE
         mov     cx, 0FFFFh
         mov     bx, offset packet
         int     25h
@@ -140,7 +144,7 @@ stage           db      '1'
 packet          dd      0                       ; sector
                 dw      1                       ; count
                 dw      0, 0                    ; buffer offset, segment
-file_name       db      'D:\NEW.TXT', 0
+file_name       db      'A'+PROTECT_DRIVE, ':\NEW.TXT', 0
 msg_pass        db      'Live block write protection passed', 13, 10, '$'
 msg_fail        db      'Live block write protection FAILED at stage $'
 newline         db      13, 10, '$'
