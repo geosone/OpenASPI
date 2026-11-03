@@ -1794,6 +1794,15 @@ init_installed:
 ; enum as a whole value. An unsupported ownership query has its own compatibility
 ; path and must not be confused with a known existing INT 13h/DOS owner.
 check_disk_ownership proc near
+        call    is_shuttle_manager
+        jne     ownership_query
+        ; The same managers ignore the LUN and answer every one with LUN 0's
+        ; drive, which would give one drive eight DOS units.
+        cmp     byte ptr [scan_lun], 0
+        je      ownership_unsupported
+        stc
+        ret
+ownership_query:
         call    clear_srb
         mov     byte ptr [srb+SRB_Cmd], SC_GET_DISK_INFO
         mov     al, byte ptr [scan_ha]
@@ -1836,6 +1845,39 @@ ownership_available:
         clc
         ret
 check_disk_ownership endp
+
+; Shuttle's managers (SD120PPD.SYS 5.46 for the parallel LS-120 at least)
+; accept commands 0-6 but their handler table stops at 5: GET DISK INFO jumps
+; into unrelated code and the SRB stays pending for ever, so call_aspi would
+; never return. Ask only the host inquiry for scan_ha and treat such a manager
+; as one without GET DISK INFO, LUN 0 only. ZF set = Shuttle. Clobbers the SRB.
+is_shuttle_manager proc near
+        push    si
+        push    di
+        push    cx
+        push    es
+        call    scan_ha_inquiry
+        push    ds
+        pop     es
+        mov     si, offset shuttle_id
+        mov     di, offset srb+HA_ManagerId
+        mov     cx, SHUTTLE_ID_LEN
+        repe    cmpsb
+        je      shuttle_done
+        mov     si, offset shuttle_id
+        mov     di, offset srb+HA_Identifier
+        mov     cx, SHUTTLE_ID_LEN
+        repe    cmpsb
+shuttle_done:
+        pop     es
+        pop     cx
+        pop     di
+        pop     si
+        ret
+is_shuttle_manager endp
+
+shuttle_id      db      'SHUTTLE'
+SHUTTLE_ID_LEN  equ     $ - shuttle_id
 
 ; DX points to the diagnostic prefix. No device commands are issued here.
 print_ownership_device proc near
