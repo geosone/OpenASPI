@@ -136,6 +136,11 @@ boundary tests and an optional sanitizer run.
   `bash tests/dos_86box_ls120.sh` separately tests a native ATAPI LS-120
   through AHCIASPI and ASPIFDD, including host file comparisons. See
   [86Box LS-120](86box-ls120.md) for the 6.0 backport and test prerequisites.
+  `bash tests/dos_86box_syquest.sh` boots with a SyQuest EZFlyer (`EZ135=1`:
+  EZ135; `EZ135CART=1`: an EZ135 cartridge) as a native ATA cartridge drive
+  and reads and writes it through the BIOS; `SQATDRVR=<path>` also loads
+  SyQuest's SQATDRVR.SYS 1.75 (not shipped), with `SQOPT` options. It needs
+  the SyQuest ATA drives of geosone/86Box `lpt-zip`.
 - `make dos-tape-smoke` boots a test-only ASPI manager exposing an emulated
   tape. Driver scenarios and focused runs are documented in
   [ASPITAP testing](../drivers/aspitap/TESTING.md).
