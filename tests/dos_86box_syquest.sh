@@ -14,7 +14,7 @@
 # DOS error 00h before they reach the drive's refusal. PROT=1 (with ASPI=1)
 # sets the cartridge's software write protection with ASPICTL PROTECT
 # (SyQuest C0h through AHCIASPI), checks it with tests/disk_protect.asm,
-# lifts it with ASPICTL UNPROTECT and writes; on the EZ135 (EZ135=1), which
+# lifts it with ASPICTL UNPROTEC and writes; on the EZ135 (EZ135=1), which
 # has only the tab, PROTECT must fail with ILLEGAL REQUEST. Writes are
 # restricted to this disposable image; it is checked after the VM shuts down.
 # Needs an 86Box with the SyQuest ATA drives of geosone/86Box lpt-zip.
@@ -114,7 +114,7 @@ if [ "$PROT" = 1 ]; then
     if [ "$EZ135" = 1 ]; then
         sed -i "1a ASPICTL PROTECT $DRIVE: > AUX\r" "$OUT/AUTOEXEC.BAT"
     else
-        sed -i "1a ASPICTL PROTECT $DRIVE: > AUX\r\nPROTECT > AUX\r\nASPICTL UNPROTECT $DRIVE: > AUX\r" \
+        sed -i "1a ASPICTL PROTECT $DRIVE: > AUX\r\nPROTECT > AUX\r\nASPICTL UNPROTEC $DRIVE: > AUX\r" \
             "$OUT/AUTOEXEC.BAT"
     fi
 fi
@@ -162,7 +162,7 @@ if [ "$PROT" = 1 ]; then
     else
         grep -q "^PROTECT $DRIVE: OK" <<<"$log"
         grep -q 'Live block write protection passed' <<<"$log"
-        grep -q "^UNPROTECT $DRIVE: OK" <<<"$log"
+        grep -q "^UNPROTEC $DRIVE: OK" <<<"$log"
     fi
 fi
 if [ "$ASPI" = 1 ] && [ "$WP" = 0 ]; then

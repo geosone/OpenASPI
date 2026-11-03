@@ -3,11 +3,15 @@
 # restricted to this disposable image; validate it after shutting the VM down.
 # Needs an 86Box with lpt_zip.c and Iomega's DOS drivers in IOMEGA (not shipped).
 # ZIP250=1: the ZIP 250 parallel port drive (IMM) through ASPIPPM2.SYS instead.
+# PROT=1: ASPICTL PROTECT sets the disk's write protection (Iomega SET
+# PROTECTION MODE), tests/disk_protect.asm checks it, ASPICTL UNPROTEC lifts
+# it before the writes.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 BOX=${BOX:-$ROOT/../86Box/build-zip/src/86Box}
 ROMDIR=${ROMDIR:-$HOME/.local/share/86Box/roms}
 ZIP250=${ZIP250:-0}
+PROT=${PROT:-0}
 if [ "$ZIP250" = 1 ]; then
     OUT=${OUT:-$ROOT/build/86box-zip250}
     ZIP_TYPE=2 ZIP_SECTORS=489532 ZIP_SPC=8 ZIP_ASPI=ASPIPPM2.SYS ZIP_ILM=NIBBLE2.ILM
@@ -34,7 +38,14 @@ sed "s/^rdisk_01_parameters = 1, lpt$/rdisk_01_parameters = $ZIP_TYPE, lpt/" \
 sed -e "s/ASPIPPM1.SYS/$ZIP_ASPI/" -e "s/NIBBLE.ILM/$ZIP_ILM/" \
     "$ROOT/tests/fixtures/86box-zip-config.sys" > "$OUT/CONFIG.SYS"
 mcopy -o -i "$OUT/boot.img" "$OUT/CONFIG.SYS" ::/CONFIG.SYS
-mcopy -o -i "$OUT/boot.img" "$ROOT/tests/fixtures/86box-zip-autoexec.bat" ::/AUTOEXEC.BAT
+cp "$ROOT/tests/fixtures/86box-zip-autoexec.bat" "$OUT/AUTOEXEC.BAT"
+if [ "$PROT" = 1 ]; then
+    sed -i '3a ASPICTL PROTECT C: > AUX\nPROTECT > AUX\nASPICTL UNPROTEC C: > AUX' "$OUT/AUTOEXEC.BAT"
+    "$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -DPROTECT_DRIVE=2 \
+        -Fo="$OUT/PROTECT.COM" "$ROOT/tests/disk_protect.asm"
+    mcopy -o -i "$OUT/boot.img" "$ROOT/build/dos/ASPICTL.EXE" "$OUT/PROTECT.COM" ::/
+fi
+mcopy -o -i "$OUT/boot.img" "$OUT/AUTOEXEC.BAT" ::/AUTOEXEC.BAT
 mcopy -o -i "$OUT/boot.img" "$ROOT/build/dos/ASPIFDD.SYS" "$ROOT/build/dos/ASPISCAN.COM" ::/
 mcopy -o -i "$OUT/boot.img" "$IOMEGA/$ZIP_ASPI" "$IOMEGA/$ZIP_ILM" ::/
 truncate -s $((ZIP_SECTORS*512)) "$OUT/zip.img"
@@ -46,6 +57,12 @@ source "$ROOT/tests/86box_run.sh"
 run_86box_dos --done 'OPENASPI 86BOX ZIP DONE' \
     --expect 'ASPIFDD ZIP read/write passed' --count 1 \
     --read-text 'ASPIFDD ZIP initial read passed'
+if [ "$PROT" = 1 ]; then
+    log=$(tr -d '\r' < "$OUT/serial.log")
+    grep -q '^PROTECT C: OK' <<<"$log"
+    grep -q 'Live block write protection passed' <<<"$log"
+    grep -q '^UNPROTEC C: OK' <<<"$log"
+fi
 mcopy -o -i "$OUT/zip.img" ::/PLAIN.BIN "$OUT/PLAIN.BIN"
 mcopy -o -i "$OUT/zip.img" ::/VERIFY.BIN "$OUT/VERIFY.BIN"
 cmp "$OUT/BIG.BIN" "$OUT/PLAIN.BIN"

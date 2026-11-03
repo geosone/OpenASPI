@@ -15,13 +15,10 @@
 #include <i86.h>
 
 static unsigned char packet[32], control[5];
-/* sub = 0: an executable alias name; 1: an ASPICTL subcommand */
-static int known_command(const char *name, int sub)
+static int known_command(const char *name)
 {
 #define OA_COMMAND(command) if (!stricmp(name, #command)) return 1;
-#define OA_SUBCOMMAND(command) if (sub && !stricmp(name, #command)) return 1;
 #include "commands.def"
-#undef OA_SUBCOMMAND
 #undef OA_COMMAND
     return 0;
 }
@@ -126,7 +123,7 @@ int main(int argc, char **argv)
     if (argc > 1 && !stricmp(argv[argc - 1], "/FORCE")) {
         force = 1; --argc;
     }
-    if (known_command(name, 0) && argc == 2) {
+    if (known_command(name) && argc == 2) {
         operation = name; letter = argv[1];
     } else if (argc == 3 && !strcmp(name, "ASPICTL")) {
         operation = argv[1]; letter = argv[2];
@@ -134,8 +131,8 @@ int main(int argc, char **argv)
     if (strlen(letter) != 2 || letter[1] != ':' ||
         toupper((unsigned char)letter[0]) < 'A' ||
         toupper((unsigned char)letter[0]) > 'Z') goto usage;
-    if (!known_command(operation, 1)) goto usage;
-    protect = !stricmp(operation, "PROTECT") || !stricmp(operation, "UNPROTECT");
+    if (!known_command(operation)) goto usage;
+    protect = !stricmp(operation, "PROTECT") || !stricmp(operation, "UNPROTEC");
     if (force && stricmp(operation, "EJECT")) goto usage;
     drive = (unsigned)(toupper((unsigned char)letter[0]) - 'A');
     cd = is_cd(drive);
@@ -183,8 +180,8 @@ result:
     }
     puts(""); return 0;
 usage:
-    puts("ASPICTL EJECT|CLOSE|LOCK|UNLOCK|STATUS|PROTECT|UNPROTECT X:");
-    puts("EJECT to STATUS also work as COMMAND.EXE X:");
+    puts("ASPICTL EJECT|CLOSE|LOCK|UNLOCK|STATUS|PROTECT|UNPROTEC X:");
+    puts("Each command also works as COMMAND.EXE X:");
     puts("EJECT accepts /FORCE to release media locks first.");
     return 2;
 }

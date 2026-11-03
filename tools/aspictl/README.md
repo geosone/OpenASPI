@@ -11,11 +11,11 @@ ASPICTL UNLOCK F:
 ASPICTL STATUS F:
 ASPICTL EJECT F: /FORCE
 ASPICTL PROTECT F:
-ASPICTL UNPROTECT F:
+ASPICTL UNPROTEC F:
 ```
 
 The same executable is distributed as `EJECT.EXE`, `CLOSE.EXE`, `LOCK.EXE`,
-`UNLOCK.EXE` and `STATUS.EXE`. The command registry in `commands.def` drives
+`UNLOCK.EXE`, `STATUS.EXE`, `PROTECT.EXE` and `UNPROTEC.EXE`. The command registry in `commands.def` drives
 both dispatch and packaged aliases, including future registered commands.
 It selects
 the operation from its invoked filename:
@@ -35,12 +35,12 @@ are supported. CLOSE is restricted to CD drives. Unsupported operations
 return an error rather than attempting transport-specific guesses. STATUS
 reports the block driver's lock count or the CD device-status word.
 
-PROTECT and UNPROTECT set and clear the cartridge's own write protection
+PROTECT and UNPROTEC set and clear the cartridge's own write protection
 through ASPIFDD (RAW1 request 05h, see [raw media](../../docs/raw-media.md)):
 ZIP drives and the SyQuest EZFlyer. The EZ135 honours only its write
 protect tab. DOS buffers are flushed before PROTECT. A failure prints
-the sense key and ASC. These two are subcommands only, with no executable
-alias (`UNPROTECT` does not fit in 8 characters).
+the sense key and ASC. UNPROTEC is cut to 8 characters so that it works as
+an executable name.
 
 Normal EJECT respects the driver's locks. `/FORCE` is accepted only for
 EJECT: it releases all lock counts reported by the block driver, or sends

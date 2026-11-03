@@ -36,8 +36,9 @@ and clear its error fields before each new transfer, as the C wrapper does.
 | 05h | PROTECT: the cartridge's own write protection, mode word 1 on, 0 off |
 
 PROTECT sends Iomega's SET PROTECTION MODE (0Ch), mode 2 or mode 0,
-without a password. ZIP drives take the command as it is (not yet tested:
-86Box's ZIP does not have it). AHCIASPI
+without a password. ZIP drives take the command as it is (tested with
+86Box's ZIP 100 through Iomega's ASPIPPM1.SYS: `tests/dos_86box_zip.sh
+PROT=1`). AHCIASPI
 translates it to the SyQuest WRITE PROTECT command (C0h, Features `P` or
 `E`) for ATA cartridge drives. The setting is stored on the cartridge. A
 drive without the command answers ILLEGAL REQUEST, and the request fails
