@@ -147,6 +147,12 @@ boundary tests and an optional sanitizer run.
 
   It needs the SyQuest ATA drives of geosone/86Box `lpt-zip`; see
   [86Box SyQuest](86box-syquest.md).
+  `bash tests/dos_ahci_ata.sh` puts the cartridge drive on an AHCI port in
+  QEMU, as `ide-cf` with the EZFlyer's model and geometry, and copies files on
+  it.
+  - With SeaBIOS, the drive is BIOS disk 80h and ASPIFDD must leave it alone.
+  - With `NOAHCI_BIOS=<bios.bin>`, a SeaBIOS built without AHCI, the drive is
+    AHCIASPI's and ASPIFDD takes it.
 - `make dos-tape-smoke` boots a test-only ASPI manager exposing an emulated
   tape. Driver scenarios and focused runs are documented in
   [ASPITAP testing](../drivers/aspitap/TESTING.md).
