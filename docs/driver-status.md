@@ -31,8 +31,10 @@ buffer acceptance is not proof of tape finalization.
   complete DOS FORMAT/category-48 compatibility remain open.
   The OpenASPI-specific formatter does not establish complete standard FORMAT
   or variable-track-table compatibility.
-- Device-specific physical format/media profiles for LS-120/240 and ZIP,
-  vendor protection/password operations, and non-512-byte sectors.
+- Physical formatting on real LS-120/240 and ZIP drives (ASPIFDD sends
+  FORMAT UNIT through 42h, tested against a mock and 86Box only; see
+  [formatting](block-format.md)), vendor protection/password operations,
+  and non-512-byte sectors.
 - Detailed capability sensing, failed/short transport replies,
   residual-count handling and real mechanism qualification.
 - Runtime attachment like GUEST, original private caller ABIs and Windows

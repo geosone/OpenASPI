@@ -37,6 +37,7 @@ mkdir -p "$OUT"
 "$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -DTEST_FDD -Fo="$OUT/PARAMFDD.COM" "$ROOT/tests/block_params.asm"
 "$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -Fo="$OUT/TRACKDSK.COM" "$ROOT/tests/block_track.asm"
 "$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -DTEST_FDD -Fo="$OUT/TRACKFDD.COM" "$ROOT/tests/block_track.asm"
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -Fo="$OUT/FMTFDD.COM" "$ROOT/tests/block_format.asm"
 
 nasm -f bin -w-reloc-abs-word -I"$EUSBASPI_DIR/src/" \
     -o "$OUT/EUSBASPI.SYS" "$EUSBASPI_DIR/src/eusbaspi.asm"
@@ -70,6 +71,7 @@ printf '%s\r\n' \
     'PARAMFDD > AUX' \
     'TRACKDSK > AUX' \
     'TRACKFDD > AUX' \
+    'FMTFDD > AUX' \
     'DOSIO > AUX' \
     'MIDLIVE E: > AUX' \
     'MIDLIVE F: > AUX' \
@@ -118,7 +120,7 @@ mcopy -o -i "$OUT/boot.img" "$OUT/CTLTEST.BAT" "$OUT/FDDGONE.COM" \
 mcopy -o -i "$OUT/boot.img" "$OUT/BLKACC.COM" "$OUT/FDDACC.COM" ::/
 mcopy -o -i "$OUT/boot.img" "$OUT/MIDDSK.COM" "$OUT/MIDFDD.COM" "$OUT/MIDLIVE.COM" ::/
 mcopy -o -i "$OUT/boot.img" "$OUT/PARAMDSK.COM" "$OUT/PARAMFDD.COM" ::/
-mcopy -o -i "$OUT/boot.img" "$OUT/TRACKDSK.COM" "$OUT/TRACKFDD.COM" ::/
+mcopy -o -i "$OUT/boot.img" "$OUT/TRACKDSK.COM" "$OUT/TRACKFDD.COM" "$OUT/FMTFDD.COM" ::/
 
 # partitioned stick (FAT16, partition at 63) with a file larger than one
 # 64-sector READ(10)
@@ -183,6 +185,7 @@ test "$(grep -Fc 'Block access policy/logical mapping tests passed' "$OUT/serial
 test "$(grep -Fc 'Media-ID write, backup, extent and failure tests passed' "$OUT/serial.log")" = 2
 test "$(grep -Fc 'Block SET parameters, capacity, override and media-change tests passed' "$OUT/serial.log")" = 2
 test "$(grep -Fc 'Block track CHS/buffer/chunk/verify/error tests passed' "$OUT/serial.log")" = 2
+grep -Fq 'Block format/media type tests passed' "$OUT/serial.log"
 test "$(grep -Fc 'DOS Media-ID set/get/restore passed' "$OUT/serial.log")" = 3
 test "$(grep -Fc 'DOS physical track read/write/verify passed' "$OUT/serial.log")" = 3
 grep -q 'FDD ASPICTL locks/force/eject passed' "$OUT/serial.log"

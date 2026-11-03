@@ -8,13 +8,26 @@
 ; CF clear: removable bit plus known vendor/product substring -> ASPIFDD.
 ; CF set: ASPIDSK. Preserve all registers. Never match revision/outside bytes.
 is_fdd_model proc near
+        test    byte ptr [inquiry_data+1], 80h
+        jz      fdd_not_removable
+        push    si
+        mov     si, offset fdd_models
+        call    inquiry_has_model
+        pop     si
+        ret
+fdd_not_removable:
+        stc
+        ret
+is_fdd_model endp
+
+; Does the INQUIRY vendor/product (inquiry_data+8, 24 bytes, any case)
+; contain one of the names at SI (each 0-terminated, the list ends with an
+; empty name)? CF clear if so. Preserves all registers.
+inquiry_has_model proc near
         push    ax
         push    cx
         push    si
         push    di
-        test    byte ptr [inquiry_data+1], 80h
-        jz      fdd_no
-        mov     si, offset fdd_models
 fdd_next_model:
         cmp     byte ptr [si], 0
         je      fdd_no
@@ -65,7 +78,7 @@ fdd_done:
         pop     cx
         pop     ax
         ret
-is_fdd_model endp
+inquiry_has_model endp
 
 fdd_models:
         db      'ZIP', 0, 'LS-120', 0, 'LS-240', 0, 'CLIK', 0

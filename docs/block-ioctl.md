@@ -155,7 +155,8 @@ These kernels are references, not imported dependencies or copied code.
 - `tests/block_ioctl_dos.asm`, calling DOS INT 21h/440Dh and 4411h on the
   installed E: stick, F: ZIP and G: LS-120 image-backed drives; checks BPBs,
   hidden sectors, buffer boundaries, known serial/label/filesystem fields
-  and rejection of format capability. Disposable test images have fixed
+  and rejection of an unknown function (43h). 42h/68h: see
+  [formatting](block-format.md). Disposable test images have fixed
   serials `11112222h`, `33334444h`, `55556666h` for reproducibility.
 - Existing fallback, device ownership/detection and image read/write tests.
 

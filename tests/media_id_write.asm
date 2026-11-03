@@ -311,6 +311,13 @@ submit proc near
         ret
 submit endp
 fake_aspi proc far
+        ; MODE SENSE, the WP probe of each volume load: not counted, no WP
+        cmp byte ptr cs:[srb+SRB_CDB],1Ah
+        jne fake_not_wp_probe
+        mov byte ptr cs:[srb+SRB_Status],SS_ERR
+        mov byte ptr cs:[srb+SRB_TargStat],0
+        ret
+fake_not_wp_probe:
         cmp word ptr [srb+SRB_CDB+2],0
         BR je, fake_bad
         cmp byte ptr [srb+SRB_CDB+4],0

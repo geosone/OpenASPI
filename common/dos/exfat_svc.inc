@@ -148,7 +148,9 @@ exfat_table:
         cmp     word ptr [sector_buf+510], 0AA55h
         jne     exfat_none
         ; volume U_PART, if it is a type 07h partition with exFAT in it
+        mov     byte ptr [part_mbr_ready], 1
         call    part_select
+        mov     byte ptr [part_mbr_ready], 0
         jc      exfat_none
         cmp     byte ptr [part_type], 07h
         jne     exfat_none

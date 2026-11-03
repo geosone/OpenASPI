@@ -138,7 +138,7 @@ test_start:
         EXPECT_STATUS ST_DONE
         EXPECT_WORD calls, 4
         inc word ptr [phase]
-        mov byte ptr [packet+RH_IOCTL_MINOR], 42h
+        mov byte ptr [packet+RH_IOCTL_MINOR], 43h      ; no such function
         EXPECT_STATUS ST_DONE or ST_ERROR or ERR_UNKNOWN_CMD
         mov byte ptr [packet+RH_COMMAND], CMD_GEN_IOCTL
         EXPECT_STATUS ST_DONE or ST_ERROR or ERR_UNKNOWN_CMD
@@ -235,6 +235,12 @@ query_every_minor:
         je query_supported
         cmp byte ptr [packet+RH_IOCTL_MINOR], 66h
         je query_supported
+ifdef TEST_FDD
+        cmp byte ptr [packet+RH_IOCTL_MINOR], 42h  ; format, media type
+        je query_supported
+        cmp byte ptr [packet+RH_IOCTL_MINOR], 68h
+        je query_supported
+endif
         cmp word ptr [packet+RH_STATUS], ST_DONE or ST_ERROR or ERR_UNKNOWN_CMD
         jmp short query_checked
 query_supported:
@@ -253,7 +259,17 @@ query_checked:
         mov word ptr [packet+RH_COUNT], 0866h
         EXPECT_STATUS ST_DONE
         EXPECT_WORD packet+RH_COUNT, 0
-        mov word ptr [packet+RH_COUNT], 0842h
+        mov word ptr [packet+RH_COUNT], 0842h          ; format: ASPIFDD only
+ifdef TEST_FDD
+        EXPECT_STATUS ST_DONE
+        mov word ptr [packet+RH_COUNT], 0868h          ; media type: ASPIFDD
+        EXPECT_STATUS ST_DONE
+else
+        EXPECT_STATUS ST_DONE or ST_ERROR or ERR_UNKNOWN_CMD
+        mov word ptr [packet+RH_COUNT], 0868h
+        EXPECT_STATUS ST_DONE or ST_ERROR or ERR_UNKNOWN_CMD
+endif
+        mov word ptr [packet+RH_COUNT], 0843h
         EXPECT_STATUS ST_DONE or ST_ERROR or ERR_UNKNOWN_CMD
         mov word ptr [packet+RH_COUNT], 0860h
         mov byte ptr [packet+RH_COMMAND], CMD_GEN_IOCTL
@@ -409,6 +425,13 @@ unchanged_id_bytes::
 unchanged_id endp
 
 fake_aspi proc far
+        ; MODE SENSE, the WP probe of each volume load: not counted, no WP
+        cmp byte ptr cs:[srb+SRB_CDB],1Ah
+        jne fake_not_wp_probe
+        mov byte ptr cs:[srb+SRB_Status],SS_ERR
+        mov byte ptr cs:[srb+SRB_TargStat],0
+        ret
+fake_not_wp_probe:
         push ds
         push cs
         pop ds

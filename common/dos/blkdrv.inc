@@ -277,7 +277,7 @@ sibling_none:
 next_sibling endp
 
 ; DI's removable medium changed or left: so did the other volumes' units.
-; Preserves all registers except flags.
+; Preserves all registers; returns CF clear.
 siblings_changed proc near
         push    si
         xor     si, si
@@ -290,6 +290,7 @@ siblings_changed_next:
         jmp     short siblings_changed_next
 siblings_changed_done:
         pop     si
+        clc                                     ; nothing here fails
         ret
 siblings_changed endp
 
@@ -530,7 +531,9 @@ load_sector0:
 load_signed:
         ; a boot sector (superfloppy): jump and 512 bytes per sector
         call    check_boot_sector
-        jnc     load_boot_ok
+        jc      load_not_boot
+        jmp     load_boot_ok
+load_not_boot:
         call    is_exfat_boot                   ; an exFAT superfloppy:
         jne     load_table                      ; exfat_detect's (volume 0)
         cmp     byte ptr [di+U_PART], 0
@@ -540,7 +543,9 @@ load_exfat_super:
         jmp     load_bad
 load_table:
         ; a partition table: volume U_PART of part_select
+        mov     byte ptr [part_mbr_ready], 1
         call    part_select                     ; DX:AX start, part_len/type
+        mov     byte ptr [part_mbr_ready], 0
         jc      load_failed
         cmp     byte ptr [part_type], 07h       ; exFAT: load_volume_x looks
         je      load_bad
@@ -665,6 +670,7 @@ part_pass       db      0
 part_idx        db      0
 part_guard      db      0
 part_missing    db      0
+part_mbr_ready  db      0               ; sector_buf holds a checked MBR
 part_type       db      0
 part_len        dd      0
 part_lba        dd      0
@@ -778,6 +784,18 @@ part_select endp
 ps_read proc near
         mov     word ptr [part_base], ax
         mov     word ptr [part_base+2], dx
+        ; the MBR still in sector_buf from the caller: not read again
+        cmp     byte ptr [part_mbr_ready], 0
+        je      ps_read_sector
+        push    ax
+        or      ax, dx
+        pop     ax
+        jnz     ps_read_other
+        clc
+        ret
+ps_read_other:
+        mov     byte ptr [part_mbr_ready], 0    ; sector_buf overwritten
+ps_read_sector:
         mov     word ptr [xfer_buffer], offset sector_buf
         mov     word ptr [xfer_buffer+2], cs
         mov     cx, 1
@@ -1433,6 +1451,12 @@ ioctl_query_scan:
 ioctl_query_media:
         cmp     ah, 08h
         jne     ioctl_query_unknown
+ifdef FDD_DRIVER
+        cmp     al, 42h                         ; format, media type
+        je      ioctl_query_known
+        cmp     al, 68h
+        je      ioctl_query_known
+endif
         cmp     al, 48h
         je      ioctl_query_media_known
         cmp     al, 49h
@@ -1477,6 +1501,16 @@ endif
         jmp     set_parameters
 ioctl_not_set_parameters:
         mov     al, byte ptr es:[bx+RH_IOCTL_MINOR]
+ifdef FDD_DRIVER
+        cmp     al, 42h
+        jne     ioctl_not_format
+        jmp     ioctl_format
+ioctl_not_format:
+        cmp     al, 68h
+        jne     ioctl_not_media_type
+        jmp     ioctl_media_type
+ioctl_not_media_type:
+endif
         cmp     al, 41h
         je      ioctl_track_dispatch
         cmp     al, 61h
@@ -1622,6 +1656,9 @@ generic_ioctl endp
 
         include common/dos/block_params.inc
         include common/dos/block_track.inc
+ifdef FDD_DRIVER
+        include common/dos/block_format.inc
+endif
 
 ; 08h/66h: info level 0, serial (4), volume label (11), filesystem text (8).
 ; Always load this unit's actual boot sector, including partition selection:
@@ -2343,6 +2380,9 @@ endif
 init_flags_ready:
         mov     byte ptr [di+U_PART], 0
         mov     byte ptr [di+U_XFLAGS], 0
+ifdef FDD_DRIVER
+        call    format_profile
+endif
         call    test_unit_ready                 ; clear UNIT ATTENTION
         call    spin_up
 init_try_volume:

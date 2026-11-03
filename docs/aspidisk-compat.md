@@ -146,8 +146,8 @@ services must not make ASPIDSK claim those same targets.
    qualify variable parameter track tables and remaining format/media operations.
    Basic 61h/41h/62h and independent mapping requests 17h/18h are implemented.
    See [current block IOCTL behavior](block-ioctl.md).
-2. ASPIFDD: 42h format with FORMAT UNIT, 68h media type, eject/lock, the
-   LS-120 media types (sensed with READ FORMAT CAPACITIES).
+2. ASPIFDD: qualify 42h formatting on real LS-120/ZIP drives
+   ([formatting](block-format.md)).
 3. ASPIDSK: remaining FAT32/category-48
    compatibility and MS-DOS 7.1 qualification.
 4. Sector sizes other than 512 (MO media with 2048-byte sectors).

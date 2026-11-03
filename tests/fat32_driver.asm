@@ -157,6 +157,12 @@ failed:
 fake_aspi proc far
         push cs
         pop ds
+        ; MODE SENSE, the WP probe: a 4-byte buffer, no WP bit
+        cmp byte ptr cs:[srb+SRB_CDB], 1Ah
+        jne fake_sector
+        mov byte ptr cs:[srb+SRB_Status], SS_ERR
+        ret
+fake_sector:
         mov si, offset template
         les di, dword ptr cs:[srb+SRB_BufPointer]
         mov cx, 512

@@ -52,9 +52,12 @@ Implemented behavior:
   [ASPIFMT](../../tools/aspifmt/README.md) filesystem creation/bad-cluster
   marking and [ASPIDD/ASPIDDG](../../tools/aspidd/README.md) copying/rescue.
 
-Not yet: physical formatting (generic IOCTL 42h with FORMAT UNIT), the
-LS-120-specific media sensing/format profiles, a runtime loader
-like Iomega GUEST.EXE; see
+- Generic IOCTL `42h` formats with FORMAT UNIT (the whole medium, at the
+  first track; LS-120 and SBC forms) and verifies tracks; `68h` senses
+  the 720 KB/1.44 MB/2.88 MB media types. See
+  [formatting](../../docs/block-format.md).
+
+Not yet: a runtime loader like Iomega GUEST.EXE; see
 [ASPIDISK and MKELS120 compatibility](../../docs/aspidisk-compat.md).
 Original drivers are compatibility fixtures only and are not distributed.
 

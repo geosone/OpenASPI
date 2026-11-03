@@ -43,7 +43,7 @@ capability_ok:
         inc byte ptr [stage]
         mov ax, 4411h
         mov bl, [drive]
-        mov cx, 0842h                           ; format must not be advertised
+        mov cx, 0843h                           ; no such function
         int 21h
         jc unsupported_format
         jmp failed
