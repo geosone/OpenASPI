@@ -11,7 +11,11 @@
 # also runs ASPITEST, whose MODE SENSE header must have WP clear; WP=1 (with
 # ASPI=1) write-protects the cartridge (wp://): WP set, the files readable,
 # the image unchanged; tests/disk_protect.asm checks that writes fail with
-# DOS error 00h before they reach the drive's refusal. Writes are
+# DOS error 00h before they reach the drive's refusal. PROT=1 (with ASPI=1)
+# sets the cartridge's software write protection with ASPICTL PROTECT
+# (SyQuest C0h through AHCIASPI), checks it with tests/disk_protect.asm,
+# lifts it with ASPICTL UNPROTECT and writes; on the EZ135 (EZ135=1), which
+# has only the tab, PROTECT must fail with ILLEGAL REQUEST. Writes are
 # restricted to this disposable image; it is checked after the VM shuts down.
 # Needs an 86Box with the SyQuest ATA drives of geosone/86Box lpt-zip.
 set -euo pipefail
@@ -25,8 +29,9 @@ SQOPT=${SQOPT:-}
 ASPI=${ASPI:-0}
 EXFAT=${EXFAT:-0}
 WP=${WP:-0}
-if { [ "$EXFAT" = 1 ] || [ "$WP" = 1 ]; } && [ "$ASPI" != 1 ]; then
-    echo "EXFAT=1 and WP=1 need ASPI=1" >&2
+PROT=${PROT:-0}
+if { [ "$EXFAT" = 1 ] || [ "$WP" = 1 ] || [ "$PROT" = 1 ]; } && [ "$ASPI" != 1 ]; then
+    echo "EXFAT=1, WP=1 and PROT=1 need ASPI=1" >&2
     exit 1
 fi
 AHCIASPI_DIR=${AHCIASPI_DIR:-$ROOT/../ahciaspi}
@@ -105,6 +110,14 @@ else
         "COPY $DRIVE:\\BIG.BIN $DRIVE:\\VERIFY.BIN > NUL" 'VERIFY OFF' \
         'ECHO OPENASPI 86BOX SYQUEST DONE > AUX' > "$OUT/AUTOEXEC.BAT"
 fi
+if [ "$PROT" = 1 ]; then
+    if [ "$EZ135" = 1 ]; then
+        sed -i "1a ASPICTL PROTECT $DRIVE: > AUX\r" "$OUT/AUTOEXEC.BAT"
+    else
+        sed -i "1a ASPICTL PROTECT $DRIVE: > AUX\r\nPROTECT > AUX\r\nASPICTL UNPROTECT $DRIVE: > AUX\r" \
+            "$OUT/AUTOEXEC.BAT"
+    fi
+fi
 if [ "$ASPI" = 1 ] && [ "$WP" = 0 ]; then
     # /R: REASSIGN BLOCKS too; the drive has no SyQuest super-user mode
     sed -i '1a ASPITEST /R > AUX\r' "$OUT/AUTOEXEC.BAT"
@@ -117,7 +130,8 @@ if [ "$ASPI" != 0 ]; then
     nasm -f bin -I"$AHCIASPI_DIR/tools/" -o "$OUT/ASPITEST.COM" "$AHCIASPI_DIR/tools/aspitest.asm"
     mcopy -o -i "$OUT/boot.img" "$OUT/AHCIASPI.SYS" "$ROOT/build/dos/ASPIFDD.SYS" \
         "$OUT/ASPITEST.COM" ::/
-    if [ "$WP" = 1 ]; then
+    mcopy -o -i "$OUT/boot.img" "$ROOT/build/dos/ASPICTL.EXE" ::/
+    if [ "$WP" = 1 ] || [ "$PROT" = 1 ]; then
         "$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -DPROTECT_DRIVE=2 \
             -Fo="$OUT/PROTECT.COM" "$ROOT/tests/disk_protect.asm"
         mcopy -o -i "$OUT/boot.img" "$OUT/PROTECT.COM" ::/
@@ -140,6 +154,16 @@ if [ "$ASPI" = 1 ]; then
     want=00
     [ "$WP" = 0 ] || want=80
     tr -d '\r' < "$OUT/serial.log" | grep -q "mode header: .. .. $want "
+fi
+if [ "$PROT" = 1 ]; then
+    log=$(tr -d '\r' < "$OUT/serial.log")
+    if [ "$EZ135" = 1 ]; then
+        grep -q "PROTECT $DRIVE: failed (status 8116, sense 05/20)" <<<"$log"
+    else
+        grep -q "^PROTECT $DRIVE: OK" <<<"$log"
+        grep -q 'Live block write protection passed' <<<"$log"
+        grep -q "^UNPROTECT $DRIVE: OK" <<<"$log"
+    fi
 fi
 if [ "$ASPI" = 1 ] && [ "$WP" = 0 ]; then
     # refused at the super-user confirmation: invalid opcode, no F8h sent

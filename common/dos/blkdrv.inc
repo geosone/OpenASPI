@@ -1391,7 +1391,7 @@ ioctl_query_header:
 ifdef FDD_DRIVER
         cmp     byte ptr es:[bx+RH_IOCTL_CATEGORY], 80h
         jne     ioctl_query_standard
-        cmp     byte ptr es:[bx+RH_IOCTL_MINOR], 4
+        cmp     byte ptr es:[bx+RH_IOCTL_MINOR], 5
         ja      ioctl_query_bad
         mov     di, word ptr [unit_ptr]
         test    byte ptr [di+U_FLAGS], UF_REMOVABLE

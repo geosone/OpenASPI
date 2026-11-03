@@ -33,6 +33,17 @@ and clear its error fields before each new transfer, as the C wrapper does.
 | 02h | READ physical sectors |
 | 03h | WRITE physical sectors |
 | 04h | END and release the session |
+| 05h | PROTECT: the cartridge's own write protection, mode word 1 on, 0 off |
+
+PROTECT sends Iomega's SET PROTECTION MODE (0Ch), mode 2 or mode 0,
+without a password. ZIP drives take the command as it is (not yet tested:
+86Box's ZIP does not have it). AHCIASPI
+translates it to the SyQuest WRITE PROTECT command (C0h, Features `P` or
+`E`) for ATA cartridge drives. The setting is stored on the cartridge. A
+drive without the command answers ILLEGAL REQUEST, and the request fails
+with "unknown command" (86Box's EZ135, which has only the tab). PROTECT is
+refused during a session. Afterwards the driver probes the WP bit again for
+the unit and its siblings, so writes stop or resume at once.
 
 BEGIN requires no existing media locks/session and hardware PREVENT success.
 A new nonzero token is assigned only after success. Standard DOS accesses

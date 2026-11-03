@@ -15,10 +15,13 @@
 #include <i86.h>
 
 static unsigned char packet[32], control[5];
-static int known_command(const char *name)
+/* sub = 0: an executable alias name; 1: an ASPICTL subcommand */
+static int known_command(const char *name, int sub)
 {
 #define OA_COMMAND(command) if (!stricmp(name, #command)) return 1;
+#define OA_SUBCOMMAND(command) if (sub && !stricmp(name, #command)) return 1;
 #include "commands.def"
+#undef OA_SUBCOMMAND
 #undef OA_COMMAND
     return 0;
 }
@@ -93,18 +96,37 @@ static unsigned block_control(unsigned drive, const char *operation)
     return r.x.cflag ? 0x8100 | (r.x.ax & 0xFF) : 0x0100;
 }
 
+/* The cartridge's own write protection (ZIP, SyQuest EZFlyer), through
+ * ASPIFDD's RAW1 PROTECT request. packet[13..15] hold the driver error and
+ * sense key/ASC of a failure.
+ */
+static unsigned block_protect(unsigned drive, int on)
+{
+    union REGS r;
+    struct SREGS s;
+    memset(packet, 0, sizeof(packet));
+    memcpy(packet, "RAW1", 4);
+    packet[4] = sizeof(packet);
+    packet[14] = (unsigned char)on;
+    memset(&r, 0, sizeof(r)); segread(&s);
+    r.x.ax = 0x440D; r.x.bx = drive + 1; r.x.cx = 0x8005;
+    r.x.dx = FP_OFF(packet); s.ds = FP_SEG(packet);
+    intdosx(&r, &r, &s);
+    return r.x.cflag ? 0x8100 | (r.x.ax & 0xFF) : 0x0100;
+}
+
 int main(int argc, char **argv)
 {
     const char *operation, *letter;
     char name[9];
     unsigned drive, status;
-    int cd, force = 0;
+    int cd, force = 0, protect;
     unsigned locks;
     invoked_name(name, argv[0]);
     if (argc > 1 && !stricmp(argv[argc - 1], "/FORCE")) {
         force = 1; --argc;
     }
-    if (known_command(name) && argc == 2) {
+    if (known_command(name, 0) && argc == 2) {
         operation = name; letter = argv[1];
     } else if (argc == 3 && !strcmp(name, "ASPICTL")) {
         operation = argv[1]; letter = argv[2];
@@ -112,14 +134,18 @@ int main(int argc, char **argv)
     if (strlen(letter) != 2 || letter[1] != ':' ||
         toupper((unsigned char)letter[0]) < 'A' ||
         toupper((unsigned char)letter[0]) > 'Z') goto usage;
-    if (!known_command(operation)) goto usage;
+    if (!known_command(operation, 1)) goto usage;
+    protect = !stricmp(operation, "PROTECT") || !stricmp(operation, "UNPROTECT");
     if (force && stricmp(operation, "EJECT")) goto usage;
     drive = (unsigned)(toupper((unsigned char)letter[0]) - 'A');
     cd = is_cd(drive);
     if (!cd && !stricmp(operation, "CLOSE")) {
         puts("CLOSE requires an MSCDEX/SHSUCDX CD drive."); return 2;
     }
-    if (!cd && !stricmp(operation, "EJECT")) {
+    if (cd && protect) {
+        printf("%s requires a removable disk drive.\n", operation); return 2;
+    }
+    if (!cd && (!stricmp(operation, "EJECT") || !stricmp(operation, "PROTECT"))) {
         union REGS r;
         memset(&r, 0, sizeof(r)); r.h.ah = 0x0D;
         intdos(&r, &r);                    /* flush DOS filesystem buffers */
@@ -138,10 +164,16 @@ int main(int argc, char **argv)
             }
         }
     }
-    status = cd ? cd_control(drive, operation) : block_control(drive, operation);
+    if (protect)
+        status = block_protect(drive, !stricmp(operation, "PROTECT"));
+    else
+        status = cd ? cd_control(drive, operation) : block_control(drive, operation);
 result:
     if (!(status & 0x0100) || (status & 0x8000)) {
-        printf("%s %c: failed (status %04X).\n", operation, 'A' + drive, status);
+        printf("%s %c: failed (status %04X", operation, 'A' + drive, status);
+        if (protect && packet[14])
+            printf(", sense %02X/%02X", packet[14], packet[15]);
+        puts(").");
         return 1;
     }
     printf("%s %c: OK (%s)", operation, 'A' + drive, cd ? "CD" : "removable");
@@ -151,8 +183,8 @@ result:
     }
     puts(""); return 0;
 usage:
-    puts("ASPICTL EJECT|CLOSE|LOCK|UNLOCK|STATUS X:");
-    puts("Each command also works as COMMAND.EXE X:");
+    puts("ASPICTL EJECT|CLOSE|LOCK|UNLOCK|STATUS|PROTECT|UNPROTECT X:");
+    puts("EJECT to STATUS also work as COMMAND.EXE X:");
     puts("EJECT accepts /FORCE to release media locks first.");
     return 2;
 }

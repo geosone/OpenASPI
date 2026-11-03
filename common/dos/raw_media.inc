@@ -6,11 +6,11 @@
 ; maps the final error. Category 80h here uses block IOCTL 440Dh and RAW1;
 ; it is distinct from the character-device OTAP protocol on IOCTL 440Ch.
 
-; OpenASPI removable-media session API, category 80h, minors 0..4.
+; OpenASPI removable-media session API, category 80h, minors 0..5.
 ; 32-byte versioned packet: "RAW1", size WORD=32, token WORD,
 ; physical LBA DWORD, count WORD, mode WORD (BEGIN: 0 read / 1 write),
 ; buffer FAR, capacity DWORD, selected FAT volume start/length DWORDs.
-; INFO=0 BEGIN=1 READ=2 WRITE=3 END=4. No filesystem is required.
+; INFO=0 BEGIN=1 READ=2 WRITE=3 END=4 PROTECT=5. No filesystem is required.
 raw_sequence dw 0
 raw_minor db 0
 
@@ -34,6 +34,10 @@ raw_header_bad:
 raw_header_ok:
         mov     di, word ptr [unit_ptr]
         mov     al, byte ptr [raw_minor]
+        cmp     al, 5
+        jne     raw_not_protect
+        jmp     raw_protect
+raw_not_protect:
         cmp     al, 1
         jbe     raw_info_begin
         jmp     raw_session
@@ -222,6 +226,55 @@ raw_end_failed:
         and     byte ptr [di+U_FLAGS], not (UF_RAW_ACTIVE or UF_RAW_WRITE or UF_MEDIA or UF_BPB_OVERRIDE)
         mov     word ptr [di+U_RAW_TOKEN], 0
         popf
+        ret
+; PROTECT: the cartridge's own write protection, mode word 1 on / 0 off, as
+; the Iomega SET PROTECTION MODE (0Ch) without a password: mode 2 / mode 0.
+; ZIP drives take it as it is; AHCIASPI translates it for SyQuest ATA
+; cartridges. Not during a session. The WP bit is then probed again for
+; this unit and copied to its siblings: the medium is the same.
+raw_protect:
+        test    byte ptr [di+U_FLAGS], UF_RAW_ACTIVE
+        jz      raw_protect_free
+        jmp     raw_busy
+raw_protect_free:
+        mov     ax, word ptr es:[bp+14]
+        cmp     ax, 1
+        jbe     raw_protect_mode
+        jmp     raw_bad_packet
+raw_protect_mode:
+        add     al, al                          ; 0 or 2
+        push    ax
+        mov     al, SRB_DIR_NONE
+        mov     cl, 6
+        call    aspi_prepare
+        pop     ax
+        mov     byte ptr [srb+SRB_CDB], 0Ch
+        mov     byte ptr [srb+SRB_CDB+1], al
+        call    call_aspi
+        call    aspi_result
+        jnc     raw_protect_done
+        cmp     al, 5                           ; not this drive's command
+        jne     raw_protect_error
+        mov     al, ERR_UNKNOWN_CMD
+        jmp     raw_set_error
+raw_protect_error:
+        call    sense_to_doserr
+        jmp     raw_set_error
+raw_protect_done:
+        call    probe_wprot
+        push    si
+        xor     si, si
+raw_protect_sibling:
+        call    next_sibling
+        jc      raw_protect_siblings_done
+        and     byte ptr [si+U_XFLAGS], not XF_WPROT
+        test    byte ptr [di+U_XFLAGS], XF_WPROT
+        jz      raw_protect_sibling
+        or      byte ptr [si+U_XFLAGS], XF_WPROT
+        jmp     short raw_protect_sibling
+raw_protect_siblings_done:
+        pop     si
+        clc
         ret
 raw_ioctl endp
 
