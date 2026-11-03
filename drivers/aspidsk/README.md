@@ -8,6 +8,19 @@ LS-120, ZIP and similar removable-media drives are left to `ASPIFDD.SYS`.
     DEVICE=C:\OPENASPI\EUSBASPI.SYS
     DEVICE=C:\OPENASPI\ASPIDSK.SYS
 
+Options (as ASPIDISK has them; `/` or `-`, upper or lower case, values
+after `:` or `=`):
+
+- `/ID:[h:]t[,[h:]t...]`: only these targets, up to 8 (`h` = host adapter;
+  without it the target on any adapter). `/ID:1` takes only target 1.
+- `/NOSPINUP`: a stopped drive is not started. By default, a drive that
+  reports "not ready" (sense 02/04) at boot gets START STOP UNIT.
+- `/PAUSE`: wait for a key after the messages.
+- `/R:n`: each removable device gets at least `n` letters (1 to 8,
+  default 1), for media with more volumes inserted later. A letter without
+  a volume is "not ready", like an empty floppy drive. An empty card reader
+  gets one letter.
+
 Implemented behavior:
 
 - A drive letter for each volume of a device: the FAT partitions (types

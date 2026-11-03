@@ -115,6 +115,8 @@ dos-disk-smoke: all
 	DETECT_ONLY=1 bash tests/dos_disk.sh
 	bash tests/dos_disk_protect.sh
 	FDD=1 bash tests/dos_disk_protect.sh
+	bash tests/dos_partitions.sh
+	bash tests/dos_aspidsk_options.sh
 
 dos-media-smoke: all
 	bash tests/dos_media_control.sh

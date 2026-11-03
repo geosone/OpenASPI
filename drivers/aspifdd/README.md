@@ -8,6 +8,15 @@ policy and the raw tool service remain within that common implementation.
     DEVICE=C:\OPENASPI\AHCIASPI.SYS
     DEVICE=C:\OPENASPI\ASPIFDD.SYS
 
+Options (as ASPIDISK has them; `/` or `-`, upper or lower case, values
+after `:` or `=`):
+
+- `/ID:[h:]t[,[h:]t...]`: only these targets, up to 8 (`h` = host adapter;
+  without it the target on any adapter). `/ID:1` takes only target 1.
+- `/NOSPINUP`: a stopped drive is not started. By default, a drive that
+  reports "not ready" (sense 02/04) at boot gets START STOP UNIT.
+- `/PAUSE`: wait for a key after the messages.
+
 A device is taken when it is a direct-access device with the removable bit
 and its INQUIRY vendor/product contains `ZIP`, `LS-120`, `LS-240`, `CLIK`,
 `SUPERDISK`, `JAZ`, `SYQUEST`, `EZ135`, `EZFLYER`, `SYJET` or `SPARQ`;

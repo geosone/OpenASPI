@@ -119,9 +119,9 @@ because Ghidra found a function.
 | Track read/write/verify/format | 41h/61h/62h implemented with tested FreeDOS addressing and bounds | MS-DOS conventions, track tables and physical 42h profiles remain open; see [track behavior](block-track.md) |
 | FAT32/category 48h | Extended BPB, parameter/Media-ID reads, DOS filesystem read/write tested on FreeDOS 1.4 | Standard setting/track operations and MS-DOS 7.1/Windows 9x qualification remain open |
 | Multiple primary/extended partitions | One unit per FAT/exFAT volume: primaries, then the extended chain (loop guard), tested in `tests/dos_partitions.sh` | GPT is not read |
-| Removable reserved letters / identity | Limited | Empty-media boot, replacement media with changed partitioning, stable letters and stale-cache rejection |
+| Removable reserved letters / identity | `/R:n` letters per removable device; siblings share media change | Empty-media boot, replacement media with changed partitioning, stable letters and stale-cache rejection |
 | BIOS-owned devices | GET DISK INFO filtering and unsupported-manager fallback, tested through INIT | Actual Adaptec hardware and accurate motherboard/USB BIOS mappings in managers remain unqualified; see [ownership details](block-ownership.md) |
-| Spin-up and options | No /ID=, /NOSPINUP or /PAUSE compatibility yet | Manager/target selection, retry/error behavior and deterministic option tests |
+| Spin-up and options | `/ID:`, `/NOSPINUP`, `/PAUSE`, `/R:n` (reserved letters); START STOP UNIT for drives reporting 02/04 | `tests/block_ownership.asm` (spin-up, `/NOSPINUP`), `tests/dos_aspidsk_options.sh` |
 | Floptical and other sector sizes | Generic 512-byte path only | Device profiles, logical/physical sector translation and separately qualified formatting |
 | Private 7-byte ABI | Not implemented | Exact fields and behavior verified with callers; never expose unchecked internal state |
 
@@ -149,8 +149,7 @@ services must not make ASPIDSK claim those same targets.
 2. ASPIFDD: 42h format with FORMAT UNIT, 68h media type, eject/lock, the
    LS-120 media types (sensed with READ FORMAT CAPACITIES).
 3. ASPIDSK: remaining FAT32/category-48
-   compatibility and MS-DOS 7.1 qualification, reserved letters for removable disks, skip
-   disks handled by INT 13h, spin-up, `/ID=`.
+   compatibility and MS-DOS 7.1 qualification.
 4. Sector sizes other than 512 (MO media with 2048-byte sectors).
 
 ## Iomega GUEST.EXE

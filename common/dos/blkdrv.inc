@@ -1985,6 +1985,299 @@ resident_end label byte
         include common/aspi/removable.inc
 
 first_drive     db      0
+dev_units       db      0               ; units of the device being added
+
+; Options (CONFIG.SYS line), as ASPIDISK has them:
+;   /ID:[h:]t[,[h:]t...]  only these targets (h = host adapter, else any)
+;   /NOSPINUP             do not start stopped drives
+;   /PAUSE                wait for a key after the messages
+;   /R:n                  ASPIDSK: letters for each removable device, at
+;                         least n (1..8, default 1); an empty reader gets one
+opt_nospinup    db      0
+opt_pause       db      0
+opt_reserve     db      1
+ID_MAX          equ     8
+id_count        db      0
+id_list         dw      ID_MAX dup (0)  ; low byte target, high byte HA or 0FFh
+opt_word        db      10 dup (0)
+kw_nospinup     db      'NOSPINUP', 0
+kw_pause        db      'PAUSE', 0
+kw_id           db      'ID', 0
+kw_r            db      'R', 0
+msg_pause       db      'Press any key to continue . . .', 13, 10, '$'
+msg_bad_option  db      '  Unknown option ignored', 13, 10, '$'
+
+; Parse the CONFIG.SYS line after the driver path. Unknown options are
+; reported and ignored.
+parse_options proc near
+        push    ds
+        push    es
+        les     bx, [request_ptr]
+        lds     si, dword ptr es:[bx+RH_INIT_ARGS]
+        push    cs
+        pop     es
+        mov     ax, ds
+        or      ax, si
+        jnz     po_path
+        jmp     po_done                         ; no line
+po_path:
+        call    po_char
+        jbe     po_end                          ; end of the line
+        cmp     al, ' '
+        je      po_next
+        cmp     al, 9
+        jne     po_path
+po_next:
+        call    po_char
+        ja      po_more
+po_end:
+        jmp     po_done
+po_more:
+        cmp     al, '/'
+        je      po_switch
+        cmp     al, '-'
+        jne     po_next
+po_switch:
+        ; the option's name, upper case, into opt_word
+        mov     di, offset opt_word
+        mov     cx, 9
+po_name:
+        mov     al, byte ptr [si]
+        cmp     al, 'a'
+        jb      po_upper
+        cmp     al, 'z'
+        ja      po_upper
+        sub     al, 20h
+po_upper:
+        cmp     al, 'A'
+        jb      po_name_end
+        cmp     al, 'Z'
+        ja      po_name_end
+        stosb
+        inc     si
+        loop    po_name
+po_name_end:
+        mov     byte ptr es:[di], 0
+        mov     di, offset kw_nospinup
+        call    po_is
+        jne     po_not_nospinup
+        mov     byte ptr cs:[opt_nospinup], 1
+        jmp     po_next
+po_not_nospinup:
+        mov     di, offset kw_pause
+        call    po_is
+        jne     po_not_pause
+        mov     byte ptr cs:[opt_pause], 1
+        jmp     po_next
+po_not_pause:
+        mov     di, offset kw_r
+        call    po_is
+        jne     po_not_r
+        call    po_value
+        jc      po_bad
+        call    po_number
+        jc      po_bad
+        or      al, al
+        jz      po_bad
+        cmp     al, 8
+        ja      po_bad
+        mov     byte ptr cs:[opt_reserve], al
+        jmp     po_next
+po_not_r:
+        mov     di, offset kw_id
+        call    po_is
+        jne     po_bad
+        call    po_value
+        jc      po_bad
+po_id_entry:
+        call    po_number                       ; [h:]t
+        jc      po_bad
+        mov     ah, 0FFh
+        cmp     byte ptr [si], ':'
+        jne     po_id_store
+        inc     si
+        mov     ah, al
+        call    po_number
+        jc      po_bad
+po_id_store:                                    ; AL = target, AH = HA
+        mov     bl, byte ptr cs:[id_count]
+        cmp     bl, ID_MAX
+        jae     po_id_more
+        xor     bh, bh
+        shl     bx, 1
+        mov     word ptr cs:[id_list+bx], ax
+        inc     byte ptr cs:[id_count]
+po_id_more:
+        cmp     byte ptr [si], ','
+        je      po_id_comma
+        jmp     po_next
+po_id_comma:
+        inc     si
+        jmp     po_id_entry
+po_bad:
+        mov     dx, offset msg_bad_option
+        push    ds
+        push    cs
+        pop     ds
+        mov     ah, 09h
+        int     21h
+        pop     ds
+        jmp     po_next
+po_done:
+        pop     es
+        pop     ds
+        ret
+parse_options endp
+
+; next character of the line -> AL; CF/ZF (jbe) at its end
+po_char proc near
+        lodsb
+        cmp     al, 0Dh
+        je      po_char_end
+        cmp     al, 0Ah
+        je      po_char_end
+        or      al, al
+        jz      po_char_end
+        cmp     al, 0                           ; neither CF nor ZF
+        ret
+po_char_end:
+        cmp     al, al                          ; ZF
+        ret
+po_char endp
+
+; opt_word = the keyword at CS:DI? ZF
+po_is proc near
+        push    si
+        mov     si, offset opt_word
+po_is_next:
+        mov     al, byte ptr cs:[si]
+        cmp     al, byte ptr cs:[di]
+        jne     po_is_done
+        inc     si
+        inc     di
+        or      al, al
+        jnz     po_is_next
+po_is_done:
+        pop     si
+        ret
+po_is endp
+
+; ':' or '=' before a value; CF if missing
+po_value proc near
+        cmp     byte ptr [si], ':'
+        je      po_value_ok
+        cmp     byte ptr [si], '='
+        je      po_value_ok
+        stc
+        ret
+po_value_ok:
+        inc     si
+        clc
+        ret
+po_value endp
+
+; decimal number at DS:SI -> AL (0..255); CF if none
+po_number proc near
+        push    bx
+        xor     bx, bx
+        mov     ah, 0FFh                        ; no digit yet
+po_number_next:
+        mov     al, byte ptr [si]
+        sub     al, '0'
+        jb      po_number_end
+        cmp     al, 9
+        ja      po_number_end
+        inc     si
+        xor     ah, ah
+        push    ax
+        mov     al, 10
+        mul     bl
+        pop     bx
+        push    bx
+        xor     bh, bh
+        add     ax, bx
+        pop     bx
+        mov     bl, al
+        or      ah, ah
+        jnz     po_number_bad                   ; above 255
+        jmp     short po_number_next
+po_number_end:
+        cmp     ah, 0FFh
+        je      po_number_bad
+        mov     al, bl
+        pop     bx
+        clc
+        ret
+po_number_bad:
+        pop     bx
+        stc
+        ret
+po_number endp
+
+; /ID: is the device scan_ha:scan_target one of the listed ones? CF if not.
+; Without /ID: every device is.
+id_selected proc near
+        push    bx
+        push    cx
+        mov     cl, byte ptr [id_count]
+        xor     ch, ch
+        jcxz    id_yes
+        xor     bx, bx
+id_next:
+        mov     ax, word ptr [id_list+bx]
+        cmp     al, byte ptr [scan_target]
+        jne     id_skip
+        cmp     ah, 0FFh
+        je      id_yes
+        cmp     ah, byte ptr [scan_ha]
+        je      id_yes
+id_skip:
+        add     bx, 2
+        loop    id_next
+        stc
+        jmp     short id_done
+id_yes:
+        clc
+id_done:
+        pop     cx
+        pop     bx
+        ret
+id_selected endp
+
+; A stopped drive ("not ready, initializing command required", 02/04/02,
+; or 02/04 with another qualifier) is started with START STOP UNIT, unless
+; /NOSPINUP. DI = unit. Errors are left to the volume load.
+spin_up proc near
+        cmp     byte ptr [opt_nospinup], 0
+        jne     spin_up_done
+        call    test_unit_ready
+        jnc     spin_up_done
+        call    aspi_sense
+        jc      spin_up_done
+        cmp     al, 2                           ; NOT READY
+        jne     spin_up_done
+        cmp     ah, 4                           ; LOGICAL UNIT NOT READY
+        jne     spin_up_done
+        mov     ax, 011Bh                       ; START STOP UNIT, Start=1
+        call    aspi_media_control
+        call    test_unit_ready                 ; its UNIT ATTENTION, if any
+spin_up_done:
+        mov     byte ptr [aspi_attention], 0
+        ret
+spin_up endp
+
+; /PAUSE: wait for a key after INIT's messages
+init_pause proc near
+        cmp     byte ptr [opt_pause], 0
+        je      init_pause_done
+        mov     dx, offset msg_pause
+        mov     ah, 09h
+        int     21h
+        mov     ah, 08h                         ; character input, no echo
+        int     21h
+init_pause_done:
+        ret
+init_pause endp
 
 ; INIT registers devices, not merely inserted media. Classify type-00
 ; candidates, check manager/DOS ownership, and allocate at most MAX_UNITS.
@@ -1996,6 +2289,7 @@ init_request:
         les     bx, [request_ptr]
         mov     al, byte ptr es:[bx+RH_INIT_DRIVE]
         mov     byte ptr [first_drive], al
+        call    parse_options
         mov     dx, offset msg_banner
         mov     ah, 09h
         int     21h
@@ -2012,6 +2306,8 @@ init_next_device:
 init_device:
         cmp     byte ptr [scan_type], ASPI_DEV_DISK
         jne     init_next_device
+        call    id_selected                     ; /ID: one of these?
+        jc      init_next_device
         mov     al, byte ptr [unit_count]
         cmp     al, MAX_UNITS
         jb      init_inquiry
@@ -2027,6 +2323,7 @@ else
 endif
         call    check_disk_ownership
         jc      init_next_device
+        mov     byte ptr [dev_units], 0
         mov     al, byte ptr [unit_count]
         mov     ah, UNIT_SIZE
         mul     ah
@@ -2047,6 +2344,7 @@ init_flags_ready:
         mov     byte ptr [di+U_PART], 0
         mov     byte ptr [di+U_XFLAGS], 0
         call    test_unit_ready                 ; clear UNIT ATTENTION
+        call    spin_up
 init_try_volume:
         call    load_volume_x
         jnc     init_add_unit
@@ -2071,6 +2369,25 @@ else
         inc     byte ptr [di+U_PART]
         jmp     init_try_volume
 init_device_done:
+        ; /R: a removable device keeps at least that many letters, for the
+        ; volumes of media inserted later; an empty reader gets one
+        test    byte ptr [di+U_FLAGS], UF_REMOVABLE
+        jz      init_device_next
+        mov     al, byte ptr [dev_units]
+        cmp     al, byte ptr [opt_reserve]
+        jae     init_device_next
+        push    di
+        push    es
+        push    cs
+        pop     es
+        lea     di, [di+U_BPB]
+        mov     si, offset default_bpb
+        mov     cx, BPB_STORE_SIZE
+        rep     movsb
+        pop     es
+        pop     di
+        jmp     short init_add_unit
+init_device_next:
         jmp     init_next_device
 endif
 ; Only accepted devices reach the DOS unit/BPB pointer arrays. Capture the
@@ -2096,6 +2413,7 @@ init_add_unit:
         mov     word ptr [bpb_pointers+bx], ax
         call    print_unit
         inc     byte ptr [unit_count]
+        inc     byte ptr [dev_units]
 ifndef FDD_DRIVER
         ; ASPIDSK: each volume of the device its own unit, in the next slot
         mov     al, byte ptr [unit_count]
@@ -2133,6 +2451,7 @@ init_failed:
         mov     word ptr es:[bx+RH_INIT_END], 0
         mov     word ptr es:[bx+RH_INIT_END+2], cs
         mov     word ptr es:[bx+RH_STATUS], ST_DONE
+        call    init_pause
         jmp     request_done
 init_installed:
         les     bx, [request_ptr]
@@ -2143,6 +2462,7 @@ init_installed:
         mov     word ptr es:[bx+RH_INIT_ARGS], offset bpb_pointers
         mov     word ptr es:[bx+RH_INIT_ARGS+2], cs
         mov     word ptr es:[bx+RH_STATUS], ST_DONE
+        call    init_pause
         jmp     request_done
 
 ; INIT-only ownership check before TUR, volume reads or DOS unit allocation.

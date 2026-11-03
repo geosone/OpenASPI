@@ -37,6 +37,10 @@ mode db 0
 bad db 0
 queries dw 0
 reads dw 0
+stopped db 0                     ; modes 0, 2: each device starts stopped
+starts dw 0
+line_plain db 'OWN.SYS',13
+line_nospinup db 'OWN.SYS /nospinup',13
 boot db 0EBh,3Ch,90h,'OPENASPI'
      dw 512
      db 2
@@ -70,6 +74,7 @@ next_case:
         mov byte ptr [ownership_warned],0
         mov word ptr [queries],0
         mov word ptr [reads],0
+        mov word ptr [starts],0
         push cs
         pop es
         mov di,offset packet
@@ -78,6 +83,12 @@ next_case:
         rep stosb
         mov byte ptr [packet+RH_LENGTH],23
         mov byte ptr [packet+RH_INIT_DRIVE],3
+        mov word ptr [packet+RH_INIT_ARGS],offset line_plain
+        cmp byte ptr [mode],2
+        jne line_ready
+        mov word ptr [packet+RH_INIT_ARGS],offset line_nospinup
+line_ready:
+        mov word ptr [packet+RH_INIT_ARGS+2],cs
         mov bx,offset packet
         call dword ptr [strategy_addr]
         call dword ptr [interrupt_addr]
@@ -113,6 +124,14 @@ ifndef TEST_FDD
         shl cx,1                     ; ASPIDSK looks for a second volume
 endif
         cmp word ptr [reads],cx
+        REQUIRE
+        ; spin-up: a START for each device in mode 0, none with /NOSPINUP
+        xor cx,cx
+        cmp byte ptr [mode],0
+        jne starts_ready
+        mov cl,al
+starts_ready:
+        cmp word ptr [starts],cx
         REQUIRE
         cmp byte ptr [mode],3
         je check_warning
@@ -334,6 +353,14 @@ fake_error:
 fake_exec:
         cmp byte ptr [srb+SRB_CDB],12h
         BRANCH je, fake_data
+        ; a new device: stopped in modes 0 and 2
+        cmp byte ptr [mode],0
+        je fake_stop
+        cmp byte ptr [mode],2
+        jne fake_inquiry
+fake_stop:
+        mov byte ptr [stopped],1
+fake_inquiry:
         les di,dword ptr [srb+SRB_BufPointer]
         xor ax,ax
         mov cx,INQUIRY_LEN
@@ -367,8 +394,28 @@ fake_mixed_data:
         cmp byte ptr [srb+SRB_Lun],1
         BRANCH jne, fake_bad
 fake_data_allowed:
+        cmp byte ptr [srb+SRB_CDB],1Bh      ; START STOP UNIT
+        jne fake_not_start
+        cmp byte ptr [srb+SRB_CDB+4],1      ; Start=1
+        BRANCH je, fake_bad
+        mov byte ptr [stopped],0
+        inc word ptr [starts]
+        jmp fake_done
+fake_not_start:
         cmp byte ptr [srb+SRB_CDB],0
+        jne fake_not_tur
+        cmp byte ptr [stopped],0
         BRANCH jne, fake_done
+        ; NOT READY, initializing command required (02/04/02)
+        mov byte ptr [srb+SRB_Status],SS_ERR
+        mov byte ptr [srb+SRB_TargStat],2
+        mov byte ptr [srb+SRB_CDB+6],70h
+        mov byte ptr [srb+SRB_CDB+6+2],2
+        mov byte ptr [srb+SRB_CDB+6+7],10
+        mov byte ptr [srb+SRB_CDB+6+12],4
+        mov byte ptr [srb+SRB_CDB+6+13],2
+        jmp fake_done
+fake_not_tur:
         cmp byte ptr [srb+SRB_CDB],1Ah      ; MODE SENSE (WP probe): no bit
         BRANCH jne, fake_done
         cmp byte ptr [srb+SRB_CDB],28h

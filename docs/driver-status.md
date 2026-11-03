@@ -35,8 +35,9 @@ buffer acceptance is not proof of tape finalization.
   vendor protection/password operations, and non-512-byte sectors.
 - Detailed capability sensing, failed/short transport replies,
   residual-count handling and real mechanism qualification.
-- Runtime attachment like GUEST, original private caller ABIs, selection/
-  spin-up options and Windows 9x storage ownership/handover.
+- Runtime attachment like GUEST, original private caller ABIs and Windows
+  9x storage ownership/handover. (`/ID:`, `/NOSPINUP`, `/PAUSE` and `/R:n`
+  are implemented.)
 
 FAT32 now has a tested FreeDOS path. Broad MS-DOS 7.1 and Windows 9x/me
 compatibility still needs dedicated qualification. A read surface scan can
