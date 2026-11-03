@@ -10,8 +10,19 @@ LS-120, ZIP and similar removable-media drives are left to `ASPIFDD.SYS`.
 
 Implemented behavior:
 
-- One drive letter per device: the first supported FAT partition (types 01h,
-  04h, 06h, 0Eh; 0Bh/0Ch when FAT32 is enabled), or a superfloppy.
+- A drive letter for each volume of a device: the FAT partitions (types
+  01h, 04h, 06h, 0Eh; 0Bh/0Ch when FAT32 is enabled), then the exFAT ones
+  (07h). Primary partitions come in table order, then the logical drives
+  along the extended partition's chain (05h, 0Fh, 85h). A superfloppy is one
+  volume. Other types, and a 07h partition without exFAT, get no letter;
+  neither does a partition whose boot sector is unusable.
+- The letters are given at boot. A removable device keeps as many letters as
+  the medium in it had then. A later medium with fewer volumes leaves the
+  extra letters "not ready", and a later medium with more volumes shows only
+  as many as there are letters.
+- A media change seen through one letter reaches the device's other letters.
+  A PREVENT through one letter locks the device for all of them, and the
+  device is ejected only when none of its letters holds a lock.
 - READ (READ(10)), WRITE (WRITE(10)) and WRITE WITH VERIFY (WRITE AND
   VERIFY(10), WRITE(10) followed by VERIFY(10) where the combined command is
   unsupported); 512-byte sectors, up to
@@ -21,7 +32,7 @@ Implemented behavior:
   doesn't report the bit is written to, and its own refusal gives the error.
 - Media check and BUILD BPB for devices with the removable bit (USB
   sticks, card readers): a new medium is read again.
-- exFAT media (superfloppy or primary MBR partition of type 07h) for
+- exFAT media (superfloppy, or MBR partition of type 07h) for
   `EXFAT.SYS`: DOS sees an empty, write-protected disk until EXFAT.SYS
   takes the drive letter over; it reads the sectors through the exFAT
   service (`common/dos/exfat_svc.inc`).  See [EXFAT.SYS](../exfat/README.md).

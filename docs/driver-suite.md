@@ -13,7 +13,7 @@ are defined in [`devreq.inc`](../common/dos/devreq.inc).
 | Device type | 00h direct access | 00h, removable bit and recognized model | 05h multimedia | 01h sequential access |
 | Examples | Disk, SSD, ordinary USB stick/card reader | LS-120/240, ZIP, Clik!, Jaz | CD/DVD | Tape drive |
 | DOS interface | Block device | Block device | CD-ROM character device | Tape character device |
-| Selection exposed to applications | One letter per accepted device/first supported volume | One letter per accepted drive, including empty drives | MSCDEX/SHSUCDX letters via `/D:name` | Raw rewind/no-rewind aliases; optional buffered aliases |
+| Selection exposed to applications | One letter per FAT/exFAT volume of an accepted device | One letter per accepted drive, including empty drives | MSCDEX/SHSUCDX letters via `/D:name` | Raw rewind/no-rewind aliases; optional buffered aliases |
 | Data unit | 512-byte sectors | 512-byte sectors | 2048-byte cooked or 2352-byte raw sectors | Variable records or qualified fixed blocks |
 | Filesystem/archive owner | DOS FAT support | DOS FAT support | MSCDEX/SHSUCDX | Backup application |
 | Implementation | Shared `blkdrv.inc` | Shared `blkdrv.inc`, `FDD_DRIVER` policy | Own request handlers | Own legacy handlers and native OTAP binding |
@@ -31,12 +31,12 @@ separately for block devices; see [block-ownership.md](block-ownership.md).
 
 ## Current behavior and limits
 
-- [ASPIDSK](../drivers/aspidsk/README.md) exposes a superfloppy or the first
-  supported primary FAT partition. It implements block I/O, checked parameter
+- [ASPIDSK](../drivers/aspidsk/README.md) gives each FAT and exFAT volume of a
+  disk its own letter: primary partitions, then logical drives, or a
+  superfloppy. It implements block I/O, checked parameter
   and track IOCTLs, software access control and verified Media-ID updates.
-  FAT32 is conditional on DOS support, with a tested FreeDOS path. Multiple
-  partition units, extended/GPT traversal and broad Windows qualification
-  remain open.
+  FAT32 is conditional on DOS support, with a tested FreeDOS path. GPT and broad
+  Windows qualification remain open.
 - [ASPIFDD](../drivers/aspifdd/README.md) shares those block operations and adds
   removable-media policy, checked lock/eject and RAW1 sessions.
   [ASPIFMT](../tools/aspifmt/README.md) creates FAT filesystems and marks bad

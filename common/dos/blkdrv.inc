@@ -16,9 +16,9 @@
 ; defines FDD_DRIVER for ASPIFDD ownership policy, and includes dos_aspi.inc
 ; and devreq.inc before this file. Banner labels may follow this include.
 ;
-; One DOS unit per device: the first supported FAT partition of a partitioned
-; medium, or the whole medium of a superfloppy (no partition table, as on
-; LS-120 disks).  512-byte sectors only.  WRITE uses WRITE(10), WRITE WITH
+; ASPIDSK: one DOS unit per volume of a device (part_select: FAT partitions,
+; then exFAT ones; primaries, then logical drives), or the whole medium of a
+; superfloppy. ASPIFDD: one unit per device, its first volume.  512-byte sectors only.  WRITE uses WRITE(10), WRITE WITH
 ; VERIFY uses WRITE AND VERIFY(10) (WRITE(10) + VERIFY(10) without it); a
 ; write-protected medium reports DOS error 00h. Each volume load reads the
 ; medium's MODE SENSE WP bit (XF_WPROT); writes to it then fail at once.
@@ -27,7 +27,7 @@
 ; names a known removable-media drive (fdd_models), ASPIDSK all other type-00
 ; devices, so the two drivers never claim the same device.
 
-MAX_UNITS       equ     8
+MAX_UNITS       equ     16
 CHUNK_SECTORS   equ     64              ; 32 KB per READ(10)
 
 ; unit table entry
@@ -48,7 +48,8 @@ U_CAPACITY      equ     115
 U_RAW_TOKEN     equ     119
 U_XLEN          equ     121             ; dword: sectors of an exFAT volume
 U_XFLAGS        equ     125
-UNIT_SIZE       equ     126
+U_PART          equ     126             ; which volume of the device (part_select)
+UNIT_SIZE       equ     127
 
 UF_REMOVABLE    equ     01h
 UF_MEDIA        equ     02h
@@ -231,11 +232,82 @@ latch_unit_attention proc near
         and     byte ptr [di+U_FLAGS], not (UF_MEDIA or UF_BPB_OVERRIDE)
         or      byte ptr [di+U_XFLAGS], XF_CHANGED
         and     byte ptr [di+U_XFLAGS], not XF_WPROT
+        call    siblings_changed
 latch_attention_fixed:
         pop     di
 latch_attention_done:
         ret
 latch_unit_attention endp
+
+; The other units of DI's device (ASPIDSK: one per volume). SI = 0 starts;
+; -> SI = the next one, CF when there is none. Preserves all else.
+next_sibling proc near
+        push    ax
+        or      si, si
+        jnz     sibling_advance
+        mov     si, offset unit_table
+        jmp     short sibling_check
+sibling_advance:
+        add     si, UNIT_SIZE
+sibling_check:
+        mov     al, byte ptr [unit_count]
+        mov     ah, UNIT_SIZE
+        mul     ah
+        add     ax, offset unit_table
+        cmp     si, ax
+        jae     sibling_none
+        cmp     si, di
+        je      sibling_advance
+        mov     al, byte ptr [si+U_HA]
+        cmp     al, byte ptr [di+U_HA]
+        jne     sibling_advance
+        mov     al, byte ptr [si+U_TARGET]
+        cmp     al, byte ptr [di+U_TARGET]
+        jne     sibling_advance
+        mov     al, byte ptr [si+U_LUN]
+        cmp     al, byte ptr [di+U_LUN]
+        jne     sibling_advance
+        pop     ax
+        clc
+        ret
+sibling_none:
+        pop     ax
+        stc
+        ret
+next_sibling endp
+
+; DI's removable medium changed or left: so did the other volumes' units.
+; Preserves all registers except flags.
+siblings_changed proc near
+        push    si
+        xor     si, si
+siblings_changed_next:
+        call    next_sibling
+        jc      siblings_changed_done
+        and     byte ptr [si+U_FLAGS], not (UF_MEDIA or UF_BPB_OVERRIDE)
+        or      byte ptr [si+U_XFLAGS], XF_CHANGED
+        and     byte ptr [si+U_XFLAGS], not XF_WPROT
+        jmp     short siblings_changed_next
+siblings_changed_done:
+        pop     si
+        ret
+siblings_changed endp
+
+; AX = PREVENT locks the other units of DI's device hold. Preserves all else.
+sibling_locks proc near
+        push    si
+        xor     si, si
+        xor     ax, ax
+sibling_locks_next:
+        call    next_sibling
+        jc      sibling_locks_done
+        add     al, byte ptr [si+U_LOCKS]
+        adc     ah, 0
+        jmp     short sibling_locks_next
+sibling_locks_done:
+        pop     si
+        ret
+sibling_locks endp
 
 command_table:
         db      CMD_MEDIA_CHECK
@@ -446,6 +518,7 @@ load_volume proc near
         xor     dx, dx
         mov     cx, 1
         and     byte ptr [di+U_XFLAGS], not XF_WPROT
+        mov     byte ptr [part_missing], 1      ; until part_select finds it
         call    read_sectors
         jc      load_failed
         call    probe_wprot                     ; a medium: protected?
@@ -454,55 +527,28 @@ load_volume proc near
         ; a boot sector (superfloppy): jump and 512 bytes per sector
         call    check_boot_sector
         jnc     load_boot_ok
-        ; a partition table: the first supported FAT partition
-        mov     si, offset sector_buf+1BEh
-        mov     cx, 4
-; Scan four primary MBR entries in table order. Recognize the listed FAT
-; types; FAT32 entries are considered only when kernel support is qualified.
-; No extended-partition chain or GPT traversal occurs here. Once an entry is
-; selected, its invalid boot/layout fails this load rather than installing it.
-load_find_partition:
-        mov     al, byte ptr [si+4]
-        cmp     al, 01h                         ; FAT12
-        je      load_partition
-        cmp     al, 04h                         ; FAT16 < 32 MB
-        je      load_partition
-        cmp     al, 06h                         ; FAT16
-        je      load_partition
-        cmp     al, 0Eh                         ; FAT16 LBA
-        je      load_partition
-        cmp     byte ptr [fat32_enabled], 0
-        je      load_partition_next
-        cmp     al, 0Bh
-        je      load_partition
-        cmp     al, 0Ch
-        je      load_partition
-load_partition_next:
-        add     si, 16
-        loop    load_find_partition
-load_bad:
-        mov     al, ERR_UNKNOWN_MEDIA
-load_failed:
-        stc
-        ret
-load_partition:
+        ; a partition table: volume U_PART of part_select
+        call    part_select                     ; DX:AX start, part_len/type
+        jc      load_failed
+        cmp     byte ptr [part_type], 07h       ; exFAT: load_volume_x looks
+        je      load_bad
         ; Reject empty/wrapping extents before reading a selected partition.
-        mov     ax, word ptr [si+12]
-        mov     dx, word ptr [si+14]
+        mov     word ptr [part_lba], ax
+        mov     word ptr [part_lba+2], dx
+        mov     ax, word ptr [part_len]
+        mov     dx, word ptr [part_len+2]
         mov     word ptr [volume_extent], ax
         mov     word ptr [volume_extent+2], dx
         mov     bx, ax
         or      bx, dx
-        jnz     load_extent_nonempty
-        jmp     load_bad
-load_extent_nonempty:
+        jz      load_bad
         sub     ax, 1
         sbb     dx, 0
-        add     ax, word ptr [si+8]
-        adc     dx, word ptr [si+10]
+        add     ax, word ptr [part_lba]
+        adc     dx, word ptr [part_lba+2]
         jc      load_bad
-        mov     ax, word ptr [si+8]
-        mov     dx, word ptr [si+10]
+        mov     ax, word ptr [part_lba]
+        mov     dx, word ptr [part_lba+2]
         mov     bx, ax
         or      bx, dx
         jz      load_bad
@@ -516,7 +562,18 @@ load_extent_nonempty:
         call    check_boot_sector
         jc      load_bad
         jmp     short load_copy
+load_bad:
+        mov     al, ERR_UNKNOWN_MEDIA
+load_failed:
+        stc
+        ret
 load_boot_ok:
+        ; a superfloppy has one volume
+        cmp     byte ptr [di+U_PART], 0
+        je      load_boot_first
+        mov     byte ptr [part_missing], 1
+        jmp     short load_bad
+load_boot_first:
         mov     word ptr [di+U_START], 0
         mov     word ptr [di+U_START+2], 0
 load_copy:
@@ -581,6 +638,197 @@ load_hidden:
         clc
         ret
 load_volume endp
+
+; The volumes of a device, numbered for U_PART: first the FAT partitions
+; (FAT12/16, FAT32 when the kernel has it), then the exFAT ones (type 07h,
+; checked by exfat_detect); each time the four primary entries in table
+; order, then the logical drives along the first extended partition's chain.
+; Volume 0 is thus the first FAT partition, as before multiple volumes.
+; DI = unit -> CF clear: DX:AX = absolute start, part_len, part_type.
+; CF set: AL = DOS error, and part_missing = 1 when there is no such volume
+; (or the table cannot be followed), 0 when the caller may try the next.
+; Uses sector_buf.
+part_want       db      0
+part_pass       db      0
+part_idx        db      0
+part_guard      db      0
+part_missing    db      0
+part_type       db      0
+part_len        dd      0
+part_lba        dd      0
+part_base       dd      0               ; LBA of the table being read
+part_ext        dd      0               ; first extended partition
+
+part_select proc near
+        mov     byte ptr [part_missing], 0
+        mov     al, byte ptr [di+U_PART]
+        mov     byte ptr [part_want], al
+        mov     byte ptr [part_pass], 0
+ps_pass:
+        xor     ax, ax
+        xor     dx, dx
+        mov     word ptr [part_ext], ax
+        mov     word ptr [part_ext+2], ax
+        call    ps_read                         ; the MBR
+        jnc     ps_mbr
+        jmp     ps_failed
+ps_mbr:
+        mov     byte ptr [part_idx], 0
+ps_primary:
+        mov     al, byte ptr [part_idx]
+        mov     ah, 16
+        mul     ah
+        add     ax, offset sector_buf+1BEh
+        mov     si, ax
+        mov     al, byte ptr [si+4]
+        call    ps_candidate
+        jne     ps_primary_ext
+        call    ps_take
+        jc      ps_primary_ext
+        jmp     ps_found
+ps_primary_ext:
+        mov     al, byte ptr [si+4]
+        call    ps_is_extended
+        jne     ps_primary_next
+        mov     ax, word ptr [part_ext]
+        or      ax, word ptr [part_ext+2]
+        jnz     ps_primary_next
+        mov     ax, word ptr [si+8]
+        mov     word ptr [part_ext], ax
+        mov     ax, word ptr [si+10]
+        mov     word ptr [part_ext+2], ax
+ps_primary_next:
+        inc     byte ptr [part_idx]
+        cmp     byte ptr [part_idx], 4
+        jb      ps_primary
+        ; the logical drives: entry 0 of each EBR is a volume (relative to
+        ; that EBR), entry 1 links the next EBR (relative to the extended
+        ; partition)
+        mov     ax, word ptr [part_ext]
+        mov     dx, word ptr [part_ext+2]
+        mov     bx, ax
+        or      bx, dx
+        jz      ps_next_pass
+        mov     byte ptr [part_guard], 64
+ps_ebr:
+        call    ps_read
+        jc      ps_failed
+        mov     si, offset sector_buf+1BEh
+        mov     al, byte ptr [si+4]
+        call    ps_candidate
+        jne     ps_link
+        call    ps_take
+        jnc     ps_found
+ps_link:
+        mov     si, offset sector_buf+1CEh
+        mov     al, byte ptr [si+4]
+        call    ps_is_extended
+        jne     ps_next_pass
+        mov     ax, word ptr [si+8]
+        mov     dx, word ptr [si+10]
+        mov     bx, ax
+        or      bx, dx
+        jz      ps_next_pass
+        add     ax, word ptr [part_ext]
+        adc     dx, word ptr [part_ext+2]
+        jc      ps_bad
+        dec     byte ptr [part_guard]
+        jnz     ps_ebr
+        jmp     short ps_bad                    ; a loop in the chain
+ps_next_pass:
+        inc     byte ptr [part_pass]
+        cmp     byte ptr [part_pass], 2
+        jae     ps_bad
+        jmp     ps_pass
+ps_found:
+        mov     al, byte ptr [si+4]
+        mov     byte ptr [part_type], al
+        mov     ax, word ptr [si+12]
+        mov     word ptr [part_len], ax
+        mov     ax, word ptr [si+14]
+        mov     word ptr [part_len+2], ax
+        mov     ax, word ptr [si+8]
+        mov     dx, word ptr [si+10]
+        add     ax, word ptr [part_base]
+        adc     dx, word ptr [part_base+2]
+        jc      ps_bad
+        clc
+        ret
+ps_bad:
+        mov     al, ERR_UNKNOWN_MEDIA
+ps_failed:
+        mov     byte ptr [part_missing], 1
+        stc
+        ret
+part_select endp
+
+; read the table at DX:AX (part_base) into sector_buf; CF and AL on failure
+ps_read proc near
+        mov     word ptr [part_base], ax
+        mov     word ptr [part_base+2], dx
+        mov     word ptr [xfer_buffer], offset sector_buf
+        mov     word ptr [xfer_buffer+2], cs
+        mov     cx, 1
+        call    read_sectors
+        jc      ps_read_done
+        cmp     word ptr [sector_buf+510], 0AA55h
+        je      ps_read_done
+        mov     al, ERR_UNKNOWN_MEDIA
+        stc
+ps_read_done:
+        ret
+ps_read endp
+
+; partition type AL a volume of this pass? ZF
+ps_candidate proc near
+        cmp     byte ptr [part_pass], 0
+        je      ps_fat
+        cmp     al, 07h
+        ret
+ps_fat:
+        cmp     al, 01h                         ; FAT12
+        je      ps_candidate_done
+        cmp     al, 04h                         ; FAT16 < 32 MB
+        je      ps_candidate_done
+        cmp     al, 06h                         ; FAT16
+        je      ps_candidate_done
+        cmp     al, 0Eh                         ; FAT16 LBA
+        je      ps_candidate_done
+        cmp     byte ptr [fat32_enabled], 0
+        je      ps_not_fat32
+        cmp     al, 0Bh                         ; FAT32
+        je      ps_candidate_done
+        cmp     al, 0Ch                         ; FAT32 LBA
+ps_candidate_done:
+        ret
+ps_not_fat32:
+        push    ax
+        mov     ah, 1
+        or      ah, ah                          ; ZF clear
+        pop     ax
+        ret
+ps_candidate endp
+
+; partition type AL an extended partition (05h, 0Fh, 85h)? ZF
+ps_is_extended proc near
+        cmp     al, 05h
+        je      ps_extended_done
+        cmp     al, 0Fh
+        je      ps_extended_done
+        cmp     al, 85h
+ps_extended_done:
+        ret
+ps_is_extended endp
+
+; a volume of this pass: the wanted one? CF clear if so
+ps_take proc near
+        cmp     byte ptr [part_want], 0
+        je      ps_take_done                    ; CF clear
+        dec     byte ptr [part_want]
+        stc
+ps_take_done:
+        ret
+ps_take endp
 
 ; sector_buf contains a supported FAT boot sector? CF set on rejection.
 ; Check the sector envelope and basic BPB geometry before publishing a view.
@@ -809,6 +1057,7 @@ else
 endif
         jnc     media_check_done
         and     byte ptr [di+U_FLAGS], not (UF_MEDIA or UF_BPB_OVERRIDE)
+        call    siblings_changed
         mov     ah, 0FFh                        ; UNIT ATTENTION, no medium
         mov     byte ptr [aspi_attention], 0    ; reported now, do not latch again
 media_check_done:
@@ -1615,6 +1864,9 @@ ioctl_media_lock proc near
         je      media_lock_bad_count
         cmp     byte ptr [di+U_LOCKS], 0
         jne     media_lock_increment
+        call    sibling_locks                 ; another volume holds the device
+        or      ax, ax
+        jnz     media_lock_increment
         mov     ax, 011Eh                     ; PREVENT, first accepted lock
         call    medium_control_result
         jc      media_lock_done
@@ -1626,6 +1878,9 @@ media_unlock:
         je      media_lock_bad_count
         cmp     byte ptr [di+U_LOCKS], 1
         jne     media_lock_decrement
+        call    sibling_locks
+        or      ax, ax
+        jnz     media_lock_decrement
         mov     ax, 001Eh                     ; ALLOW, final accepted unlock
         call    medium_control_result
         jc      media_lock_done
@@ -1650,10 +1905,14 @@ ioctl_media_eject proc near
         mov     di, word ptr [unit_ptr]
         cmp     byte ptr [di+U_LOCKS], 0
         jne     media_lock_bad_count
+        call    sibling_locks                 ; locked through another volume
+        or      ax, ax
+        jnz     media_lock_bad_count
         mov     ax, 021Bh                     ; LoEj=1, Start=0
         call    medium_control_result
         jc      media_eject_done
         and     byte ptr [di+U_FLAGS], not (UF_MEDIA or UF_BPB_OVERRIDE)
+        call    siblings_changed
 media_eject_done:
         ret
 ioctl_media_eject endp
@@ -1773,7 +2032,10 @@ endif
         jz      init_flags_ready
         mov     byte ptr [di+U_FLAGS], UF_REMOVABLE
 init_flags_ready:
+        mov     byte ptr [di+U_PART], 0
+        mov     byte ptr [di+U_XFLAGS], 0
         call    test_unit_ready                 ; clear UNIT ATTENTION
+init_try_volume:
         call    load_volume_x
         jnc     init_add_unit
 ifdef FDD_DRIVER
@@ -1790,7 +2052,14 @@ ifdef FDD_DRIVER
         pop     di
         jmp     short init_add_unit
 else
-        jmp     init_next_device                ; no supported FAT volume
+        ; ASPIDSK: an unusable volume is skipped, the next one tried;
+        ; without further volumes the device is done
+        cmp     byte ptr [part_missing], 0
+        jne     init_device_done
+        inc     byte ptr [di+U_PART]
+        jmp     init_try_volume
+init_device_done:
+        jmp     init_next_device
 endif
 ; Only accepted devices reach the DOS unit/BPB pointer arrays. Capture the
 ; default logical BPB separately from the current one so media changes do not
@@ -1815,6 +2084,30 @@ init_add_unit:
         mov     word ptr [bpb_pointers+bx], ax
         call    print_unit
         inc     byte ptr [unit_count]
+ifndef FDD_DRIVER
+        ; ASPIDSK: each volume of the device its own unit, in the next slot
+        mov     al, byte ptr [unit_count]
+        cmp     al, MAX_UNITS
+        jae     init_device_full
+        mov     si, di
+        add     di, UNIT_SIZE
+        mov     al, byte ptr [si+U_HA]
+        mov     byte ptr [di+U_HA], al
+        mov     al, byte ptr [si+U_TARGET]
+        mov     byte ptr [di+U_TARGET], al
+        mov     al, byte ptr [si+U_LUN]
+        mov     byte ptr [di+U_LUN], al
+        mov     al, byte ptr [si+U_FLAGS]
+        and     al, UF_REMOVABLE
+        mov     byte ptr [di+U_FLAGS], al
+        mov     byte ptr [di+U_LOCKS], 0
+        mov     byte ptr [di+U_XFLAGS], 0
+        mov     al, byte ptr [si+U_PART]
+        inc     al
+        mov     byte ptr [di+U_PART], al
+        jmp     init_try_volume
+init_device_full:
+endif
         jmp     init_next_device
 init_scan_done:
         cmp     byte ptr [unit_count], 0

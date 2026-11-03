@@ -118,7 +118,7 @@ because Ghidra found a function.
 | Software access flag / logical mapping | Per-unit 47h/67h with normal block-I/O enforcement; 17h/18h report no alternate mapping | Resident tests for both variants and live DOS calls pass; see [access behavior](block-access.md). Hardware protection and Windows locks remain separate |
 | Track read/write/verify/format | 41h/61h/62h implemented with tested FreeDOS addressing and bounds | MS-DOS conventions, track tables and physical 42h profiles remain open; see [track behavior](block-track.md) |
 | FAT32/category 48h | Extended BPB, parameter/Media-ID reads, DOS filesystem read/write tested on FreeDOS 1.4 | Standard setting/track operations and MS-DOS 7.1/Windows 9x qualification remain open |
-| Multiple primary/extended partitions | First supported primary partition only | EBR traversal, overflow/loop guards, independent units and partition isolation |
+| Multiple primary/extended partitions | One unit per FAT/exFAT volume: primaries, then the extended chain (loop guard), tested in `tests/dos_partitions.sh` | GPT is not read |
 | Removable reserved letters / identity | Limited | Empty-media boot, replacement media with changed partitioning, stable letters and stale-cache rejection |
 | BIOS-owned devices | GET DISK INFO filtering and unsupported-manager fallback, tested through INIT | Actual Adaptec hardware and accurate motherboard/USB BIOS mappings in managers remain unqualified; see [ownership details](block-ownership.md) |
 | Spin-up and options | No /ID=, /NOSPINUP or /PAUSE compatibility yet | Manager/target selection, retry/error behavior and deterministic option tests |
@@ -148,7 +148,7 @@ services must not make ASPIDSK claim those same targets.
    See [current block IOCTL behavior](block-ioctl.md).
 2. ASPIFDD: 42h format with FORMAT UNIT, 68h media type, eject/lock, the
    LS-120 media types (sensed with READ FORMAT CAPACITIES).
-3. ASPIDSK: all partitions (extended partitions), remaining FAT32/category-48
+3. ASPIDSK: remaining FAT32/category-48
    compatibility and MS-DOS 7.1 qualification, reserved letters for removable disks, skip
    disks handled by INT 13h, spin-up, `/ID=`.
 4. Sector sizes other than 512 (MO media with 2048-byte sectors).

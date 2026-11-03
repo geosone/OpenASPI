@@ -20,8 +20,8 @@ buffer acceptance is not proof of tape finalization.
   unsupported-manager fallback are implemented and INIT-tested. Accurate
   motherboard/USB-boot BIOS mappings still depend on the manager; current
   tools cannot resolve every BIOS, SUBST or Windows alias.
-- More than the first supported primary partition; checked extended-partition
-  traversal, complete partition-bound validation and independent DOS units.
+- GPT partitions (MBR primaries and logical drives are units of their own,
+  `tests/dos_partitions.sh`).
 - [Software access flags and independent logical mappings](block-access.md)
   are implemented and DOS-tested. Verified [Media-ID writes](block-ioctl.md)
   include FAT32 backup boot sectors and selected-partition extent checks.

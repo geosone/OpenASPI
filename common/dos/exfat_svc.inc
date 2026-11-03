@@ -40,7 +40,6 @@ PK_RESULT       equ     0Eh
 
 exfat_packet    dd      0
 exfat_callback  dd      0
-exfat_starts    dd      4 dup (0)
 
 ; DI's unit: load_volume, else an exFAT volume (superfloppy, or a primary
 ; MBR partition of type 07h): placeholder BPB, UF_EXFAT, U_START, U_XLEN.
@@ -82,6 +81,19 @@ load_x_exfat:
         or      byte ptr [di+U_FLAGS], UF_EXFAT
         clc
 load_x_done:
+        ; A UNIT ATTENTION during a load that succeeded (a drive may report
+        ; "no medium" and then "medium changed") is answered by the volume
+        ; just read: the request latching it would mark that volume changed
+        ; again, and the next read would fail. Only the other volumes of
+        ; the device still have to learn of the change.
+        cmp     byte ptr [aspi_attention], 0
+        je      load_x_answered
+        mov     byte ptr [aspi_attention], 0
+        test    byte ptr [di+U_FLAGS], UF_REMOVABLE
+        jz      load_x_answered
+        call    siblings_changed
+load_x_answered:
+        clc
         ret
 load_x_unknown:
         mov     al, ERR_UNKNOWN_MEDIA
@@ -121,53 +133,28 @@ exfat_sector0:
         xor     ax, ax
         xor     dx, dx
         call    is_exfat_boot
+        jne     exfat_table
+        cmp     byte ptr [di+U_PART], 0         ; a superfloppy: one volume
         je      exfat_found
+        mov     byte ptr [part_missing], 1
+        jmp     short exfat_none
+exfat_table:
         cmp     word ptr [sector_buf+510], 0AA55h
         jne     exfat_none
-        ; the starts of the partitions of type 07h
-        push    di
-        push    es
-        push    cs
-        pop     es
-        mov     si, offset sector_buf+1BEh
-        mov     di, offset exfat_starts
-        mov     cx, 4
-exfat_entries:
-        xor     ax, ax
-        xor     dx, dx
-        cmp     byte ptr [si+4], 07h
-        jne     exfat_entry
-        mov     ax, word ptr [si+8]
-        mov     dx, word ptr [si+10]
-exfat_entry:
-        stosw
-        xchg    ax, dx
-        stosw
-        add     si, 16
-        loop    exfat_entries
-        pop     es
-        pop     di
-        mov     si, offset exfat_starts
-exfat_next_part:
-        cmp     si, offset exfat_starts+16
-        jae     exfat_none
-        mov     ax, word ptr [si]
-        mov     dx, word ptr [si+2]
-        add     si, 4
-        mov     bx, ax
-        or      bx, dx
-        jz      exfat_next_part
+        ; volume U_PART, if it is a type 07h partition with exFAT in it
+        call    part_select
+        jc      exfat_none
+        cmp     byte ptr [part_type], 07h
+        jne     exfat_none
         push    ax
         push    dx
-        push    si
         mov     cx, 1
         call    read_sectors
-        pop     si
         pop     dx
         pop     ax
-        jc      exfat_next_part
+        jc      exfat_none
         call    is_exfat_boot
-        jne     exfat_next_part
+        jne     exfat_none
 exfat_found:
         mov     word ptr [di+U_START], ax
         mov     word ptr [di+U_START+2], dx

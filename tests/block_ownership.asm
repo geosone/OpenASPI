@@ -108,7 +108,11 @@ count_ready:
         REQUIRE
         cmp byte ptr [packet+RH_INIT_UNITS],al
         REQUIRE
-        cmp word ptr [reads],ax
+        mov cx,ax
+ifndef TEST_FDD
+        shl cx,1                     ; ASPIDSK looks for a second volume
+endif
+        cmp word ptr [reads],cx
         REQUIRE
         cmp byte ptr [mode],3
         je check_warning
