@@ -69,4 +69,5 @@ is_fdd_model endp
 
 fdd_models:
         db      'ZIP', 0, 'LS-120', 0, 'LS-240', 0, 'CLIK', 0
-        db      'SUPERDISK', 0, 'JAZ', 0, 0
+        db      'SUPERDISK', 0, 'JAZ', 0, 'SYQUEST', 0, 'EZ135', 0
+        db      'EZFLYER', 0, 'SYJET', 0, 'SPARQ', 0, 0

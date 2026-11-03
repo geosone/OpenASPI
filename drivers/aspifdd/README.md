@@ -1,7 +1,7 @@
 # ASPIFDD.SYS
 
 ASPI removable-media driver: a DOS block device driver for LS-120/240, ZIP,
-Clik!, Jaz, SuperDisk and similar drives behind an ASPI manager.  It is
+Clik!, Jaz, SuperDisk, SyQuest and similar drives behind an ASPI manager.  It is
 selected separately from ASPIDSK while reusing its block core; removable
 policy and the raw tool service remain within that common implementation.
 
@@ -10,7 +10,9 @@ policy and the raw tool service remain within that common implementation.
 
 A device is taken when it is a direct-access device with the removable bit
 and its INQUIRY vendor/product contains `ZIP`, `LS-120`, `LS-240`, `CLIK`,
-`SUPERDISK` or `JAZ`; ASPIDSK skips exactly these devices.
+`SUPERDISK`, `JAZ`, `SYQUEST`, `EZ135`, `EZFLYER`, `SYJET` or `SPARQ`;
+ASPIDSK skips exactly these devices. AHCIASPI reports ATA cartridge drives
+(SyQuest EZ135, EZFlyer) with vendor `ATA` and the model as product.
 
 Implemented behavior:
 

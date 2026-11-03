@@ -139,8 +139,14 @@ boundary tests and an optional sanitizer run.
   `bash tests/dos_86box_syquest.sh` boots with a SyQuest EZFlyer (`EZ135=1`:
   EZ135; `EZ135CART=1`: an EZ135 cartridge) as a native ATA cartridge drive
   and reads and writes it through the BIOS; `SQATDRVR=<path>` also loads
-  SyQuest's SQATDRVR.SYS 1.75 (not shipped), with `SQOPT` options. It needs
-  the SyQuest ATA drives of geosone/86Box `lpt-zip`.
+  SyQuest's SQATDRVR.SYS 1.75 (not shipped), with `SQOPT` options.
+  - `ASPI=1` reaches the drive on a tertiary channel through AHCIASPI and
+    ASPIFDD.
+  - `ASPI=1 EXFAT=1` does the same with EXFAT.SYS on an exFAT partition.
+  - `ASPI=bios` checks that ASPIFDD leaves the BIOS's drive alone.
+
+  It needs the SyQuest ATA drives of geosone/86Box `lpt-zip`; see
+  [86Box SyQuest](86box-syquest.md).
 - `make dos-tape-smoke` boots a test-only ASPI manager exposing an emulated
   tape. Driver scenarios and focused runs are documented in
   [ASPITAP testing](../drivers/aspitap/TESTING.md).
