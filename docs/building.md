@@ -145,7 +145,7 @@ boundary tests and an optional sanitizer run.
   - `ASPI=1 EXFAT=1` does the same with EXFAT.SYS on an exFAT partition.
   - `ASPI=bios` checks that ASPIFDD leaves the BIOS's drive alone.
 
-  It needs the SyQuest ATA drives of geosone/86Box `lpt-zip`; see
+  It needs 86Box master from 2026-11-04 on (PR #8698); see
   [86Box SyQuest](86box-syquest.md).
   `bash tests/dos_ahci_ata.sh` puts the cartridge drive on an AHCI port in
   QEMU, as `ide-cf` with the EZFlyer's model and geometry, and copies files on

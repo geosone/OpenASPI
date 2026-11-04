@@ -17,8 +17,8 @@
 # lifts it with ASPICTL UNPROTEC and writes; on the EZ135 (EZ135=1), which
 # has only the tab, PROTECT must fail with ILLEGAL REQUEST. Writes are
 # restricted to this disposable image; it is checked after the VM shuts down.
-# Needs an 86Box with the SyQuest ATA drives of geosone/86Box lpt-zip (or
-# syquest-ata on 86Box master, with TYPES="31 32").
+# Needs 86Box master from 2026-11-04 on (PR #8698), built with AUTOMATION=ON;
+# for the older geosone/86Box lpt-zip build, TYPES="9 10".
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 BOX=${BOX:-$ROOT/../86Box/build-upc/src/86Box}
@@ -37,9 +37,9 @@ if { [ "$EXFAT" = 1 ] || [ "$WP" = 1 ] || [ "$PROT" = 1 ]; } && [ "$ASPI" != 1 ]
 fi
 AHCIASPI_DIR=${AHCIASPI_DIR:-$ROOT/../ahciaspi}
 OUT=${OUT:-$ROOT/build/86box-syquest}
-# rdisk type numbers in 86box.cfg: 9/10 in geosone/86Box lpt-zip, 31/32
-# (EZ135A/EZ230A) since the rdisk refactor of 86Box master: TYPES="31 32"
-TYPES=${TYPES:-9 10}
+# rdisk type numbers in 86box.cfg of the EZ135A and EZ230A: 31/32 in 86Box
+# master, 9/10 in the older geosone/86Box lpt-zip
+TYPES=${TYPES:-31 32}
 if [ "$EZ135" = 1 ]; then TYPE=${TYPES% *}; else TYPE=${TYPES#* }; fi
 if [ "$EZ135CART" = 1 ]; then SECTORS=262144; else SECTORS=450560; fi
 test -x "$BOX"

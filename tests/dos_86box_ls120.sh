@@ -2,8 +2,8 @@
 # Native ATAPI LS-120, not a USB device merely named SUPERDISK. Writes are
 # restricted to this disposable image; validate it after shutting the VM down.
 # LPT=1: the parallel port LS-120 instead (Shuttle EPAT bridge), through
-# Imation's SD120PPD.SYS taken from LS120PACK (not shipped). Needs an 86Box
-# with the EPAT fixes of geosone/86Box lpt-zip.
+# Imation's SD120PPD.SYS taken from LS120PACK (not shipped). Needs 86Box
+# master from 2026-11-04 on (PR #8697: EPAT fixes, rdisk_t layout fix).
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 BOX=${BOX:-$ROOT/../86Box/build-upc/src/86Box}

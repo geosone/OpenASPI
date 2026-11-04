@@ -1,7 +1,8 @@
 #!/bin/bash
 # Native parallel port ZIP 100 (PPA) through Iomega's ASPIPPM1.SYS. Writes are
 # restricted to this disposable image; validate it after shutting the VM down.
-# Needs an 86Box with lpt_zip.c and Iomega's DOS drivers in IOMEGA (not shipped).
+# Needs 86Box master from 2026-11-04 on (lpt_zip.c, PR #8697) and Iomega's DOS
+# drivers in IOMEGA (not shipped).
 # ZIP250=1: the ZIP 250 parallel port drive (IMM) through ASPIPPM2.SYS instead.
 # PROT=1: ASPICTL PROTECT sets the disk's write protection (Iomega SET
 # PROTECTION MODE), tests/disk_protect.asm checks it, ASPICTL UNPROTEC lifts

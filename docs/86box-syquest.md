@@ -2,13 +2,15 @@
 
 The SyQuest EZ135 and EZFlyer 230 are plain ATA drives, not ATAPI. Their
 cartridges are read and written with ordinary ATA sector commands, and
-IDENTIFY DEVICE sets the removable bit. The 86Box branch `lpt-zip` of
-geosone/86Box adds both drives as removable disk types 9 (EZ135) and 10
-(EZFlyer 230) on the bus `ide`:
+IDENTIFY DEVICE sets the removable bit. 86Box master (since PR #8698,
+2026-11-04) runs its removable disk types EZ135A (31) and EZ230A (32) as
+such on the bus `ide`; on `atapi` they stay an ATAPI approximation. The
+older geosone/86Box branch `lpt-zip` had them as types 9 and 10
+(`TYPES="9 10"` for the test):
 
 ```ini
 [Other removable devices]
-rdisk_01_parameters = 10, ide
+rdisk_01_parameters = 32, ide
 rdisk_01_ide_channel = 1:0
 rdisk_01_image_path = cart.img
 ```
