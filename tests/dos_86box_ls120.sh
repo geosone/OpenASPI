@@ -4,6 +4,8 @@
 # LPT=1: the parallel port LS-120 instead (Shuttle EPAT bridge), through
 # Imation's SD120PPD.SYS taken from LS120PACK (not shipped). Needs 86Box
 # master from 2026-11-04 on (PR #8697: EPAT fixes, rdisk_t layout fix).
+# LPT=1 MGR=path: that ASPI manager (for example PORTASPI.SYS) instead of
+# SD120PPD.SYS, loaded with /V and MGROPT.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 BOX=${BOX:-$ROOT/../86Box/build-upc/src/86Box}
@@ -11,9 +13,11 @@ ROMDIR=${ROMDIR:-$HOME/.local/share/86Box/roms}
 LEGACY86BOX=${LEGACY86BOX:-0}
 LPT=${LPT:-0}
 LS120PACK=${LS120PACK:-$HOME/Iso/Dos/LS-120_Parallel_Port_DriverPack.zip}
+MGR=${MGR:-}
+MGROPT=${MGROPT:-}
 if [ "$LPT" = 1 ]; then
     OUT=${OUT:-$ROOT/build/86box-ls120-lpt}
-    test -f "$LS120PACK"
+    if [ -n "$MGR" ]; then test -f "$MGR"; else test -f "$LS120PACK"; fi
 else
     OUT=${OUT:-$ROOT/build/86box-ls120}
 fi
@@ -44,10 +48,18 @@ if [ "$LPT" = 1 ]; then
     sed -i -e 's/^lpt1_enabled = 0$/lpt1_enabled = 1/' \
         -e 's/^rdisk_01_parameters = 7, atapi$/rdisk_01_parameters = 7, lpt/' \
         -e 's/^rdisk_01_ide_channel = 1:0$/rdisk_01_lpt_port = 0/' "$OUT/86box.cfg"
-    unzip -p "$LS120PACK" 'SuperDisk Parallel Port v5.46_DOS.exe' > "$OUT/sd120dos.zip"
-    unzip -p "$OUT/sd120dos.zip" sd120ppd.sys > "$OUT/SD120PPD.SYS"
-    mcopy -o -i "$OUT/boot.img" "$OUT/SD120PPD.SYS" ::/
-    mcopy -o -i "$OUT/boot.img" "$ROOT/tests/fixtures/86box-ls120-lpt-config.sys" ::/CONFIG.SYS
+    if [ -n "$MGR" ]; then
+        name=$(basename "$MGR" | tr a-z A-Z)
+        mcopy -o -i "$OUT/boot.img" "$MGR" ::/"$name"
+        sed "1s|.*|DEVICE=$name /V $MGROPT|" \
+            "$ROOT/tests/fixtures/86box-ls120-lpt-config.sys" > "$OUT/CONFIG.SYS"
+        mcopy -o -i "$OUT/boot.img" "$OUT/CONFIG.SYS" ::/CONFIG.SYS
+    else
+        unzip -p "$LS120PACK" 'SuperDisk Parallel Port v5.46_DOS.exe' > "$OUT/sd120dos.zip"
+        unzip -p "$OUT/sd120dos.zip" sd120ppd.sys > "$OUT/SD120PPD.SYS"
+        mcopy -o -i "$OUT/boot.img" "$OUT/SD120PPD.SYS" ::/
+        mcopy -o -i "$OUT/boot.img" "$ROOT/tests/fixtures/86box-ls120-lpt-config.sys" ::/CONFIG.SYS
+    fi
 else
     mcopy -o -i "$OUT/boot.img" "$ROOT/tests/fixtures/86box-ls120-config.sys" ::/CONFIG.SYS
 fi
