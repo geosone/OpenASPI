@@ -7,6 +7,8 @@
 # PROT=1: ASPICTL PROTECT sets the disk's write protection (Iomega SET
 # PROTECTION MODE), tests/disk_protect.asm checks it, ASPICTL UNPROTEC lifts
 # it before the writes.
+# MGR=path: that ASPI manager (for example PORTASPI.SYS) instead of Iomega's,
+# loaded with /V and MGROPT.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 BOX=${BOX:-$ROOT/../86Box/build-zip/src/86Box}
@@ -21,9 +23,11 @@ else
     ZIP_TYPE=1 ZIP_SECTORS=196608 ZIP_SPC=4 ZIP_ASPI=ASPIPPM1.SYS ZIP_ILM=NIBBLE.ILM
 fi
 IOMEGA=${IOMEGA:-$HOME/mars/ahciaspi/ref/zip100}
+MGR=${MGR:-}
+MGROPT=${MGROPT:-}
 test -x "$BOX"
 test -d "$ROMDIR"
-test -f "$IOMEGA/$ZIP_ASPI"
+if [ -n "$MGR" ]; then test -f "$MGR"; else test -f "$IOMEGA/$ZIP_ASPI"; fi
 mkdir -p "$OUT"
 if [ -e "$OUT/control.sock" ]; then
     echo "Refusing to reuse an existing control socket: $OUT/control.sock" >&2
@@ -36,8 +40,13 @@ fi
 cp "$ROOT/build/dos-cda/boot.img" "$OUT/"
 sed "s/^rdisk_01_parameters = 1, lpt$/rdisk_01_parameters = $ZIP_TYPE, lpt/" \
     "$ROOT/tests/fixtures/86box-zip.cfg" > "$OUT/86box.cfg"
-sed -e "s/ASPIPPM1.SYS/$ZIP_ASPI/" -e "s/NIBBLE.ILM/$ZIP_ILM/" \
-    "$ROOT/tests/fixtures/86box-zip-config.sys" > "$OUT/CONFIG.SYS"
+if [ -n "$MGR" ]; then
+    sed "1s|.*|DEVICE=$(basename "$MGR" | tr a-z A-Z) /V $MGROPT|" \
+        "$ROOT/tests/fixtures/86box-zip-config.sys" > "$OUT/CONFIG.SYS"
+else
+    sed -e "s/ASPIPPM1.SYS/$ZIP_ASPI/" -e "s/NIBBLE.ILM/$ZIP_ILM/" \
+        "$ROOT/tests/fixtures/86box-zip-config.sys" > "$OUT/CONFIG.SYS"
+fi
 mcopy -o -i "$OUT/boot.img" "$OUT/CONFIG.SYS" ::/CONFIG.SYS
 cp "$ROOT/tests/fixtures/86box-zip-autoexec.bat" "$OUT/AUTOEXEC.BAT"
 if [ "$PROT" = 1 ]; then
@@ -48,7 +57,11 @@ if [ "$PROT" = 1 ]; then
 fi
 mcopy -o -i "$OUT/boot.img" "$OUT/AUTOEXEC.BAT" ::/AUTOEXEC.BAT
 mcopy -o -i "$OUT/boot.img" "$ROOT/build/dos/ASPIFDD.SYS" "$ROOT/build/dos/ASPISCAN.COM" ::/
-mcopy -o -i "$OUT/boot.img" "$IOMEGA/$ZIP_ASPI" "$IOMEGA/$ZIP_ILM" ::/
+if [ -n "$MGR" ]; then
+    mcopy -o -i "$OUT/boot.img" "$MGR" ::/"$(basename "$MGR" | tr a-z A-Z)"
+else
+    mcopy -o -i "$OUT/boot.img" "$IOMEGA/$ZIP_ASPI" "$IOMEGA/$ZIP_ILM" ::/
+fi
 truncate -s $((ZIP_SECTORS*512)) "$OUT/zip.img"
 mkfs.fat -F16 -s$ZIP_SPC -g64/32 -i 12012012 -n ZIP "$OUT/zip.img" > "$OUT/mkfs.log"
 mcopy -i "$OUT/zip.img" "$ROOT/tests/fixtures/zip-readme.txt" ::/ZIP.TXT
