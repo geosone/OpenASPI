@@ -17,6 +17,8 @@ if [ ! -f "$ROOT/build/dos-cda/boot.img" ]; then
 fi
 cp "$ROOT/build/dos-cda/boot.img" "$OUT/boot.img"
 cp "$ROOT/tests/fixtures/86box-ls120.cfg" "$OUT/86box.cfg"
+# the Matshita LS-120 COSM 04 (rev 0270) the probe looks for: 86Box type 28
+sed -i 's/^rdisk_01_parameters = 7, atapi$/rdisk_01_parameters = 28, atapi/' "$OUT/86box.cfg"
 truncate -s $((963*256*512)) "$OUT/ls120.img"
 # Inventory uses only INQUIRY, so this image intentionally has no filesystem.
 printf '%s\r\n' 'DEVICE=AHCIASPI.SYS /Q' 'SHELL=COMMAND.COM /P' > "$OUT/CONFIG.SYS"
