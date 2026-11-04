@@ -53,6 +53,17 @@ transfer):
   turned into a character device, since DOS drops a block driver without
   units.
 
+`tests/dos_86box_rebios.sh` checks this in 86Box under MS-DOS 7.1:
+`MODE=ls120` (LS-120 as A:), `MODE=zip` (partitioned ZIP 100 as C:) and
+`MODE=ab` (LS-120 as A:, ZIP 100 superfloppy as B:). Each gets one letter
+per drive, ASPIFMT's preview on it, copies with VERIFY and fsck. It needs a
+local 86Box 686nx BIOS built from ReBIOS's SeaBIOS (`da35a064` on): the
+86Box test changes of bootit's `seabios-86box` (PCI setup without BAR
+probing, the preloaded ISA VGA ROM) and, in `boot_init`, the ROM file
+`etc/floppy-a` = `LS-120` and CMOS 10h cleared. `tests/dos_ahci_ata.sh`
+(QEMU's SeaBIOS, SyQuest on AHCI as C:) and `dos_86box_syquest.sh
+ASPI=bios` check the hard disk case on other BIOSes.
+
 INIT prints `X: (BIOS drive taken over)`. If no such letter exists (another
 DOS, no drive data tables, a volume start that does not match), the device
 is skipped as before.
