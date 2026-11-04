@@ -15,19 +15,59 @@
 #include "openaspi/raw_media.h"
 #include "openaspi/rescue.h"
 
+/* Far call to a driver entry with ES:BX = request header. */
+#pragma aux drv_call = \
+    "push bp" "push dx" "push ax" "mov bp, sp" "call dword ptr [bp]" "add sp, 4" "pop bp" \
+    parm [dx ax] [es bx] modify [ax bx cx dx si di es];
+static void drv_call(void __far *entry, void __far *rh);
+
+/* MS-DOS 7 passes generic IOCTL category 80h of a block device to no
+ * driver (error 1). Hand the same request to the drive's driver directly:
+ * the DPB (DOS 4 or later layout) names it and the unit. -1 if the drive
+ * has no DPB or its driver no generic IOCTL; else the DOS error, 0 done. */
+static int direct_request(struct oa_raw_media *m, unsigned minor)
+{
+    union REGS r;
+    struct SREGS s;
+    unsigned char __far *dpb;
+    unsigned char __far *dev;
+    static unsigned char rh[0x17];
+    unsigned status;
+    memset(&r, 0, sizeof(r)); r.h.ah = 0x30; intdos(&r, &r);
+    if (r.h.al < 4) return -1;
+    memset(&r, 0, sizeof(r)); segread(&s); r.h.ah = 0x52; intdosx(&r, &r, &s);
+    dpb = *(unsigned char __far * __far *)MK_FP(s.es, r.x.bx);
+    while (FP_OFF(dpb) != 0xFFFF && dpb[0] != m->drive)
+        dpb = *(unsigned char __far * __far *)(dpb + 0x19);
+    if (FP_OFF(dpb) == 0xFFFF) return -1;
+    dev = *(unsigned char __far * __far *)(dpb + 0x13);
+    if ((*(unsigned __far *)(dev + 4) & 0x8040) != 0x0040) return -1;
+    memset(rh, 0, sizeof(rh));
+    rh[0] = sizeof(rh); rh[1] = dpb[1]; rh[2] = 0x13;   /* GENERIC IOCTL */
+    rh[0x0D] = 0x80; rh[0x0E] = (unsigned char)minor;
+    *(void __far * __far *)(rh + 0x13) = (void __far *)m->packet;
+    drv_call(MK_FP(FP_SEG(dev), *(unsigned __far *)(dev + 6)), (void __far *)rh);
+    drv_call(MK_FP(FP_SEG(dev), *(unsigned __far *)(dev + 8)), (void __far *)rh);
+    status = *(unsigned *)(rh + 3);
+    return (status & 0x8000) ? 0x13 + (status & 0xFF) : 0;  /* as DOS maps it */
+}
+
 static int request(struct oa_raw_media *m, unsigned minor)
 {
     union REGS r;
     struct SREGS s;
+    int rc;
     memset(&r, 0, sizeof(r)); segread(&s);
     r.x.ax = 0x440D; r.x.bx = m->drive + 1;
     r.x.cx = 0x8000 | minor;
     r.x.dx = FP_OFF(m->packet); s.ds = FP_SEG(m->packet);
     intdosx(&r, &r, &s);
     m->error = r.x.cflag ? r.x.ax : 0;
-    m->driver_error=r.x.cflag ? m->packet[13] : 0;
-    m->sense_key=r.x.cflag ? m->packet[14] : 0;
-    m->asc=r.x.cflag ? m->packet[15] : 0;
+    if (m->error == 1 && (rc = direct_request(m, minor)) >= 0)
+        m->error = rc;
+    m->driver_error=m->error ? m->packet[13] : 0;
+    m->sense_key=m->error ? m->packet[14] : 0;
+    m->asc=m->error ? m->packet[15] : 0;
     return m->error ? -1 : 0;
 }
 void oa_disk_reset(void)

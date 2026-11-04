@@ -5,7 +5,7 @@
 # library has 1.75) with SQOPT options. ASPI=1 instead puts the drive on a
 # tertiary ISA IDE channel (1E8h) the BIOS does not know and reaches it through
 # AHCIASPI's ATA cartridge support and ASPIFDD; ASPI=bios keeps it on the
-# BIOS channel and checks that ASPIFDD leaves it to the BIOS. EXFAT=1 (with
+# BIOS channel and checks that ASPIFDD takes its letter over. EXFAT=1 (with
 # ASPI=1) makes the partition exFAT (type 07h, tests/exfat_image.sh) for
 # EXFAT.SYS on ASPIFDD's drive, checked with EXCHK and fsck.exfat. ASPI=1
 # also runs ASPITEST, whose MODE SENSE header must have WP clear; WP=1 (with
@@ -152,7 +152,8 @@ if [ -n "$SQATDRVR" ]; then
     grep -q 'has been taken over' "$OUT/screen.txt"
 fi
 if [ "$ASPI" = bios ]; then
-    grep -q 'BIOS/DOS-owned device skipped' "$OUT/screen.txt"
+    # ASPIFDD takes the BIOS disk's letter over, no second letter
+    grep -q '(BIOS drive taken over)' "$OUT/screen.txt"
 fi
 if [ "$ASPI" = 1 ]; then
     want=00

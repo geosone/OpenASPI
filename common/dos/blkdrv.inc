@@ -105,6 +105,16 @@ unit_count      db      0
         db      0
 
 request_ptr     dd      0
+; ASPIFDD: units taken over from the BIOS's own drive letter (the LS-120 as
+; A:) sit at the end of unit_table, from take_first on; DOS reaches them
+; through the drive's DPB, which points at take_header instead of the
+; driver DOS has the drive from. They give DOS no letter of their own.
+take_first      db      MAX_UNITS
+take_header     dd      0FFFFFFFFh
+        dw      DEV_ATTR
+        dw      strategy
+        dw      interrupt
+        db      0, 7 dup (0)
 bpb_pointers    dw      MAX_UNITS dup (0)
 unit_table      db      MAX_UNITS * UNIT_SIZE dup (0)
 unit_ptr        dw      0               ; entry of the current request
@@ -367,6 +377,11 @@ select_unit proc near
         mov     al, byte ptr es:[bx+RH_UNIT]
         cmp     al, byte ptr [unit_count]
         jb      select_ok
+        cmp     al, MAX_UNITS                   ; a taken-over unit?
+        jae     select_bad
+        cmp     al, byte ptr [take_first]
+        jae     select_ok
+select_bad:
         mov     al, ERR_UNKNOWN_UNIT
         stc
         ret
@@ -2615,7 +2630,7 @@ init_disk_type:
         call    id_selected                     ; /ID: one of these?
         jc      init_next_device
         mov     al, byte ptr [unit_count]
-        cmp     al, MAX_UNITS
+        cmp     al, byte ptr [take_first]       ; taken units fill from the top
         jb      init_inquiry
         jmp     init_scan_done
 init_inquiry:
@@ -2717,6 +2732,13 @@ init_add_unit:
         rep     movsb
         pop     es
         pop     di
+ifdef FDD_DRIVER
+        cmp     byte ptr [take_pending], 0
+        je      init_dos_unit
+        call    take_unit
+        jmp     init_next_device
+init_dos_unit:
+endif
         mov     bl, byte ptr [unit_count]
         xor     bh, bh
         shl     bx, 1
@@ -2754,8 +2776,17 @@ init_device_full:
 endif
         jmp     init_next_device
 init_scan_done:
+ifdef FDD_DRIVER
+        call    take_over_dpbs
+endif
         cmp     byte ptr [unit_count], 0
         jne     init_installed
+ifdef FDD_DRIVER
+        ; only taken-over units: stay resident as a character device, DOS
+        ; drops a block device without units
+        cmp     byte ptr [take_first], MAX_UNITS
+        jb      init_char_only
+endif
         mov     dx, offset msg_no_device
 init_failed:
         mov     byte ptr [sec_shift_grow], 0
@@ -2768,6 +2799,19 @@ init_failed:
         mov     word ptr es:[bx+RH_STATUS], ST_DONE
         call    init_pause
         jmp     request_done
+ifdef FDD_DRIVER
+init_char_only:
+        mov     word ptr [driver_start+4], 8000h        ; character device
+        mov     byte ptr [sec_shift_grow], 0
+        call    init_sector_size
+        les     bx, [request_ptr]
+        mov     word ptr es:[bx+RH_INIT_END], ax
+        mov     word ptr es:[bx+RH_INIT_END+2], cs
+        mov     byte ptr es:[bx+RH_INIT_UNITS], 0
+        mov     word ptr es:[bx+RH_STATUS], ST_DONE
+        call    init_pause
+        jmp     request_done
+endif
 init_installed:
         mov     byte ptr [sec_shift_grow], 0
         call    init_sector_size                ; -> AX = resident end
@@ -2822,6 +2866,18 @@ ownership_query:
         je      ownership_available
         cmp     al, DISK_INT13_AND_DOS
         jne     ownership_failed
+ifdef FDD_DRIVER
+        ; a BIOS floppy drive (the LS-120 as A:): take its letter over
+        mov     al, byte ptr [srb+SRB_Int13DriveInfo]
+        mov     byte ptr [take_drive], al
+        mov     byte ptr [take_match], 0
+        call    find_take_dpb
+        jc      ownership_owned
+        mov     byte ptr [take_pending], 1
+        clc
+        ret
+ownership_owned:
+endif
         mov     dx, offset msg_bios_owned
         call    print_ownership_device
         stc
@@ -2899,6 +2955,214 @@ print_ownership_device proc near
 print_ownership_device endp
 
 ownership_warned db 0
+
+ifdef FDD_DRIVER
+take_pending    db      0
+take_drive      db      0                       ; BIOS drive
+take_match      db      0                       ; find_take_dpb: by take_start
+take_start      dd      0
+take_letter     db      MAX_UNITS dup (0)       ; per taken slot: DOS letter
+msg_taken       db      ' (BIOS drive taken over)$'
+
+; The letter DOS has BIOS drive AL as, and its DPB. A floppy drive n is
+; the built-in driver's unit n, letter n; a hard disk's FAT volumes are
+; named by the built-in driver's drive data tables (INT 2Fh AX=0803h), the
+; one starting at take_start when take_match is set. DOS 4 or later.
+; -> AL = letter (0 = A:), ES:BX = DPB; CF if there is none.
+find_take_dpb proc near
+        push    cx
+        push    dx
+        push    si
+        push    di
+        mov     dl, al                          ; AH=30h returns BL:CX
+        mov     ah, 30h
+        int     21h
+        cmp     al, 4
+        jb      ftd_none_far
+        mov     al, dl
+        mov     cl, dl
+        test    al, 80h
+        jnz     ftd_hard
+        cmp     al, 2                           ; A: and B:
+        jb      ftd_letter
+ftd_none_far:
+        jmp     ftd_none
+ftd_hard:
+        mov     ax, 0800h                       ; DRIVER.SYS support there?
+        int     2Fh
+        cmp     al, 0FFh
+        jne     ftd_none_far
+        push    ds
+        mov     ax, 0803h                       ; DS:DI = first drive data table
+        int     2Fh
+        mov     ax, ds
+        pop     ds
+        mov     es, ax
+        mov     bx, di
+        or      ax, ax
+        jz      ftd_none
+ftd_ddt:
+        cmp     bx, 0FFFFh
+        je      ftd_none
+        cmp     byte ptr es:[bx+4], cl          ; its BIOS drive
+        jne     ftd_ddt_next
+        cmp     byte ptr [take_match], 0
+        je      ftd_ddt_found
+        mov     ax, word ptr [take_start]       ; hidden sectors: the start
+        cmp     word ptr es:[bx+06h+BPB_HIDDEN], ax
+        jne     ftd_ddt_next
+        mov     ax, word ptr [take_start+2]
+        cmp     word ptr es:[bx+06h+BPB_HIDDEN+2], ax
+        jne     ftd_ddt_next
+ftd_ddt_found:
+        mov     al, byte ptr es:[bx+5]          ; its letter
+        jmp     short ftd_letter
+ftd_ddt_next:
+        les     bx, es:[bx]
+        jmp     short ftd_ddt
+ftd_letter:
+        mov     cl, al
+        mov     ah, 52h
+        int     21h
+        les     bx, es:[bx]                     ; the first DPB
+ftd_next:
+        cmp     bx, 0FFFFh
+        je      ftd_none
+        cmp     byte ptr es:[bx], cl            ; its drive
+        jne     ftd_skip
+        cmp     byte ptr es:[bx+1], cl          ; the built-in driver's unit
+        jne     ftd_none
+        mov     al, cl
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        clc
+        ret
+ftd_skip:
+        les     bx, es:[bx+19h]
+        jmp     short ftd_next
+ftd_none:
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        stc
+        ret
+find_take_dpb endp
+
+; INIT: the unit just loaded at DI goes to the top of unit_table instead of
+; to DOS. Its letter is the BIOS drive's.
+take_unit proc near
+        mov     byte ptr [take_pending], 0
+        ; the letter of the very volume this unit has
+        mov     ax, word ptr [di+U_START]
+        mov     word ptr [take_start], ax
+        mov     ax, word ptr [di+U_START+2]
+        mov     word ptr [take_start+2], ax
+        mov     byte ptr [take_match], 1
+        push    es
+        mov     al, byte ptr [take_drive]
+        call    find_take_dpb
+        pop     es
+        jc      take_unit_lost
+        mov     cl, al
+        mov     al, byte ptr [take_first]
+        dec     al
+        cmp     al, byte ptr [unit_count]
+        jbe     take_unit_full
+        mov     byte ptr [take_first], al
+        xor     ah, ah
+        mov     bx, ax
+        mov     byte ptr [take_letter+bx], cl
+        mov     ah, UNIT_SIZE
+        mul     ah
+        add     ax, offset unit_table
+        push    es
+        push    di
+        push    ds
+        pop     es
+        mov     si, di
+        mov     di, ax
+        mov     cx, UNIT_SIZE
+        rep     movsb
+        sub     di, UNIT_SIZE
+        ; DOS rebuilds the drive's parameters from this driver
+        or      byte ptr [di+U_XFLAGS], XF_CHANGED
+        pop     di
+        pop     es
+        mov     dl, ' '
+        mov     ah, 02h
+        int     21h
+        int     21h
+        mov     dl, byte ptr [take_letter+bx]
+        add     dl, 'A'
+        int     21h
+        mov     dl, ':'
+        int     21h
+        mov     dx, offset msg_taken
+        mov     ah, 09h
+        int     21h
+        mov     dx, offset msg_crlf
+        int     21h
+take_unit_full:
+        ret
+take_unit_lost:
+        mov     dx, offset msg_bios_owned       ; no volume of DOS's matches
+        call    print_ownership_device
+        ret
+take_unit endp
+
+; The DPB of letter CL while the built-in driver has it as its unit CL.
+; -> ES:BX, CF if none. Preserves AX.
+find_letter_dpb proc near
+        push    ax
+        mov     ah, 52h
+        int     21h
+        les     bx, es:[bx]
+fld_next:
+        cmp     bx, 0FFFFh
+        je      fld_none
+        cmp     byte ptr es:[bx], cl
+        jne     fld_skip
+        cmp     byte ptr es:[bx+1], cl
+        jne     fld_none
+        pop     ax
+        clc
+        ret
+fld_skip:
+        les     bx, es:[bx+19h]
+        jmp     short fld_next
+fld_none:
+        pop     ax
+        stc
+        ret
+find_letter_dpb endp
+
+; INIT end: point the DPB of each taken-over drive at this driver.
+take_over_dpbs proc near
+        mov     al, byte ptr [take_first]
+tod_next:
+        cmp     al, MAX_UNITS
+        jae     tod_done
+        xor     ah, ah
+        mov     si, ax
+        push    ax
+        mov     cl, byte ptr [take_letter+si]
+        call    find_letter_dpb
+        pop     ax
+        jc      tod_skip
+        mov     byte ptr es:[bx+1], al          ; our unit
+        mov     word ptr es:[bx+13h], offset take_header
+        mov     word ptr es:[bx+15h], cs
+        mov     byte ptr es:[bx+18h], 0FFh      ; rebuild before use
+tod_skip:
+        inc     al
+        jmp     short tod_next
+tod_done:
+        ret
+take_over_dpbs endp
+endif
 msg_bios_owned db '  BIOS/DOS-owned device skipped: $'
 msg_ownership_failed db '  Disk ownership query failed; device skipped: $'
 msg_ownership_unknown db '  GET DISK INFO unsupported; BIOS ownership unknown.',13,10,'$'

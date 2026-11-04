@@ -46,6 +46,8 @@ Exit codes: 0 preview or completed format, 1 incomplete/failed format,
 2 invalid options or unavailable FAT32 support. This version supports media
 up to just under 2 GiB and does not implement physical format profiles.
 Ordinary BIOS/FDC floppy drives without ASPIFDD's service are unsupported.
+A BIOS-mapped LS-120 or ZIP works once ASPIFDD has taken its letter over
+(see [ownership](../../docs/block-ownership.md)).
 
 Tests: `tests/dos_removable_tools.sh`, `tests/dos_format_partition.sh`,
 `tests/dos_format_bad.sh` and `tests/dos_fat32.sh`. They check fresh blank

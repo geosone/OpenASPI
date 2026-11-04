@@ -10,7 +10,7 @@ The returned drive-ownership byte is an enumeration, not a bitmask:
 | Completed result | Installation behavior |
 | --- | --- |
 | `00h`, no INT 13h mapping | Continue normal device installation |
-| `01h`, INT 13h and claimed by DOS | Skip; report the adapter:target:LUN |
+| `01h`, INT 13h and claimed by DOS | ASPIDSK: skip; report the adapter:target:LUN. ASPIFDD: take the DOS letter over, see below |
 | `02h`, INT 13h accessible but not claimed by DOS | Continue normal installation |
 | Other value or success without writing the output | Skip; report a failed ownership query |
 
@@ -31,12 +31,44 @@ SC_GET_DISK_INFO, pp. 22–23](https://www.zianet.com/jgray/dat/files/aspi32.pdf
 This implementation uses the DOS ASPI entry point and DOS SRB layout; it
 does not import a Windows transport or vendor code.
 
+## ASPIFDD: taking over the BIOS drive's letter
+
+A BIOS may map a removable drive itself: ReBIOS's SeaBIOS boots an ATAPI
+LS-120 as floppy A: or a ZIP as hard disk 80h. AHCIASPI finds that mapping
+through EDD and reports `01h` with the BIOS drive in `SRB_Int13DriveInfo`.
+ASPIFDD then takes over the letter DOS already has, so there is one letter
+and it goes through ASPI (ASPIFMT, ASPICTL, raw sessions, the faster
+transfer):
+
+- DOS 4 or later only (the DPB layout).
+- Floppy drive 00h/01h: the letter of the built-in driver's unit 00h/01h.
+- Hard disk 80h+: the built-in driver's drive data tables (INT 2Fh
+  AX=0800h/0803h, MS-DOS 4+) name the letter. The volume ASPIFDD loads must
+  start where the table's hidden-sector count says.
+- The unit is kept at the top of ASPIFDD's unit table and not reported to
+  DOS. Its DPB is pointed at a second header of ASPIFDD (same strategy and
+  interrupt) with the access flag set, so DOS rebuilds it on the next access;
+  the first MEDIA CHECK reports a change.
+- If every unit was taken over, ASPIFDD stays resident with its header
+  turned into a character device, since DOS drops a block driver without
+  units.
+
+INIT prints `X: (BIOS drive taken over)`. If no such letter exists (another
+DOS, no drive data tables, a volume start that does not match), the device
+is skipped as before.
+
+A kernel that sends generic IOCTL category `80h` of a block device to no
+driver (MS-DOS 7.1 fails it with error 1) cannot carry the raw-media
+requests. The DOS tools (`common/dos/raw_client.c`) then pass the same request
+to the drive's driver directly, through the DPB's header and unit.
+
 ## Limits of the manager report
 
 This avoids duplicate letters only when the manager reports DOS ownership
-accurately. The current AHCIASPI/EUSBASPI command-06h handlers return `00h`;
-they do not identify separate motherboard/USB-boot BIOS mappings. A SeaBIOS
-mapping can therefore still coexist with an OpenASPI letter. Unsupported
+accurately. AHCIASPI identifies BIOS mappings through EDD (device path or
+IDE parameter table, for ATA hard disks also size or geometry); EUSBASPI
+returns `00h` and does not identify USB-boot BIOS mappings, so such a
+mapping can still coexist with an OpenASPI letter. Unsupported
 managers likewise cannot establish exclusive ownership. SUBST aliases,
 later DOS drivers and Windows native-storage handover remain separate work.
 Raw-copy sessions do not become universal physical-device locks through

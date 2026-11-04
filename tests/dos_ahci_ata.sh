@@ -4,8 +4,8 @@
 # its geometry 880/16/32 on an ICH9 AHCI port. CompactFlash answers IDENTIFY
 # with 848Ah, a removable ATA device, like the cartridge drive.
 #   default       SeaBIOS uses the drive as hard disk 80h: AHCIASPI must
-#                 report it as BIOS-owned, ASPIFDD skip it, DOS read and
-#                 write it through the BIOS as C:
+#                 report it as BIOS-owned, ASPIFDD take DOS's C: over;
+#                 DOS reads and writes it through ASPI
 #   NOAHCI_BIOS=  a SeaBIOS built without AHCI (out/bios.bin of
 #                 ref/seabios of ahciaspi with CONFIG_AHCI off): the drive
 #                 is AHCIASPI's, ASPIFDD gives it C:
@@ -72,7 +72,7 @@ console=$(tr -d '\r\0' < "$OUT/console.log" | sed 's/\x1b\[[0-9;]*[A-Za-z]//g')
 grep -q 'SyQuest EZFlyer 230 (direct access, ATA' <<<"$console"
 if [ -z "$NOAHCI_BIOS" ]; then
     grep -q 'ATA, BIOS 80h' <<<"$console"
-    grep -q 'BIOS/DOS-owned device skipped' <<<"$console"
+    grep -q 'C: (BIOS drive taken over)' <<<"$console"
 else
     ! grep -q 'ATA, BIOS' <<<"$console"
     grep -q 'C: 0:.:0 ATA     SyQuest EZFlyer' <<<"$console"
@@ -85,4 +85,4 @@ rm -f "$OUT/part.img"
 cmp <(mcopy -i "$OUT/cart.img@@16384" ::/COPY.TXT -) "$OUT/HELLO.TXT"
 cmp <(mcopy -i "$OUT/cart.img@@16384" ::/PLAIN.BIN -) "$OUT/BIG.BIN"
 cmp <(mcopy -i "$OUT/cart.img@@16384" ::/VERIFY.BIN -) "$OUT/BIG.BIN"
-echo "ATA cartridge drive on AHCI $([ -n "$NOAHCI_BIOS" ] && echo 'through AHCIASPI/ASPIFDD' || echo 'left to the BIOS') passed"
+echo "ATA cartridge drive on AHCI $([ -n "$NOAHCI_BIOS" ] && echo 'through AHCIASPI/ASPIFDD' || echo 'taken over from the BIOS') passed"
