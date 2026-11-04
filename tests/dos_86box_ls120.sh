@@ -6,6 +6,12 @@
 # master from 2026-11-04 on (PR #8697: EPAT fixes, rdisk_t layout fix).
 # LPT=1 MGR=path: that ASPI manager (for example PORTASPI.SYS) instead of
 # SD120PPD.SYS, loaded with /V and MGROPT.
+# LPT=1 BRIDGE=name: the drive behind another bridge of 86Box's bus LPT
+# (on26, epia, bpck, frpw, friq: an ATAPI drive on the bridge's IDE board;
+# needs the lpt-epat-hdd branch of github.com/geosone/86Box).
+# LPT=1 BLKDRV=path: that block driver for the drive instead of an ASPI
+# manager and ASPIFDD (for example Freecom's FCLSPAR.SYS, not shipped),
+# loaded with BLKOPT.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 BOX=${BOX:-$ROOT/../86Box/build-upc/src/86Box}
@@ -15,9 +21,13 @@ LPT=${LPT:-0}
 LS120PACK=${LS120PACK:-$HOME/Iso/Dos/LS-120_Parallel_Port_DriverPack.zip}
 MGR=${MGR:-}
 MGROPT=${MGROPT:-}
+BRIDGE=${BRIDGE:-epat}
+BLKDRV=${BLKDRV:-}
+BLKOPT=${BLKOPT:-}
 if [ "$LPT" = 1 ]; then
     OUT=${OUT:-$ROOT/build/86box-ls120-lpt}
-    if [ -n "$MGR" ]; then test -f "$MGR"; else test -f "$LS120PACK"; fi
+    if [ -n "$BLKDRV" ]; then test -f "$BLKDRV"
+    elif [ -n "$MGR" ]; then test -f "$MGR"; else test -f "$LS120PACK"; fi
 else
     OUT=${OUT:-$ROOT/build/86box-ls120}
 fi
@@ -48,7 +58,16 @@ if [ "$LPT" = 1 ]; then
     sed -i -e 's/^lpt1_enabled = 0$/lpt1_enabled = 1/' \
         -e 's/^rdisk_01_parameters = 7, atapi$/rdisk_01_parameters = 7, lpt/' \
         -e 's/^rdisk_01_ide_channel = 1:0$/rdisk_01_lpt_port = 0/' "$OUT/86box.cfg"
-    if [ -n "$MGR" ]; then
+    if [ "$BRIDGE" != epat ]; then
+        sed -i "s/^rdisk_01_lpt_port = 0$/&\nrdisk_01_lpt_bridge = $BRIDGE/" "$OUT/86box.cfg"
+        grep -q "^rdisk_01_lpt_bridge = $BRIDGE$" "$OUT/86box.cfg"
+    fi
+    if [ -n "$BLKDRV" ]; then
+        name=$(basename "$BLKDRV" | tr a-z A-Z)
+        mcopy -o -i "$OUT/boot.img" "$BLKDRV" ::/"$name"
+        printf 'DEVICE=%s %s\r\nLASTDRIVE=Z\r\nSHELL=COMMAND.COM /P\r\n' "$name" "$BLKOPT" > "$OUT/CONFIG.SYS"
+        mcopy -o -i "$OUT/boot.img" "$OUT/CONFIG.SYS" ::/CONFIG.SYS
+    elif [ -n "$MGR" ]; then
         name=$(basename "$MGR" | tr a-z A-Z)
         mcopy -o -i "$OUT/boot.img" "$MGR" ::/"$name"
         sed "1s|.*|DEVICE=$name /V $MGROPT|" \
@@ -63,7 +82,14 @@ if [ "$LPT" = 1 ]; then
 else
     mcopy -o -i "$OUT/boot.img" "$ROOT/tests/fixtures/86box-ls120-config.sys" ::/CONFIG.SYS
 fi
-mcopy -o -i "$OUT/boot.img" "$ROOT/tests/fixtures/86box-ls120-autoexec.bat" ::/AUTOEXEC.BAT
+if [ -n "$BLKDRV" ]; then
+    # No ASPI manager to scan: the block driver's letter is the first free one.
+    sed -e '/^ASPISCAN /d' -e '/LS120 detection FAILED/d' \
+        "$ROOT/tests/fixtures/86box-ls120-autoexec.bat" > "$OUT/AUTOEXEC.BAT"
+    mcopy -o -i "$OUT/boot.img" "$OUT/AUTOEXEC.BAT" ::/AUTOEXEC.BAT
+else
+    mcopy -o -i "$OUT/boot.img" "$ROOT/tests/fixtures/86box-ls120-autoexec.bat" ::/AUTOEXEC.BAT
+fi
 mcopy -o -i "$OUT/boot.img" "$ROOT/build/dos/ASPIFDD.SYS" "$ROOT/build/dos/ASPISCAN.COM" ::/
 truncate -s $((963*256*512)) "$OUT/ls120.img"
 mkfs.fat -F16 -s4 -g8/32 -i 12012012 -n LS120 "$OUT/ls120.img" > "$OUT/mkfs.log"
