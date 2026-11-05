@@ -88,6 +88,8 @@ def main():
     parser.add_argument("--expect", default="ASPICDA image UPC 0123456789012 passed")
     parser.add_argument("--count", type=int, default=2)
     parser.add_argument("--read-text", default="OpenASPI ASPICDA read test")
+    parser.add_argument("--steps", type=int, default=90,
+                        help="2 second steps to wait for --done")
     args = parser.parse_args()
     vm = args.vm.resolve()
     if args.legacy_pid:
@@ -107,7 +109,7 @@ def main():
 
         try:
             ui_phase = 0
-            for _ in range(90):
+            for _ in range(args.steps):
                 serial = command("serial read 1")
                 output = bytes.fromhex(serial["data"]).decode("cp437")
                 (vm / "serial.log").write_text(output, encoding="utf-8")
