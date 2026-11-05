@@ -5,7 +5,7 @@
  * across third-party manager calls. UI selection never sends media controls.
  */
 
-/* ASPIMGR: shared QUILIB DOS interface for the OpenASPI suite. GPL-3.0. */
+/* ASPIMGR: shared QUILIB DOS interface for the OpenASPI suite. GPL-2.0-or-later. */
 #include <stdio.h>
 #include <string.h>
 #include <dos.h>

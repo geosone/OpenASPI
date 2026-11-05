@@ -51,5 +51,7 @@ INSTALL /U removes every EXFAT.SYS line from CONFIG.SYS, also one written
 by OpenASPI's setup (run that setup again then).
 
 The installer is the GeosOne DOS Installer: https://github.com/geosone/gdi
-License: GNU General Public License version 3.
+License: GNU General Public License version 2 or (at your option) any later
+version, see LICENSE.TXT.  The installer (GDI) is under version 3, see
+GPL3.TXT.
 Source:  https://github.com/geosone/OpenASPI

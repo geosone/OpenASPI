@@ -7,7 +7,7 @@
 ;
 ;   DEVICE=C:\DOS\EXFAT.SYS [/L:x] [/Q]
 ;
-; Copyright (C) 2026 GeosOne.  GNU General Public License version 3.
+; Copyright (C) 2026 GeosOne.  GNU General Public License version 2 or later.
 
         .8086
         option casemap:none

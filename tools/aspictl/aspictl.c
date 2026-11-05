@@ -7,7 +7,7 @@
 
 /* DOS drive-letter media controls. The same binary supports EJECT/CLOSE
  * aliases via argv[0]; no ASPI transport or device policy is duplicated.
- * GPL-3.0. */
+ * GPL-2.0-or-later. */
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>

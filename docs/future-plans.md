@@ -191,7 +191,9 @@ source archives (FreeDOS 1.3 legacy CD) changed that:
 | fsck.fat of dosfstools 4.2 | GPL v3 or later | the check and repair rules of ASPICHK |
 | exfatprogs (mkfs.exfat, fsck.exfat) | GPL v2 or later | EXFMT and EXCHK |
 
-OpenASPI is GPL version 3: code under "GPL v2 only" cannot be taken over.
+OpenASPI is GPL version 2 or later: code under "GPL v2 only" would turn
+the program it goes into to v2 only, code under "v3 or later" to v3, so
+neither is taken over.
 So ASPICHK has its own check core (`common/fat/fat_check.c`, Watcom C, the
 multi-pass walk of EXCHK) with the rules of `fsck.fat`, and DEFRAG is
 written new as well, with a move order of its own that is safe against

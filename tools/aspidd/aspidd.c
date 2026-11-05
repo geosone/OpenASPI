@@ -8,7 +8,7 @@
  * files still need cleanup. Failed/rescued single-drive copies retain the image.
  */
 
-/* Sector images and DISKCOPY-style removable-media copying. GPL-3.0. */
+/* Sector images and DISKCOPY-style removable-media copying. GPL-2.0-or-later. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

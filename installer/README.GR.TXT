@@ -90,5 +90,8 @@ Die Kommandozeilenprogramme und Treiberdiagnosen verwenden derzeit gemeinsame
 englische Texte. Installer, ASPIMGR und ASPIDDG dieses Satzes sind deutsch.
 
 Installer: https://github.com/geosone/gdi
-Lizenz: GNU General Public License Version 3, siehe LICENSE.TXT.
+Lizenz: GNU General Public License Version 2 oder (nach Wahl) jede spaetere
+Version, siehe LICENSE.TXT.  Der Installer (GDI) und die Programme mit
+Open386MAXs QUILIB (ASPIMGR.EXE, ASPIDDG.EXE) stehen als Ganzes unter
+Version 3, siehe GPL3.TXT.
 Quellcode: https://github.com/geosone/OpenASPI

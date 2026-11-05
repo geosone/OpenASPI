@@ -117,5 +117,8 @@ Add -i to allow Ctrl-Break to abort a pending rewind readiness wait. Rewind
 remains pending and a later request can retry; the physical rewind continues.
 
 The installer is the GeosOne DOS Installer: https://github.com/geosone/gdi
-License: GNU General Public License version 3.
+License: GNU General Public License version 2 or (at your option) any later
+version, see LICENSE.TXT.  The installer (GDI) and the programs that use
+Open386MAX's QUILIB (ASPIMGR.EXE, ASPIDDG.EXE) are under version 3 as a
+whole, see GPL3.TXT.
 Source:  https://github.com/geosone/OpenASPI

@@ -55,5 +55,7 @@ Zeile aus CONFIG.SYS, auch eine von OpenASPIs Setup (dann dieses Setup
 erneut ausfuehren).
 
 Der Installer ist der GeosOne DOS Installer: https://github.com/geosone/gdi
-Lizenz: GNU General Public License Version 3.
+Lizenz: GNU General Public License Version 2 oder (nach Wahl) jede spaetere
+Version, siehe LICENSE.TXT.  Der Installer (GDI) steht unter Version 3,
+siehe GPL3.TXT.
 Quelle: https://github.com/geosone/OpenASPI

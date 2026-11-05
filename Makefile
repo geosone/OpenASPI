@@ -152,6 +152,7 @@ dist: all gdi-install LICENSE tests/dist_layout.sh tools/package/localize.py ins
 	cp $(DOSEXFAT) $(DOSEXFATL) $(DOSEXFMT) $(DOSEXCHK) $(DISTDIR)/
 	cp $(DOSASPICHK) $(DOSDEFRAG) $(DISTDIR)/
 	mv $(DISTDIR)/LICENSE $(DISTDIR)/LICENSE.TXT
+	cp $(GDI)/LICENSE $(DISTDIR)/GPL3.TXT
 	cp $(SHSUCD)/LICENSE.txt $(DISTDIR)/SHSUCD.LIC
 	cp $(SHSUCD)/readme.txt $(DISTDIR)/SHSUCD.TXT
 	python3 tools/package/localize.py $(MAXLANG) $(DISTDIR)
@@ -164,6 +165,7 @@ exfat-dist: $(DOSEXFAT) $(DOSEXFATL) $(DOSEXFMT) $(DOSEXCHK) gdi-install LICENSE
 	mkdir -p $(DISTDIR)
 	cp $(DOSEXFAT) $(DOSEXFATL) $(DOSEXFMT) $(DOSEXCHK) $(GDIINSTALL) $(DISTDIR)/
 	cp LICENSE $(DISTDIR)/LICENSE.TXT
+	cp $(GDI)/LICENSE $(DISTDIR)/GPL3.TXT
 	python3 tools/package/localize.py $(MAXLANG) $(DISTDIR) exfat
 
 gdi-install:

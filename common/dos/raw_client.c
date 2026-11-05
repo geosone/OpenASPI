@@ -7,7 +7,7 @@
  * this file is not a portable host-side serialization implementation.
  */
 
-/* Shared DOS wrapper for the checked ASPIFDD raw-media session API. GPL-3.0. */
+/* Shared DOS wrapper for the checked ASPIFDD raw-media session API. GPL-2.0-or-later. */
 #include <string.h>
 #include <ctype.h>
 #include <dos.h>

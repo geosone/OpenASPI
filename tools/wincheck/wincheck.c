@@ -9,7 +9,7 @@
 /* WINCHECK.EXE - Win16 companion environment probe for OpenASPI.
  * Returns zero when /3X or /9X matches. Without a selector it displays the
  * version. Installer rules use its result for Windows-family selection.
- * GNU General Public License version 3. */
+ * GNU General Public License version 2 or later. */
 
 #include <windows.h>
 

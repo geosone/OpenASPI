@@ -66,4 +66,10 @@ installation and removal reuse GDI.
 
 ## License
 
-GNU General Public License version 3. See [LICENSE](LICENSE).
+GNU General Public License version 2 or (at your option) any later
+version. See [LICENSE](LICENSE).
+
+The release also carries parts under version 3: the installer
+([GDI](https://github.com/geosone/gdi)), and `ASPIMGR.EXE` and `ASPIDDG.EXE`,
+which link Open386MAX's QUILIB (released by Qualitas under GPL v3) and so
+are under version 3 as a whole. Their license text is `GPL3.TXT`.
