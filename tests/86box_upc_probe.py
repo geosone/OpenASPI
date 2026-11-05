@@ -90,6 +90,11 @@ def main():
     parser.add_argument("--read-text", default="OpenASPI ASPICDA read test")
     parser.add_argument("--steps", type=int, default=90,
                         help="2 second steps to wait for --done")
+    parser.add_argument("--on", nargs=2, action="append", default=[],
+                        metavar=("TEXT", "COMMANDS"),
+                        help="once TEXT is on the serial log or the screen, "
+                             "send the ';'-separated automation COMMANDS; "
+                             "each --on in turn, once")
     args = parser.parse_args()
     vm = args.vm.resolve()
     if args.legacy_pid:
@@ -109,6 +114,8 @@ def main():
 
         try:
             ui_phase = 0
+            pending = list(args.on)
+            seen = ""
             for _ in range(args.steps):
                 serial = command("serial read 1")
                 output = bytes.fromhex(serial["data"]).decode("cp437")
@@ -119,6 +126,10 @@ def main():
                 text = "\n".join(bytes.fromhex(row).decode("cp437")
                                  for row in screen.get("chars", []))
                 (vm / "screen.txt").write_text(text, encoding="utf-8")
+                if pending and (pending[0][0] in output[len(seen):] or pending[0][0] in text):
+                    for cmd in pending.pop(0)[1].split(";"):
+                        command(cmd.strip())
+                    seen = output
                 if "Press F1 to continue" in text:
                     command("key down 0x3b")
                     command("key up 0x3b")
