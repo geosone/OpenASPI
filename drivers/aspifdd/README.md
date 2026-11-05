@@ -19,8 +19,9 @@ after `:` or `=`):
 
 A device is taken when it is a direct-access device with the removable bit
 and its INQUIRY vendor/product contains `ZIP`, `LS-120`, `LS-240`, `CLIK`,
-`SUPERDISK`, `JAZ`, `SYQUEST`, `EZ135`, `EZFLYER`, `SYJET` or `SPARQ`;
-ASPIDSK skips exactly these devices. AHCIASPI reports ATA cartridge drives
+`SUPERDISK`, `JAZ`, `SYQUEST`, `EZ135`, `EZFLYER`, `SYJET`, `SPARQ` or
+`FLOPPY` (a floppy drive offered as SCSI, such as PORTASPI's BackPack
+floppy drive); ASPIDSK skips exactly these devices. AHCIASPI reports ATA cartridge drives
 (SyQuest EZ135, EZFlyer) with vendor `ATA` and the model as product.
 
 Implemented behavior:
