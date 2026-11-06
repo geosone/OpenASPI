@@ -47,6 +47,13 @@ oa_u64 oa_host_virt_to_bus(const void *p);
 /* Map device registers (uncached). NULL on failure. */
 volatile void *oa_host_map_mmio(oa_u64 phys, size_t size);
 
+/* Full barrier between DMA memory and device registers: what the CPU wrote
+ * to descriptors or buffers is visible to the device before a following
+ * register write (doorbell), and a register read (completion) comes before
+ * the CPU reads what the device wrote. A compiler barrier on x86, DSB on
+ * ARM. */
+void oa_host_mb(void);
+
 /* PCI configuration space; `dev` packs segment, bus, device, function as
  * OA_PCI_ADDR(). Reads of absent functions return all ones. */
 #define OA_PCI_ADDR(seg, bus, dev, fn) \

@@ -127,9 +127,9 @@ int main(void)
 	ata.fail_lba = -1;
 
 	CHECK(oa_sat_init(&sat, fake_ata_cmd, &ata, 0) == OA_HOST_OK);
-	CHECK(sat.sectors == 70000 && sat.sector_size == 512 && !sat.lba48);
-	CHECK(strcmp(sat.model, "QEMU HARDDISK") == 0);
-	CHECK(strcmp(sat.serial, "SN123") == 0);
+	CHECK(sat.emu.blocks == 70000 && sat.emu.block_size == 512 && !sat.lba48);
+	CHECK(strcmp(sat.emu.model, "QEMU HARDDISK") == 0);
+	CHECK(strcmp(sat.emu.serial, "SN123") == 0);
 
 	static struct oa_hba hba = { .name = "test", .ops = &hba_ops, .max_target = 3, .max_lun = 1 };
 	CHECK(oa_hba_register(&hba) == 0);
@@ -225,7 +225,7 @@ int main(void)
 	struct oa_sat sat48;
 	CHECK(oa_sat_init(&sat48, fake_ata_cmd, &big, 1) == OA_HOST_OK);
 	CHECK(sat48.lba48);
-	CHECK(sat48.sectors == 0x10000100ull);
+	CHECK(sat48.emu.blocks == 0x10000100ull);
 	CHECK(sat48.max_sectors == 65536);
 	{
 		uint8_t buf[32];

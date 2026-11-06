@@ -137,5 +137,9 @@ oa_u64 oa_get_be64(const oa_u8 *p);
 void oa_put_be16(oa_u8 *p, oa_u16 v);
 void oa_put_be32(oa_u8 *p, oa_u32 v);
 void oa_put_be64(oa_u8 *p, oa_u64 v);
+/* Little-endian, for ATA and NVMe data structures. */
+oa_u16 oa_get_le16(const oa_u8 *p);
+oa_u32 oa_get_le32(const oa_u8 *p);
+oa_u64 oa_get_le64(const oa_u8 *p);
 
 #endif

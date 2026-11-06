@@ -22,6 +22,7 @@ add_library(OpenASPI::scsi ALIAS openaspi_scsi)
 add_library(openaspi_native STATIC
   common/native/hba.c
   common/native/disk.c
+  common/native/blockemu.c
   common/native/sat.c
   common/native/atapi.c)
 target_link_libraries(openaspi_native PUBLIC openaspi_scsi)

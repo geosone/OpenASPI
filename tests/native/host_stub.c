@@ -36,6 +36,7 @@ void *oa_host_dma_alloc(size_t size, size_t align, int below_4g, uint64_t *bus)
 	return p;
 }
 void oa_host_dma_free(void *p, size_t size) { (void)size; free(p); }
+void oa_host_mb(void) { }
 uint64_t oa_host_virt_to_bus(const void *p) { return (uint64_t)(uintptr_t)p; }
 volatile void *oa_host_map_mmio(uint64_t phys, size_t size) { (void)phys; (void)size; return NULL; }
 uint32_t oa_host_pci_read32(uint32_t dev, unsigned off) { (void)dev; (void)off; return 0xffffffffu; }

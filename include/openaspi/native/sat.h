@@ -9,6 +9,7 @@
 #ifndef OPENASPI_NATIVE_SAT_H
 #define OPENASPI_NATIVE_SAT_H
 
+#include "openaspi/native/blockemu.h"
 #include "openaspi/native/hba.h"
 
 /* ATA status and error bits. */
@@ -47,21 +48,13 @@ struct oa_ata_cmd {
 typedef int (*oa_ata_fn)(void *ctx, struct oa_ata_cmd *cmd);
 
 struct oa_sat {
+	struct oa_blockemu emu; /* SCSI side: blocks, block size, identity */
 	oa_ata_fn ata;
 	void *ctx;
 	oa_u8 use_dma;        /* transport moves data by DMA (AHCI) */
 	oa_u8 lba48;
-	oa_u8 removable;
-	oa_u8 has_flush;
-	oa_u64 sectors;
-	oa_u32 sector_size;
 	oa_u32 max_sectors;   /* per ATA command */
-	char model[41];
-	char serial[21];
-	char firmware[9];
 	oa_u16 identify[256];
-	/* pending sense for REQUEST SENSE and autosense */
-	oa_u8 sense_key, asc, ascq;
 };
 
 /* IDENTIFY DEVICE and set up the translation. Returns OA_HOST_OK, or an
