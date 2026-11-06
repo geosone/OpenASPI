@@ -12,7 +12,7 @@ $(BUILD)/dos/aspichk/fat_check.obj: $(OPENFAT)/src/fat/fat_check.c $(ASPICHKHDR)
 	mkdir -p $(@D)
 	WATCOM=$(WATCOM) $(EXCHKWCC) -fo=$@ $<
 
-$(BUILD)/dos/aspichk/codepage.obj: $(OPENFAT)/src/exfat/codepage.c $(EXFATHDR)
+$(BUILD)/dos/aspichk/codepage.obj: $(OPENFAT)/src/codepage.c $(EXFATHDR)
 	mkdir -p $(@D)
 	WATCOM=$(WATCOM) $(EXCHKWCC) -fo=$@ $<
 

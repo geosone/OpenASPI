@@ -11,6 +11,9 @@ $(BUILD)/dos/exfmt/exfmt.obj: tools/exfmt/exfmt.c $(EXFATHDR)
 $(BUILD)/dos/exfmt/%.obj: $(OPENFAT)/src/exfat/%.c $(EXFATHDR)
 	mkdir -p $(@D)
 	WATCOM=$(WATCOM) $(EXFMTWCC) -fo=$@ $<
+$(BUILD)/dos/exfmt/%.obj: $(OPENFAT)/src/%.c $(EXFATHDR)
+	mkdir -p $(@D)
+	WATCOM=$(WATCOM) $(EXFMTWCC) -fo=$@ $<
 
 $(DOSEXFMT): $(EXFMTOBJ) tools/exfmt/exfmt.mk
 	WATCOM=$(WATCOM) $(WLINK) format dos name $@ \

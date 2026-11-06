@@ -185,7 +185,7 @@ static int check(void)
     memset(&r, 0, sizeof(r));
     r.x.ax = 0x6601;
     intdos(&r, &r);
-    c.cp = (!r.x.cflag && r.x.bx == 850 ? &ofat_exfat_cp850 : &ofat_exfat_cp437)->uni;
+    c.cp = (!r.x.cflag && r.x.bx == 850 ? &ofat_cp850 : &ofat_cp437)->uni;
     c.read = rd1; c.msg = chk_msg; c.mark = mark; c.clear = clear;
     if (rd1(0, 0, boot)) { printf("Read error in the boot sector.\n"); return 3; }
     total = boot[19] | boot[20] << 8 ? (oa_u32)(boot[19] | boot[20] << 8) :

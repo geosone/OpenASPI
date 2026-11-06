@@ -58,8 +58,8 @@ static oa_u8 __far *nul_dev;          /* the DOS device chain */
 static oa_u8 __far *sft_list;         /* the first SFT block, for 71A6h */
 #endif
 static oa_u8 first_letter;
-static const struct ofat_exfat_cp *cp;
-static struct ofat_exfat_cp cptab;           /* the active one, copied at INIT */
+static const struct ofat_cp *cp;
+static struct ofat_cp cptab;           /* the active one, copied at INIT */
 static struct ofat_exfat_ent ent;
 typedef char ent_bounces[sizeof(struct ofat_exfat_ent) >= 512 ? 1 : -1];
 static oa_u8 secbuf[OFAT_EXFAT_MAXSECT];     /* the sector cache of all volumes */
@@ -1827,7 +1827,7 @@ int __cdecl drv_init(void __far *req)
     }
     memset(&q, 0, sizeof(q));
     q.ax = 0x6601;
-    cptab = !int21(&q) && q.bx == 850 ? ofat_exfat_cp850 : ofat_exfat_cp437;
+    cptab = !int21(&q) && q.bx == 850 ? ofat_cp850 : ofat_cp437;
     cp = &cptab;
     if (!quiet) print(msg_hello);
     if (!quiet && readonly) print(msg_ro);

@@ -76,7 +76,7 @@ int main(int argc, char **argv)
     memset(&r, 0, sizeof(r));
     r.x.ax = 0x6601;
     intdos(&r, &r);
-    c.cp = (!r.x.cflag && r.x.bx == 850 ? &ofat_exfat_cp850 : &ofat_exfat_cp437)->uni;
+    c.cp = (!r.x.cflag && r.x.bx == 850 ? &ofat_cp850 : &ofat_cp437)->uni;
     c.read = rd; c.msg = msg; c.mark = mark; c.clear = clear;
     if (fix) c.write = wr;
     /* the cluster map: as much of it as there is memory for */

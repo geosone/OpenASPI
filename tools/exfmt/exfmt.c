@@ -301,7 +301,7 @@ int main(int argc, char **argv)
             if (f.label_len == 11 || c < 0x20 || strchr("\"*/:<>?\\|", (int)c)) {
                 printf("Invalid volume label.\n"); return 2;
             }
-            f.label[f.label_len] = c < 0x80 ? (oa_u16)c : (cp == 850 ? ofat_exfat_cp850 : ofat_exfat_cp437).uni[c - 0x80];
+            f.label[f.label_len] = c < 0x80 ? (oa_u16)c : (cp == 850 ? ofat_cp850 : ofat_cp437).uni[c - 0x80];
         }
     }
     /* the medium */
