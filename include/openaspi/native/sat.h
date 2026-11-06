@@ -26,20 +26,20 @@
 #define OA_ATA_ERR_NM   0x02 /* no media */
 
 struct oa_ata_cmd {
-	uint8_t command;
-	uint8_t features;
-	uint8_t device;     /* bit 6 LBA; the transport adds the drive select */
-	uint8_t lba48;      /* use the extended (48-bit) register set */
-	uint16_t count;     /* sector count register (0 = 256 or 65536) */
-	uint64_t lba;
-	uint8_t dir;        /* OA_DIR_* */
-	uint8_t dma;        /* data phase by DMA (else PIO) */
+	oa_u8 command;
+	oa_u8 features;
+	oa_u8 device;     /* bit 6 LBA; the transport adds the drive select */
+	oa_u8 lba48;      /* use the extended (48-bit) register set */
+	oa_u16 count;     /* sector count register (0 = 256 or 65536) */
+	oa_u64 lba;
+	oa_u8 dir;        /* OA_DIR_* */
+	oa_u8 dma;        /* data phase by DMA (else PIO) */
 	void *data;
-	uint32_t len;       /* bytes */
-	uint32_t timeout_ms;
+	oa_u32 len;       /* bytes */
+	oa_u32 timeout_ms;
 	/* results */
-	uint8_t status;
-	uint8_t error;
+	oa_u8 status;
+	oa_u8 error;
 };
 
 /* Run one ATA command; returns OA_HOST_OK when the device completed it
@@ -49,19 +49,19 @@ typedef int (*oa_ata_fn)(void *ctx, struct oa_ata_cmd *cmd);
 struct oa_sat {
 	oa_ata_fn ata;
 	void *ctx;
-	uint8_t use_dma;        /* transport moves data by DMA (AHCI) */
-	uint8_t lba48;
-	uint8_t removable;
-	uint8_t has_flush;
-	uint64_t sectors;
-	uint32_t sector_size;
-	uint32_t max_sectors;   /* per ATA command */
+	oa_u8 use_dma;        /* transport moves data by DMA (AHCI) */
+	oa_u8 lba48;
+	oa_u8 removable;
+	oa_u8 has_flush;
+	oa_u64 sectors;
+	oa_u32 sector_size;
+	oa_u32 max_sectors;   /* per ATA command */
 	char model[41];
 	char serial[21];
 	char firmware[9];
-	uint16_t identify[256];
+	oa_u16 identify[256];
 	/* pending sense for REQUEST SENSE and autosense */
-	uint8_t sense_key, asc, ascq;
+	oa_u8 sense_key, asc, ascq;
 };
 
 /* IDENTIFY DEVICE and set up the translation. Returns OA_HOST_OK, or an

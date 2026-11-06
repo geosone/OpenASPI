@@ -18,6 +18,7 @@
 #include <video.h>
 #include <windowfn.h>
 #include "openaspi/aspi.h"
+#include "openaspi/scsi.h"
 
 #define MAX_ROWS 256
 #ifdef LANG_GR
@@ -72,15 +73,6 @@ static int open_manager(void)
     return ok;
 }
 
-static void identity(char *out, const unsigned char *in, unsigned size)
-{
-    unsigned i;
-    for (i = 0; i < size; ++i)
-        out[i] = in[i] >= 32 && in[i] < 127 ? in[i] : '?';
-    while (size && out[size - 1] == ' ') --size;
-    out[size] = 0;
-}
-
 /* The display inventory is bounded independently of how many devices exist.
  * Return NULL and mark truncation when full; callers stop scanning rather than
  * write beyond rows or imply that the displayed list is a complete inventory.
@@ -106,6 +98,7 @@ static void scan(void)
 {
     unsigned h, t, l, hosts, targets, initiator;
     struct row *p;
+    struct oa_scsi_inquiry id;
     count = selected = adapters = devices = truncated = 0;
     scan_error = 0;
     if (!open_manager()) { scan_error = 1; return; }
@@ -129,8 +122,8 @@ static void scan(void)
         if (!p) return;
         p->target = (unsigned char)initiator;
         p->extensions = request.ha.extension_flags;
-        identity(p->vendor, request.ha.manager_id, 16);
-        identity(p->product, request.ha.identifier, 16);
+        oa_scsi_identity(p->vendor, request.ha.manager_id, 16);
+        oa_scsi_identity(p->product, request.ha.identifier, 16);
         for (t = 0; t < targets; ++t) {
             if (t == initiator) continue;
             for (l = 0; l < 8; ++l) {
@@ -162,11 +155,12 @@ static void scan(void)
                 submit();
                 p->status = request.header.status;
                 if (p->status == OA_ASPI_COMPLETE &&
-                    !request.exec.ha_status && !request.exec.target_status) {
-                    p->removable = !!(inquiry[1] & 0x80);
-                    identity(p->vendor, inquiry + 8, 8);
-                    identity(p->product, inquiry + 16, 16);
-                    identity(p->revision, inquiry + 32, 4);
+                    !request.exec.ha_status && !request.exec.target_status &&
+                    oa_scsi_decode_inquiry(inquiry, sizeof(inquiry), &id) == 0) {
+                    p->removable = id.removable;
+                    strcpy(p->vendor, id.vendor);
+                    strcpy(p->product, id.product);
+                    strcpy(p->revision, id.revision);
                 } else strcpy(p->product, TEXT("INQUIRY failed", "INQUIRY Fehler"));
             }
         }

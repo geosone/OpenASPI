@@ -141,7 +141,7 @@ contracts; they are not interchangeable drop-in parsers.
 | --- | --- | --- |
 | [`aspi_sense`](../common/aspi/aspi_client.inc) | Resident execute-SCSI SRB; carry, key and ASC. | Check operation policy; preserve original sense when DOS error conversion loses detail. |
 | [`remember_sense_key`](../common/aspi/tape_sense.inc) | Tape SRB with six-/ten-/sixteen-byte CDB; resident fields and separate validity flags. | Check current/deferred response and command-specific residual/stream rules; carry is not a decode result. |
-| [`oa_scsi_decode_sense`](../common/scsi/tape_sense.c) | Explicit byte buffer/length; decoded C structure and 0/-1. | Qualify transport independently, inspect information validity, and discard partial output on failure. |
+| [`oa_scsi_decode_sense`](../common/scsi/sense.c) | Explicit byte buffer/length; decoded C structure and 0/-1. | Qualify transport independently, inspect information validity, and discard partial output on failure. |
 
 Portable decoding accepts a recognized four-byte header without requiring a
 complete autosense allocation. Resident decoders instead consume SRB allocations

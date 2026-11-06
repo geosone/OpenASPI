@@ -20,6 +20,12 @@ static int failures;
 		}                                                             \
 	} while (0)
 
+static int sense_is(const struct oa_srb *srb, int key, int asc, int ascq)
+{
+	struct oa_scsi_sense s;
+	return oa_srb_sense(srb, &s) == 0 && s.sense_key == key && s.asc == asc && s.ascq == ascq;
+}
+
 /* --- an ATA disk in memory ------------------------------------------ */
 
 struct fake_ata {
@@ -130,8 +136,8 @@ int main(void)
 	struct oa_device pool[4];
 	CHECK(oa_scan(pool, 4) == 1);
 	struct oa_device *dev = oa_device_first();
-	CHECK(dev && dev->type == OA_ASPI_DEVICE_DISK && dev->target == 0 && dev->lun == 0);
-	CHECK(dev && strcmp(dev->vendor, "ATA") == 0 && strcmp(dev->product, "QEMU HARDDISK") == 0);
+	CHECK(dev && dev->inquiry.device_type == OA_ASPI_DEVICE_DISK && dev->target == 0 && dev->lun == 0);
+	CHECK(dev && strcmp(dev->inquiry.vendor, "ATA") == 0 && strcmp(dev->inquiry.product, "QEMU HARDDISK") == 0);
 
 	struct oa_disk disk;
 	CHECK(oa_disk_open(&disk, dev) == OA_OK);
@@ -167,7 +173,7 @@ int main(void)
 		srb.data_len = 512;
 		oa_execute(&hba, &srb);
 		CHECK(srb.target_status == OA_STATUS_CHECK_CONDITION);
-		CHECK(oa_sense_key(&srb) == 3 && oa_sense_asc(&srb) == 0x1104);
+		CHECK(sense_is(&srb, 3, 0x11, 0x04));
 	}
 	ata.fail_lba = -1;
 
@@ -178,7 +184,7 @@ int main(void)
 		srb.cdb_len = 6;
 		srb.cdb[0] = 0x04; /* FORMAT UNIT */
 		oa_execute(&hba, &srb);
-		CHECK(oa_sense_key(&srb) == 5 && oa_sense_asc(&srb) == 0x2000);
+		CHECK(sense_is(&srb, 5, 0x20, 0x00));
 	}
 
 	/* request validation */
@@ -204,7 +210,7 @@ int main(void)
 		srb.sense[1] = 0x02;
 		srb.sense[2] = 0x3a;
 		srb.sense_len = 8;
-		CHECK(oa_sense_key(&srb) == 2 && oa_sense_asc(&srb) == 0x3a00);
+		CHECK(sense_is(&srb, 2, 0x3a, 0x00));
 	}
 
 	CHECK(oa_disk_sync(&disk) == OA_OK);

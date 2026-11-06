@@ -19,20 +19,20 @@
 
 struct oa_disk {
 	struct oa_device *dev;
-	uint64_t blocks;          /* number of logical blocks */
-	uint32_t block_size;      /* bytes per block */
-	uint32_t max_blocks;      /* per command (transfer limit) */
-	uint8_t use16;            /* READ/WRITE (16) needed */
-	uint8_t write_protected;
-	uint8_t reserved[2];
+	oa_u64 blocks;          /* number of logical blocks */
+	oa_u32 block_size;      /* bytes per block */
+	oa_u32 max_blocks;      /* per command (transfer limit) */
+	oa_u8 use16;            /* READ/WRITE (16) needed */
+	oa_u8 write_protected;
+	oa_u8 reserved[2];
 };
 
 /* Wait for the unit to become ready (spin-up, unit attention after reset or
  * medium change) and read its capacity. */
 int oa_disk_open(struct oa_disk *disk, struct oa_device *dev);
 
-int oa_disk_read(struct oa_disk *disk, uint64_t lba, uint32_t count, void *buf);
-int oa_disk_write(struct oa_disk *disk, uint64_t lba, uint32_t count, const void *buf);
+int oa_disk_read(struct oa_disk *disk, oa_u64 lba, oa_u32 count, void *buf);
+int oa_disk_write(struct oa_disk *disk, oa_u64 lba, oa_u32 count, const void *buf);
 /* Flush the device's write cache. */
 int oa_disk_sync(struct oa_disk *disk);
 

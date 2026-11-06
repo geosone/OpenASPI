@@ -1,8 +1,16 @@
-# Portable tape helpers
+# Portable SCSI helpers
 
-`tape_cdb.c` constructs six-byte sequential-access commands. `tape_sense.c`
-decodes fixed and descriptor sense into `oa_tape_sense`; the public interface
-is in [`scsi_tape.h`](../../include/openaspi/scsi_tape.h).
+C90 code shared by the DOS tools (OpenWatcom, 16-bit) and the native layer
+([`common/native`](../native/README.md), 32/64-bit kernels). `make check`
+builds it for the host with `-std=c90 -pedantic` and as 16-bit DOS objects.
+
+| File | Content | Interface |
+| --- | --- | --- |
+| `sense.c` | fixed and descriptor sense into `struct oa_scsi_sense` | [`scsi.h`](../../include/openaspi/scsi.h) |
+| `inquiry.c` | standard INQUIRY data and identification strings | `scsi.h` |
+| `block_cdb.c` | block CDB builders, READ CAPACITY decoding | `scsi.h` |
+| `wire.c` | big-endian access | `scsi.h` |
+| `tape_cdb.c` | six-byte sequential-access commands | [`scsi_tape.h`](../../include/openaspi/scsi_tape.h) |
 
 The sense decoder accepts available metadata from a recognized response with
 at least four bytes. Successful decoding is not proof of a complete response
@@ -28,7 +36,7 @@ With a host compiler supporting AddressSanitizer and UBSan, after `make check`:
 cc -Iinclude -std=c90 -Wall -Wextra -Werror -pedantic -g -O1 \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
   -o build/host/test_tape_sanitized tests/test_tape.c \
-  common/scsi/tape_cdb.c common/scsi/tape_sense.c
+  common/scsi/tape_cdb.c common/scsi/sense.c
 build/host/test_tape_sanitized
 ```
 

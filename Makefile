@@ -17,7 +17,11 @@ GDI_OUT ?= $(abspath $(BUILD)/gdi)
 TOOLSDIR := $(BUILD)/tools
 JWASM   ?= $(TOOLSDIR)/jwasm/jwasm
 JWLINK  ?= $(TOOLSDIR)/jwlink/jwlink
-HOSTOBJ := $(BUILD)/host/tape_cdb.o $(BUILD)/host/tape_sense.o
+SCSISRC := common/scsi/sense.c common/scsi/inquiry.c common/scsi/block_cdb.c common/scsi/wire.c
+NATIVESRC := common/native/hba.c common/native/disk.c common/native/sat.c
+SCSIHDR := include/openaspi/scsi.h include/openaspi/types.h
+NATIVEHDR := $(SCSIHDR) include/openaspi/aspi.h $(wildcard include/openaspi/native/*.h)
+HOSTOBJ := $(BUILD)/host/tape_cdb.o $(patsubst common/scsi/%.c,$(BUILD)/host/%.o,$(SCSISRC))
 TESTBIN := $(BUILD)/host/test_tape
 ASPITESTBIN := $(BUILD)/host/test_aspi
 FATTESTBIN := $(BUILD)/host/test_fat_format
@@ -46,7 +50,11 @@ DOSAPIINFO := $(BUILD)/dos/OTAPINFO.EXE
 DOSWINCHECK := $(BUILD)/dos/WINCHECK.COM
 WIN16CHECK := $(BUILD)/win16/WINCHECK.EXE
 WIN16CHECKOBJ := $(BUILD)/win16/wincheck.obj
-DOSCOBJ := $(BUILD)/dos/tape_cdb.obj $(BUILD)/dos/tape_sense.obj $(BUILD)/dos/tape_abi.obj
+# Shared C is also compiled as 16-bit DOS objects, native layer included,
+# so it stays usable on both sides.
+DOSCOBJ := $(BUILD)/dos/tape_cdb.obj $(BUILD)/dos/tape_abi.obj \
+	$(patsubst common/scsi/%.c,$(BUILD)/dos/%.obj,$(SCSISRC)) \
+	$(patsubst common/native/%.c,$(BUILD)/dos/native_%.obj,$(NATIVESRC))
 DISTDIR := $(BUILD)/dist
 RELEASEDIR ?= release
 
@@ -281,7 +289,8 @@ $(QUILIB): tools/aspimgr/quilib.mk \
 		MAXLANG=$(MAXLANG) $@
 
 $(DOSMGR): tools/aspimgr/main.c tools/aspimgr/aspiio.asm tools/aspimgr/dos.mk \
-		include/openaspi/aspi.h include/openaspi/types.h $(QUILIB) | $(JWASM) $(JWLINK)
+		common/scsi/inquiry.c include/openaspi/aspi.h include/openaspi/scsi.h \
+		include/openaspi/types.h $(QUILIB) | $(JWASM) $(JWLINK)
 	$(MAKE) -f tools/aspimgr/dos.mk OPEN386MAX=$(abspath $(OPEN386MAX)) \
 		OUT=$(abspath $(BUILD)/$(MAXLANG)/aspimgr-obj) BINDIR=$(abspath $(@D)) \
 		QUILIB=$(QUILIB) MAXLANG=$(MAXLANG) WATCOM=$(WATCOM) \
@@ -325,7 +334,11 @@ $(BUILD)/dos/tape_abi.obj: tests/tape_abi.c include/openaspi/aspitape.h include/
 	mkdir -p $(@D)
 	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(WATCOM)/h -fo=$@ $<
 
-$(BUILD)/dos/tape_sense.obj: common/scsi/tape_sense.c include/openaspi/scsi_tape.h include/openaspi/types.h
+$(BUILD)/dos/%.obj: common/scsi/%.c $(SCSIHDR)
+	mkdir -p $(@D)
+	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(WATCOM)/h -fo=$@ $<
+
+$(BUILD)/dos/native_%.obj: common/native/%.c $(NATIVEHDR)
 	mkdir -p $(@D)
 	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(WATCOM)/h -fo=$@ $<
 
@@ -333,7 +346,7 @@ $(BUILD)/host/tape_cdb.o: common/scsi/tape_cdb.c include/openaspi/scsi_tape.h in
 	mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
 
-$(BUILD)/host/tape_sense.o: common/scsi/tape_sense.c include/openaspi/scsi_tape.h include/openaspi/types.h
+$(BUILD)/host/%.o: common/scsi/%.c $(SCSIHDR)
 	mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
 

@@ -3,12 +3,11 @@
  *
  * Not the DOS ABI of openaspi/aspi.h (packed SRBs with far pointers handed
  * to SCSIMGR$), but its C counterpart inside a kernel; both share the ASPI
- * constants.
+ * constants, and the SCSI helpers of openaspi/scsi.h serve both.
  *
- * The same model as ASPI for DOS, as C for 32- and 64-bit kernels: a host
- * adapter (transport) only carries SCSI commands to a target and LUN; device
- * classes (disk.h) build the commands. Transports that drive ATA devices
- * translate with sat.h, so every device answers SCSI.
+ * A host adapter (transport) only carries SCSI commands to a target and
+ * LUN; device classes (disk.h) build the commands. Transports that drive
+ * ATA devices translate with sat.h, so every device answers SCSI.
  *
  * Execution is synchronous and polled for now (GDOS). The structures keep
  * room for queued completion, which the server executive will add.
@@ -18,9 +17,9 @@
 #define OPENASPI_NATIVE_HBA_H
 
 #include <stddef.h>
-#include <stdint.h>
 
 #include "openaspi/aspi.h" /* ASPI vocabulary shared with the DOS ABI */
+#include "openaspi/scsi.h"
 
 #define OA_CDB_MAX   OA_ASPI_CDB_SIZE
 #define OA_SENSE_MAX OA_ASPI_SENSE_SIZE
@@ -40,49 +39,49 @@
 #define OA_HOST_UNSUPPORTED 0x80u /* native only: request cannot be carried or translated */
 
 /* SCSI target status. */
-#define OA_STATUS_GOOD            0x00
-#define OA_STATUS_CHECK_CONDITION 0x02
-#define OA_STATUS_BUSY            0x08
+#define OA_STATUS_GOOD            0x00u
+#define OA_STATUS_CHECK_CONDITION 0x02u
+#define OA_STATUS_BUSY            0x08u
 
 struct oa_srb {
-	uint8_t target;
-	uint8_t lun;
-	uint8_t cdb_len;
-	uint8_t dir;               /* OA_DIR_* */
-	uint8_t cdb[OA_CDB_MAX];
-	void *data;
-	uint32_t data_len;
-	uint32_t timeout_ms;       /* 0: the transport's default */
+    oa_u8 target;
+    oa_u8 lun;
+    oa_u8 cdb_len;
+    oa_u8 dir;               /* OA_DIR_* */
+    oa_u8 cdb[OA_CDB_MAX];
+    void *data;
+    oa_u32 data_len;
+    oa_u32 timeout_ms;       /* 0: the transport's default */
 
-	/* Results, set by oa_execute(). */
-	uint8_t host_status;       /* OA_HOST_* */
-	uint8_t target_status;     /* OA_STATUS_* */
-	uint8_t sense_len;         /* valid bytes in sense[] (autosense) */
-	uint8_t reserved;
-	uint32_t residual;         /* bytes not transferred */
-	uint8_t sense[OA_SENSE_MAX];
+    /* Results, set by oa_execute(). */
+    oa_u8 host_status;       /* OA_HOST_* */
+    oa_u8 target_status;     /* OA_STATUS_* */
+    oa_u8 sense_len;         /* valid bytes in sense[] (autosense) */
+    oa_u8 reserved;
+    oa_u32 residual;         /* bytes not transferred */
+    oa_u8 sense[OA_SENSE_MAX];
 };
 
 struct oa_hba;
 
 struct oa_hba_ops {
-	/* Carry one command and wait for it. Fills the result fields; on CHECK
-	 * CONDITION the transport fetches sense data (REQUEST SENSE or the
-	 * device's autosense). */
-	void (*execute)(struct oa_hba *hba, struct oa_srb *srb);
-	/* Optional: reset one target (NULL: not supported). */
-	int (*reset_target)(struct oa_hba *hba, uint8_t target);
+    /* Carry one command and wait for it. Fills the result fields; on CHECK
+     * CONDITION the transport supplies sense data (REQUEST SENSE or the
+     * device's autosense). */
+    void (*execute)(struct oa_hba *hba, struct oa_srb *srb);
+    /* Optional: reset one target (NULL: not supported). */
+    int (*reset_target)(struct oa_hba *hba, oa_u8 target);
 };
 
 struct oa_hba {
-	const char *name;          /* e.g. "AHCI 0000:00:1f.2" */
-	const struct oa_hba_ops *ops;
-	void *priv;
-	uint8_t max_target;        /* highest target id (inclusive) */
-	uint8_t max_lun;           /* highest LUN probed (inclusive) */
-	uint8_t id;                /* set by oa_hba_register() */
-	uint8_t reserved;
-	struct oa_hba *next;
+    const char *name;          /* e.g. "AHCI 0000:00:1f.2" */
+    const struct oa_hba_ops *ops;
+    void *priv;
+    oa_u8 max_target;          /* highest target id (inclusive) */
+    oa_u8 max_lun;             /* highest LUN probed (inclusive) */
+    oa_u8 id;                  /* set by oa_hba_register() */
+    oa_u8 reserved;
+    struct oa_hba *next;
 };
 
 /* Register an adapter; returns its id. Adapters stay registered. */
@@ -92,32 +91,26 @@ struct oa_hba *oa_hba_first(void);
 /* Validate and execute a request. Clears the result fields first. */
 void oa_execute(struct oa_hba *hba, struct oa_srb *srb);
 
-/* Command completed cleanly. */
-static inline int oa_srb_ok(const struct oa_srb *srb)
-{
-	return srb->host_status == OA_HOST_OK && srb->target_status == OA_STATUS_GOOD;
-}
+/* Command completed cleanly (host and target status). */
+int oa_srb_ok(const struct oa_srb *srb);
 
-/* Sense key / ASC / ASCQ of fixed or descriptor sense; -1 if none. */
-int oa_sense_key(const struct oa_srb *srb);
-int oa_sense_asc(const struct oa_srb *srb);   /* ASC << 8 | ASCQ */
+/* Decode the sense data of a request that ended in CHECK CONDITION (0);
+ * -1 when there was none or it is not recognized. */
+int oa_srb_sense(const struct oa_srb *srb, struct oa_scsi_sense *sense);
 
 /* A device found by oa_scan(). */
 struct oa_device {
-	struct oa_hba *hba;
-	uint8_t target;
-	uint8_t lun;
-	uint8_t type;              /* OA_ASPI_DEVICE_* */
-	uint8_t removable;
-	char vendor[9];
-	char product[17];
-	char revision[5];
-	struct oa_device *next;
+    struct oa_hba *hba;
+    oa_u8 target;
+    oa_u8 lun;
+    oa_u8 reserved[2];
+    struct oa_scsi_inquiry inquiry; /* device_type, removable, identity */
+    struct oa_device *next;
 };
 
 /* Probe every target and LUN of every registered adapter with INQUIRY and
- * build the device list (devices are allocated from `pool`, `pool_count`
- * entries). Returns the number of devices found. */
+ * build the device list from `pool` (`pool_count` entries). Returns the
+ * number of devices found. */
 int oa_scan(struct oa_device *pool, unsigned pool_count);
 struct oa_device *oa_device_first(void);
 

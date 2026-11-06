@@ -1,4 +1,6 @@
-/* Bounded decoding of fixed (70h/71h) and descriptor (72h/73h) tape sense.
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+/* Bounded decoding of fixed (70h/71h) and descriptor (72h/73h) sense, for
+ * every device class (filemark, EOM and ILI matter for tape).
  * This parser has no SRB/transport context: success means recognized syntax,
  * not that sense belongs to a completed command or proves a byte count.
  * Callers qualify host/target status and current versus deferred response.
@@ -7,7 +9,7 @@
 
 #include <string.h>
 
-#include "openaspi/scsi_tape.h"
+#include "openaspi/scsi.h"
 
 /* Require a non-NULL output and at least four available input bytes before
  * touching the result. Once basic arguments pass, clear it before decoding;
@@ -16,7 +18,7 @@
  * ASC or flags alone cannot distinguish absent optional bytes from actual zero.
  */
 int oa_scsi_decode_sense(const oa_u8 *data, oa_u16 length,
-                         struct oa_tape_sense *result)
+                         struct oa_scsi_sense *result)
 {
     oa_u8 response;
     oa_u16 end;

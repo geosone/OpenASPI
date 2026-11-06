@@ -80,7 +80,7 @@ static void test_fixed_sense(void)
         0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x02u, 0x00u, 0x00u,
         0x00u, 0x00u
     };
-    struct oa_tape_sense sense;
+    struct oa_scsi_sense sense;
 
     assert(oa_scsi_decode_sense(data, sizeof(data), &sense) == 0);
     assert(sense.response_code == 0x70u);
@@ -100,7 +100,7 @@ static void test_truncated_fixed_sense(void)
         0x00u, 0x00u, 0x00u, 0x00u, 0x11u, 0x22u, 0x00u, 0x00u,
         0x00u, 0x00u
     };
-    struct oa_tape_sense sense;
+    struct oa_scsi_sense sense;
     oa_u16 length;
     oa_u8 *prefix;
 
@@ -145,7 +145,7 @@ static void test_descriptor_sense(void)
         0x00u, 0x00u, 0x00u, 0x20u,
         0x04u, 0x02u, 0x00u, 0xE0u
     };
-    struct oa_tape_sense sense;
+    struct oa_scsi_sense sense;
 
     assert(oa_scsi_decode_sense(data, sizeof(data), &sense) == 0);
     assert(sense.sense_key == OA_SENSE_UNIT_ATTENTION);
@@ -166,7 +166,7 @@ static void test_truncated_descriptor_sense(void)
         0x00u, 0x00u, 0x00u, 0x20u,
         0x04u, 0x02u, 0x00u, 0xE0u
     };
-    struct oa_tape_sense sense;
+    struct oa_scsi_sense sense;
     oa_u16 length;
     oa_u8 *prefix;
 

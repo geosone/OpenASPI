@@ -3,7 +3,12 @@
 The ASPI model in C for 32- and 64-bit kernels: GDOS, the DOS-like start
 environment of [GonWare](https://gitea.disconnected-by-peer.at/GonSoft/GonWare),
 uses it polled; GonWare's server executive takes it over as `ASPI.GLM` and
-adds interrupts and DMA. It needs no C library.
+adds interrupts and DMA. It needs no C library beyond `memset`, `memcpy` and
+`strlen` from `<string.h>`.
+
+Like [`common/scsi`](../scsi/README.md), whose helpers it uses, the code is
+C90 and also compiles as 16-bit OpenWatcom code (`make dos-c-check`), so a
+DOS program can reuse it as well.
 
 | File | Content |
 | --- | --- |
