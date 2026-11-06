@@ -155,8 +155,9 @@ static void pad_copy(oa_u8 *dst, const char *src, oa_u16 size)
     oa_u16 i;
     int end = 0;
 
+    /* src is not read past its terminator */
     for (i = 0; i < size; i++) {
-        if (src[i] == '\0') {
+        if (!end && src[i] == '\0') {
             end = 1;
         }
         dst[i] = end ? (oa_u8)' ' : (oa_u8)src[i];
