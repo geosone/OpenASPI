@@ -156,7 +156,19 @@ def main():
                         ui_phase = 3
                 command("step 2000")
             else:
-                raise RuntimeError("VM did not complete; see screen.txt and serial.log")
+                # where the guest is: a few samples of its registers
+                with open(vm / "regs.txt", "w", encoding="utf-8") as regs:
+                    for _ in range(4):
+                        r = command("regs")
+                        regs.write(json.dumps(r) + "\n")
+                        stack = command("memr %d 64" % (r["ss"] * 16 + (r["esp"] & 0xFFFF)))
+                        regs.write("stack " + stack["data"] + "\n")
+                        code = command("memr %d 32" % (r["cs"] * 16 + r["eip"] - 16))
+                        regs.write("code-16 " + code["data"] + "\n")
+                        ivt = command("memr 0 64")
+                        regs.write("ivt " + ivt["data"] + "\n")
+                        command("step 50")
+                raise RuntimeError("VM did not complete; see screen.txt, serial.log and regs.txt")
             validate(output, args)
             if args.aspi_ui and ui_phase != 3:
                 raise RuntimeError("ASPI GUI selection/rescan/exit did not complete")
