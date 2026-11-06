@@ -10,6 +10,7 @@
 #include "openaspi/native/hba.h"
 #include "openaspi/native/disk.h"
 #include "openaspi/native/sat.h"
+#include "openaspi/native/atapi.h"
 
 static int failures;
 #define CHECK(c)                                                              \
@@ -240,6 +241,24 @@ int main(void)
 		oa_sat_execute(&sat48, &srb);
 		CHECK(srb.target_status == OA_STATUS_GOOD && srb.residual == 0);
 		CHECK(buf[4] == 0x10 && buf[6] == 0x00 && buf[7] == 0xff && buf[10] == 0x02);
+	}
+
+	/* ATAPI translation */
+	{
+		uint8_t pk[16], r6[6] = { 0x08, 0x01, 0x02, 0x03, 0x00, 0x00 }, ms6[6] = { 0x1a, 0, 0x3f, 0, 0xfc, 0 };
+		uint16_t alloc = 0;
+		CHECK(oa_atapi_translate(pk, r6, 6, OA_ASPI_DEVICE_DISK, &alloc) == OA_ATAPI_XLATE_RW);
+		CHECK(pk[0] == 0x28 && pk[3] == 0x01 && pk[4] == 0x02 && pk[5] == 0x03 && pk[7] == 0x01 && pk[8] == 0x00);
+		CHECK(oa_atapi_translate(pk, r6, 6, OA_ASPI_DEVICE_TAPE, &alloc) == OA_ATAPI_XLATE_NONE && pk[0] == 0x08);
+		CHECK(oa_atapi_translate(pk, ms6, 6, OA_ASPI_DEVICE_DISK, &alloc) == OA_ATAPI_XLATE_MODE_SENSE);
+		CHECK(pk[0] == 0x5a && pk[2] == 0x3f && alloc == 0x100 && pk[7] == 0x01 && pk[8] == 0x00);
+		/* MODE SENSE (10) header: length 14, medium 0, WP, BD length 0, then 8 bytes */
+		uint8_t m[16] = { 0, 14, 0, 0x80, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8 };
+		CHECK(oa_atapi_mode10_to_6(m, 16) == 12);
+		CHECK(m[0] == 11 && m[2] == 0x80 && m[3] == 0 && m[4] == 1 && m[11] == 8);
+		uint8_t s[18];
+		oa_atapi_sense_from_error(s, 0x54);
+		CHECK(s[0] == 0x70 && s[2] == 5);
 	}
 
 	free(out);

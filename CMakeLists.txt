@@ -22,7 +22,8 @@ add_library(OpenASPI::scsi ALIAS openaspi_scsi)
 add_library(openaspi_native STATIC
   common/native/hba.c
   common/native/disk.c
-  common/native/sat.c)
+  common/native/sat.c
+  common/native/atapi.c)
 target_link_libraries(openaspi_native PUBLIC openaspi_scsi)
 target_include_directories(openaspi_native PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 set_target_properties(openaspi_scsi openaspi_native PROPERTIES C_STANDARD 90 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
