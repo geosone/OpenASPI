@@ -32,4 +32,35 @@ oa_u16 oa_atapi_mode10_to_6(oa_u8 *buf, oa_u16 len);
  * packet command: its high nibble is the sense key. */
 void oa_atapi_sense_from_error(oa_u8 sense[18], oa_u8 error);
 
+/* --- running SCSI requests on an ATAPI device ---------------------------
+ *
+ * The transport sends one packet (12 or 16 bytes, the buffer always holds
+ * 16) with the data phase in `dir` (OA_DIR_*) and reports the ATA status
+ * and error registers and the bytes moved. Returns OA_HOST_OK when the
+ * device completed the command (check status then), else an OA_HOST_*
+ * transport error. */
+typedef int (*oa_atapi_fn)(void *ctx, const oa_u8 packet[16], oa_u8 dir, void *data,
+                           oa_u32 len, oa_u32 timeout_ms, oa_u8 *status, oa_u8 *error,
+                           oa_u32 *xfer);
+
+struct oa_atapi {
+    oa_atapi_fn packet;
+    void *ctx;
+    oa_u8 type;         /* peripheral device type from INQUIRY */
+    oa_u8 packet_size;  /* 12 or 16, from IDENTIFY PACKET DEVICE */
+    oa_u8 dma;          /* IDENTIFY: DMA supported */
+    oa_u8 dmadir;       /* IDENTIFY: DMADIR bit required */
+    oa_u8 reply[264];   /* MODE SENSE (10) reply, converted to (6) */
+};
+
+struct oa_srb;
+
+/* Set up from the IDENTIFY PACKET DEVICE words and learn the device type
+ * with INQUIRY. Returns OA_HOST_OK or the transport error. */
+int oa_atapi_init(struct oa_atapi *dev, oa_atapi_fn packet, void *ctx, const oa_u16 identify[256]);
+
+/* Run one SCSI request: CDB translation, REQUEST SENSE as autosense,
+ * sense from the error register when that fails. */
+void oa_atapi_execute(struct oa_atapi *dev, struct oa_srb *srb);
+
 #endif
