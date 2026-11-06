@@ -23,6 +23,12 @@ and `CDAUDIO.COM` to switch the mode at run time; the build writes
 This is development software. The tape write path is emulator-tested but is
 not yet qualified for production backups on real media.
 
+## Native C layer
+
+[`common/native`](common/native/README.md) holds the ASPI model in C for
+32/64-bit kernels (GonWare's GDOS and server): adapters, request blocks,
+the block device class and SCSI/ATA translation, built with CMake.
+
 ## Build
 
 Clone with submodules, then build and run the local checks:
