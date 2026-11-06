@@ -81,10 +81,17 @@ int oa_atapi_init(struct oa_atapi *dev, oa_atapi_fn packet, void *ctx, const oa_
 
     dev->packet = packet;
     dev->ctx = ctx;
-    dev->packet_size = (oa_u8)OA_ATAPI_PACKET_SIZE(identify[0]);
-    dev->dma = (oa_u8)((identify[49] & 0x0100u) != 0u);
-    dev->dmadir = (oa_u8)((identify[62] & 0x8000u) != 0u);
-    dev->type = (oa_u8)((identify[0] >> 8) & 0x1Fu);
+    dev->translate = 1;
+    if (identify != 0) {
+        dev->packet_size = (oa_u8)OA_ATAPI_PACKET_SIZE(identify[0]);
+        dev->dma = (oa_u8)((identify[49] & 0x0100u) != 0u);
+        dev->dmadir = (oa_u8)((identify[62] & 0x8000u) != 0u);
+        dev->type = (oa_u8)((identify[0] >> 8) & 0x1Fu);
+    } else {
+        dev->packet_size = 12;
+        dev->dma = dev->dmadir = 0;
+        dev->type = 0;
+    }
     memset(cdb, 0, sizeof(cdb));
     cdb[0] = OA_SCSI_INQUIRY;
     cdb[4] = sizeof(inq);
@@ -108,7 +115,13 @@ void oa_atapi_execute(struct oa_atapi *dev, struct oa_srb *srb)
         srb->host_status = OA_HOST_NO_DEVICE;
         return;
     }
-    kind = oa_atapi_translate(packet, srb->cdb, srb->cdb_len, dev->type, &alloc10);
+    if (dev->translate) {
+        kind = oa_atapi_translate(packet, srb->cdb, srb->cdb_len, dev->type, &alloc10);
+    } else {
+        memset(packet, 0, sizeof(packet));
+        memcpy(packet, srb->cdb, srb->cdb_len > 16u ? 16u : srb->cdb_len);
+        kind = OA_ATAPI_XLATE_NONE;
+    }
     if (kind == OA_ATAPI_XLATE_MODE_SENSE) {
         len = alloc10; /* at most 259 bytes */
         buf = dev->reply;

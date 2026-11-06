@@ -34,6 +34,9 @@ void oa_atapi_sense_from_error(oa_u8 sense[18], oa_u8 error);
 
 /* --- running SCSI requests on an ATAPI device ---------------------------
  *
+ * Also for other packet transports with the same status model, such as USB
+ * mass storage (CBI, Bulk-Only): ERR in the status means CHECK CONDITION.
+ *
  * The transport sends one packet (12 or 16 bytes, the buffer always holds
  * 16) with the data phase in `dir` (OA_DIR_*) and reports the ATA status
  * and error registers and the bytes moved. Returns OA_HOST_OK when the
@@ -50,13 +53,15 @@ struct oa_atapi {
     oa_u8 packet_size;  /* 12 or 16, from IDENTIFY PACKET DEVICE */
     oa_u8 dma;          /* IDENTIFY: DMA supported */
     oa_u8 dmadir;       /* IDENTIFY: DMADIR bit required */
+    oa_u8 translate;    /* apply the 6-to-10-byte rules (default 1) */
     oa_u8 reply[264];   /* MODE SENSE (10) reply, converted to (6) */
 };
 
 struct oa_srb;
 
-/* Set up from the IDENTIFY PACKET DEVICE words and learn the device type
- * with INQUIRY. Returns OA_HOST_OK or the transport error. */
+/* Set up from the IDENTIFY PACKET DEVICE words (NULL: none, 12-byte
+ * packets, no DMA) and learn the device type with INQUIRY. Returns
+ * OA_HOST_OK or the transport error. */
 int oa_atapi_init(struct oa_atapi *dev, oa_atapi_fn packet, void *ctx, const oa_u16 identify[256]);
 
 /* Run one SCSI request: CDB translation, REQUEST SENSE as autosense,
