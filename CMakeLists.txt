@@ -11,7 +11,7 @@ cmake_minimum_required(VERSION 3.20)
 project(OpenASPI LANGUAGES C)
 
 add_library(openaspi_native STATIC
-  common/native/aspi.c
+  common/native/hba.c
   common/native/disk.c
   common/native/sat.c)
 target_include_directories(openaspi_native PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")

@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "openaspi/native/aspi.h"
+#include "openaspi/native/hba.h"
 #include "openaspi/native/disk.h"
 #include "openaspi/native/sat.h"
 
@@ -130,7 +130,7 @@ int main(void)
 	struct oa_device pool[4];
 	CHECK(oa_scan(pool, 4) == 1);
 	struct oa_device *dev = oa_device_first();
-	CHECK(dev && dev->type == OA_TYPE_DISK && dev->target == 0 && dev->lun == 0);
+	CHECK(dev && dev->type == OA_ASPI_DEVICE_DISK && dev->target == 0 && dev->lun == 0);
 	CHECK(dev && strcmp(dev->vendor, "ATA") == 0 && strcmp(dev->product, "QEMU HARDDISK") == 0);
 
 	struct oa_disk disk;

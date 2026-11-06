@@ -6,7 +6,7 @@
 #ifndef OPENASPI_NATIVE_DISK_H
 #define OPENASPI_NATIVE_DISK_H
 
-#include "openaspi/native/aspi.h"
+#include "openaspi/native/hba.h"
 
 /* Return values (0 = success). */
 #define OA_OK         0

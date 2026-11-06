@@ -2,7 +2,7 @@
 /* Native ASPI core: adapter registry, request validation, sense decoding
  * and the INQUIRY bus scan. */
 
-#include "openaspi/native/aspi.h"
+#include "openaspi/native/hba.h"
 #include "openaspi/native/host.h"
 #include "util.h"
 
@@ -136,7 +136,7 @@ int oa_scan(struct oa_device *pool, unsigned pool_count)
 					continue;
 				}
 				uint8_t qual = buf[0] >> 5, type = buf[0] & 0x1f;
-				if (qual != 0 || type == OA_TYPE_NONE)
+				if (qual != 0 || type == OA_ASPI_DEVICE_NONE)
 					continue;
 				if (used == pool_count) {
 					oa_host_log(OA_LOG_WARN, "ASPI: device table full\n");

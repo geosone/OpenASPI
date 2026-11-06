@@ -7,7 +7,7 @@ adds interrupts and DMA. It needs no C library.
 
 | File | Content |
 | --- | --- |
-| [`aspi.h`](../../include/openaspi/native/aspi.h), `aspi.c` | host adapters, SCSI request blocks (`struct oa_srb`), sense decoding, INQUIRY bus scan |
+| [`hba.h`](../../include/openaspi/native/hba.h), `hba.c` | host adapters, SCSI request blocks (`struct oa_srb`), sense decoding, INQUIRY bus scan |
 | [`disk.h`](../../include/openaspi/native/disk.h), `disk.c` | block device class: disks, removable media (floppy, LS-120, ZIP, sticks), CD/DVD data |
 | [`sat.h`](../../include/openaspi/native/sat.h), `sat.c` | SCSI/ATA translation for transports that drive ATA disks (AHCI, IDE, ATA bridges) |
 | [`host.h`](../../include/openaspi/native/host.h) | services the embedding system provides: log, time, DMA memory, MMIO, PCI, port I/O |

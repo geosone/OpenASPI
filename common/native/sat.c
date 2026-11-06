@@ -163,7 +163,7 @@ static void inquiry(struct oa_sat *sat, struct oa_srb *srb)
 		illegal(sat, srb, 0x24);
 		return;
 	}
-	buf[0] = OA_TYPE_DISK;
+	buf[0] = OA_ASPI_DEVICE_DISK;
 	buf[1] = sat->removable ? 0x80 : 0;
 	buf[2] = 0x05; /* SPC-3 */
 	buf[3] = 0x02;

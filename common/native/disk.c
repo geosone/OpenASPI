@@ -115,7 +115,7 @@ static void check_write_protect(struct oa_disk *disk)
 	struct oa_srb srb;
 	uint8_t buf[8];
 
-	if (disk->dev->type == OA_TYPE_CDROM) {
+	if (disk->dev->type == OA_ASPI_DEVICE_CDA) {
 		disk->write_protected = 1;
 		return;
 	}
@@ -138,7 +138,7 @@ int oa_disk_open(struct oa_disk *disk, struct oa_device *dev)
 
 	oa_zero(disk, sizeof(*disk));
 	disk->dev = dev;
-	if (dev->type != OA_TYPE_DISK && dev->type != OA_TYPE_CDROM && dev->type != OA_TYPE_OPTICAL)
+	if (dev->type != OA_ASPI_DEVICE_DISK && dev->type != OA_ASPI_DEVICE_CDA && dev->type != OA_ASPI_DEVICE_OPTICAL)
 		return OA_ENOTSUP;
 
 	/* Unit attention after reset or medium change is reported once;

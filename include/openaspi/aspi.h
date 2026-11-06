@@ -34,6 +34,15 @@
 #define OA_ASPI_INVALID_HA       0x81u
 #define OA_ASPI_NO_DEVICE        0x82u
 
+/* Host adapter status of an execute request (ASPI values; the native
+ * layer reports the same codes). */
+#define OA_ASPI_HA_OK                0x00u
+#define OA_ASPI_HA_TIMEOUT           0x09u
+#define OA_ASPI_HA_SELECTION_TIMEOUT 0x11u
+#define OA_ASPI_HA_DATA_RUN          0x12u
+#define OA_ASPI_HA_BUS_FREE          0x13u
+#define OA_ASPI_HA_PHASE_ERROR       0x14u
+
 /* Execute-SCSI flags. */
 #define OA_ASPI_POSTING          0x01u
 #define OA_ASPI_LINKING          0x02u
@@ -43,10 +52,13 @@
 #define OA_ASPI_DIRECTION_OUT    0x10u
 #define OA_ASPI_DIRECTION_NONE   0x18u
 
-/* SCSI peripheral device types used by the DOS component detectors. */
+/* SCSI peripheral device types used by the DOS component detectors and the
+ * native layer (native/hba.h). */
 #define OA_ASPI_DEVICE_DISK      0x00u
 #define OA_ASPI_DEVICE_TAPE      0x01u
 #define OA_ASPI_DEVICE_CDA       0x05u
+#define OA_ASPI_DEVICE_OPTICAL   0x07u
+#define OA_ASPI_DEVICE_NONE      0x1fu
 
 #define OA_ASPI_MANAGER_ID_SIZE  16u
 #define OA_ASPI_IDENTIFIER_SIZE  16u

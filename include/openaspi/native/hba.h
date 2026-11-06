@@ -1,6 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /* Native ASPI: host adapters, SCSI request blocks and devices.
  *
+ * Not the DOS ABI of openaspi/aspi.h (packed SRBs with far pointers handed
+ * to SCSIMGR$), but its C counterpart inside a kernel; both share the ASPI
+ * constants.
+ *
  * The same model as ASPI for DOS, as C for 32- and 64-bit kernels: a host
  * adapter (transport) only carries SCSI commands to a target and LUN; device
  * classes (disk.h) build the commands. Transports that drive ATA devices
@@ -10,27 +14,30 @@
  * room for queued completion, which the server executive will add.
  */
 
-#ifndef OPENASPI_NATIVE_ASPI_H
-#define OPENASPI_NATIVE_ASPI_H
+#ifndef OPENASPI_NATIVE_HBA_H
+#define OPENASPI_NATIVE_HBA_H
 
 #include <stddef.h>
 #include <stdint.h>
 
-#define OA_CDB_MAX   16u
-#define OA_SENSE_MAX 32u
+#include "openaspi/aspi.h" /* ASPI vocabulary shared with the DOS ABI */
+
+#define OA_CDB_MAX   OA_ASPI_CDB_SIZE
+#define OA_SENSE_MAX OA_ASPI_SENSE_SIZE
 
 /* Data direction. */
 #define OA_DIR_NONE 0
 #define OA_DIR_IN   1 /* device to host */
 #define OA_DIR_OUT  2 /* host to device */
 
-/* Host status: did the transport deliver the command? */
-#define OA_HOST_OK          0x00
-#define OA_HOST_NO_DEVICE   0x11 /* selection timeout, nothing at that address */
-#define OA_HOST_TIMEOUT     0x09 /* command did not complete in time */
-#define OA_HOST_DATA_RUN    0x12 /* data overrun or underrun beyond the residual */
-#define OA_HOST_BUS_ERROR   0x14 /* transport or controller error */
-#define OA_HOST_UNSUPPORTED 0x16 /* command cannot be carried (or translated) */
+/* Host status: did the transport deliver the command? The ASPI host
+ * adapter codes, plus one native code. */
+#define OA_HOST_OK          OA_ASPI_HA_OK
+#define OA_HOST_NO_DEVICE   OA_ASPI_HA_SELECTION_TIMEOUT /* nothing at that address */
+#define OA_HOST_TIMEOUT     OA_ASPI_HA_TIMEOUT           /* did not complete in time */
+#define OA_HOST_DATA_RUN    OA_ASPI_HA_DATA_RUN          /* overrun or underrun beyond the residual */
+#define OA_HOST_BUS_ERROR   OA_ASPI_HA_PHASE_ERROR       /* transport or controller error */
+#define OA_HOST_UNSUPPORTED 0x80u /* native only: request cannot be carried or translated */
 
 /* SCSI target status. */
 #define OA_STATUS_GOOD            0x00
@@ -95,19 +102,12 @@ static inline int oa_srb_ok(const struct oa_srb *srb)
 int oa_sense_key(const struct oa_srb *srb);
 int oa_sense_asc(const struct oa_srb *srb);   /* ASC << 8 | ASCQ */
 
-/* Peripheral device types from INQUIRY. */
-#define OA_TYPE_DISK      0x00
-#define OA_TYPE_TAPE      0x01
-#define OA_TYPE_CDROM     0x05
-#define OA_TYPE_OPTICAL   0x07
-#define OA_TYPE_NONE      0x1f
-
 /* A device found by oa_scan(). */
 struct oa_device {
 	struct oa_hba *hba;
 	uint8_t target;
 	uint8_t lun;
-	uint8_t type;              /* OA_TYPE_* */
+	uint8_t type;              /* OA_ASPI_DEVICE_* */
 	uint8_t removable;
 	char vendor[9];
 	char product[17];

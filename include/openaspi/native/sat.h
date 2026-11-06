@@ -9,7 +9,7 @@
 #ifndef OPENASPI_NATIVE_SAT_H
 #define OPENASPI_NATIVE_SAT_H
 
-#include "openaspi/native/aspi.h"
+#include "openaspi/native/hba.h"
 
 /* ATA status and error bits. */
 #define OA_ATA_ERR  0x01
