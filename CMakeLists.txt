@@ -10,6 +10,12 @@
 cmake_minimum_required(VERSION 3.20)
 project(OpenASPI LANGUAGES C)
 
+# Host services only (openaspi/types.h, openaspi/native/host.h): for other
+# native drivers - the USB core, input - that run on the same host glue.
+add_library(openaspi_host INTERFACE)
+target_include_directories(openaspi_host INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+add_library(OpenASPI::host ALIAS openaspi_host)
+
 # Shared with the DOS tools (16-bit OpenWatcom), see common/scsi.
 add_library(openaspi_scsi STATIC
   common/scsi/sense.c
@@ -25,7 +31,7 @@ add_library(openaspi_native STATIC
   common/native/blockemu.c
   common/native/sat.c
   common/native/atapi.c)
-target_link_libraries(openaspi_native PUBLIC openaspi_scsi)
+target_link_libraries(openaspi_native PUBLIC openaspi_scsi openaspi_host)
 target_include_directories(openaspi_native PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 set_target_properties(openaspi_scsi openaspi_native PROPERTIES C_STANDARD 90 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
 add_library(OpenASPI::native ALIAS openaspi_native)
