@@ -62,8 +62,8 @@ echo 'start=63, type=6' | sfdisk -q "$OUT/fat.img"
 mkfs.fat -F16 -n FATDISK --offset 63 "$OUT/fat.img" $(( (32*2048 - 63) / 2 )) >/dev/null
 
 # the exFAT stick (MBR, type 07h) and a FAT16 stick
-sh "$ROOT/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
-if test -n "$DAMAGE"; then python3 "$ROOT/tests/exchk_corrupt.py" "$OUT/x/exfat.img" "$DAMAGE"; fi
+sh "$ROOT/deps/openfat/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
+if test -n "$DAMAGE"; then python3 "$ROOT/deps/openfat/tests/exchk_corrupt.py" "$OUT/x/exfat.img" "$DAMAGE"; fi
 truncate -s 65M "$OUT/exstick.img"
 echo 'start=2048, type=7' | sfdisk -q "$OUT/exstick.img"
 dd if="$OUT/x/exfat.img" of="$OUT/exstick.img" bs=512 seek=2048 conv=notrunc status=none

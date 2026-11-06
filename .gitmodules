@@ -13,3 +13,7 @@
 [submodule "deps/Open386MAX"]
 	path = deps/Open386MAX
 	url = https://github.com/geosone/Open386MAX.git
+[submodule "deps/openfat"]
+	path = deps/openfat
+	url = https://github.com/geosone/openfat.git
+	shallow = true

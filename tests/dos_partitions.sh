@@ -90,7 +90,7 @@ fat "$OUT/disk.img" 215040 47104 16 P4
 fat "$OUT/disk.img" 53248 32768 16 L1
 fat "$OUT/disk.img" 88064 8192 12 L2
 fat "$OUT/disk.img" 151552 32768 16 L5
-sh "$ROOT/tests/exfat_image.sh" "$OUT/x" 16 >/dev/null
+sh "$ROOT/deps/openfat/tests/exfat_image.sh" "$OUT/x" 16 >/dev/null
 dd if="$OUT/x/exfat.img" of="$OUT/disk.img" bs=512 seek=98304 conv=notrunc status=none
 truncate -s 64M "$OUT/stick.img"
 sfdisk -q "$OUT/stick.img" <<'EOF'

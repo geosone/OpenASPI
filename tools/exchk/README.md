@@ -70,9 +70,9 @@ only be ended.  Afterwards EXFAT.SYS reads the volume again (the `changed` flag 
 volume table).  For ASPIDSK/ASPIFDD media EXCHK writes through the WRITE
 function of their exFAT service.
 
-The check is `common/exfat/exfat_check.c`.  Tests: `tests/exchk_host.sh`
-damages images in nine ways (`tests/exchk_corrupt.py`), on normal and on
-TexFAT copies (`tests/exfat_texfat.py`, three more kinds of damage), checks the
+The check is `deps/openfat/src/exfat/exfat_check.c`.  Tests: `deps/openfat/tests/exchk_host.sh`
+damages images in nine ways (`deps/openfat/tests/exchk_corrupt.py`), on normal and on
+TexFAT copies (`deps/openfat/tests/exfat_texfat.py`, three more kinds of damage), checks the
 messages of `build/host/test_exchk`, also in passes of 100 clusters, and
 repairs them; afterwards the check and `fsck.exfat` must find no error.
 `tests/dos_exfat.sh` and `tests/dos_exfat_aspi.sh` run EXCHK under DOS

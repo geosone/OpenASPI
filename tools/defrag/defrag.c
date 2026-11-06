@@ -1,5 +1,5 @@
 /* DEFRAG: defragments a FAT12/16/32 drive, safe against power loss (see
-   include/openaspi/fat_defrag.h).  The drive is checked first (the check of
+   include/openfat/fat_defrag.h).  The drive is checked first (the check of
    ASPICHK); with errors nothing is moved.
    DEFRAG d: [/U] [/A] [/B]
    /U only the fragmented files, /A analysis only, /B no screen (lines).
@@ -14,9 +14,9 @@
 #include <i86.h>
 #include <malloc.h>
 #include <bios.h>
-#include "openaspi/fat_check.h"
-#include "openaspi/fat_defrag.h"
-#include "openaspi/exfat.h"             /* the code page tables */
+#include "openfat/fat_check.h"
+#include "openfat/fat_defrag.h"
+#include "openfat/exfat.h"             /* the code page tables */
 #include "../aspichk/drive.h"
 
 #define VERSION "0.1"
@@ -34,7 +34,7 @@ static int batch;
 static oa_u16 __far *screen;
 static int mono;
 static oa_u32 per, nclu;                /* clusters per cell */
-static struct oa_defrag d;
+static struct ofat_defrag d;
 static char last[16];
 
 /* ---- the pre-check: as ASPICHK, without repairs ---- */
@@ -44,7 +44,7 @@ static int rd1(void *dev, oa_u32 lba, void __far *buf) { (void)dev; return drv_i
 static void chk_msg(void *ctx, int level, const char *text)
 {
     (void)ctx;
-    if (level == OA_FATCHK_ERROR) printf("Error: %s\n", text);
+    if (level == OFAT_FATCHK_ERROR) printf("Error: %s\n", text);
 }
 
 static int mark(void *ctx, oa_u32 bit)
@@ -89,12 +89,12 @@ static void cells(oa_u32 clu, oa_u32 count, int state)
     int any;
     for (; cell <= end && cell < ROWS * COLS; ++cell) {
         lo = 2 + cell * per; hi = lo + per > nclu + 2 ? nclu + 2 : lo + per;
-        if (state == OA_DEFRAG_READ) v = (oa_u16)(color(0x1F, 0x70) << 8 | 'r');
-        else if (state == OA_DEFRAG_WRITE) v = (oa_u16)(color(0x1F, 0x70) << 8 | 'W');
+        if (state == OFAT_DEFRAG_READ) v = (oa_u16)(color(0x1F, 0x70) << 8 | 'r');
+        else if (state == OFAT_DEFRAG_WRITE) v = (oa_u16)(color(0x1F, 0x70) << 8 | 'W');
         else {
-            for (any = 0, c = lo; c < hi && !any; ++c) any = oa_defrag_used(c);
+            for (any = 0, c = lo; c < hi && !any; ++c) any = ofat_defrag_used(c);
             if (!any) v = (oa_u16)(color(0x13, 0x07) << 8 | 0xB0);
-            else if (d.mode == OA_DEFRAG_FULL && hi <= d.done) v = (oa_u16)(color(0x1A, 0x0F) << 8 | 0xFE);
+            else if (d.mode == OFAT_DEFRAG_FULL && hi <= d.done) v = (oa_u16)(color(0x1A, 0x0F) << 8 | 0xFE);
             else v = (oa_u16)(color(0x1E, 0x07) << 8 | 0xFE);
         }
         screen[(TOP + cell / COLS) * COLS + cell % COLS] = v;
@@ -176,8 +176,8 @@ static void __far *mem(void *ctx, oa_u32 off) { (void)ctx; return chunks[(unsign
 
 static int check(void)
 {
-    static oa_u8 boot[OA_FATCHK_MAXSECT];
-    struct oa_fatchk c;
+    static oa_u8 boot[OFAT_FATCHK_MAXSECT];
+    struct ofat_fatchk c;
     union REGS r;
     oa_u32 total, need;
     int rc;
@@ -185,7 +185,7 @@ static int check(void)
     memset(&r, 0, sizeof(r));
     r.x.ax = 0x6601;
     intdos(&r, &r);
-    c.cp = (!r.x.cflag && r.x.bx == 850 ? &oa_exfat_cp850 : &oa_exfat_cp437)->uni;
+    c.cp = (!r.x.cflag && r.x.bx == 850 ? &ofat_exfat_cp850 : &ofat_exfat_cp437)->uni;
     c.read = rd1; c.msg = chk_msg; c.mark = mark; c.clear = clear;
     if (rd1(0, 0, boot)) { printf("Read error in the boot sector.\n"); return 3; }
     total = boot[19] | boot[20] << 8 ? (oa_u32)(boot[19] | boot[20] << 8) :
@@ -195,9 +195,9 @@ static int check(void)
     if (!nchunks) { printf("Not enough memory.\n"); return 2; }
     c.window = nchunks * CHUNK * 8UL;
     printf("Checking the drive...\n");
-    rc = oa_fatchk_run(&c);
+    rc = ofat_fatchk_run(&c);
     while (nchunks) _ffree(chunks[--nchunks]);
-    if (rc) { printf("%c: has no valid FAT boot sector.\n", 'A' + drive); return rc == OA_FATCHK_EIO ? 3 : 2; }
+    if (rc) { printf("%c: has no valid FAT boot sector.\n", 'A' + drive); return rc == OFAT_FATCHK_EIO ? 3 : 2; }
     if (c.errors) { printf("%c: has errors: run ASPICHK %c: /F first.\n", 'A' + drive, 'A' + drive); return 1; }
     return 0;
 }
@@ -207,11 +207,11 @@ int main(int argc, char **argv)
     static const char *const why[] = { "", "no FAT drive", "read or write error", "too little memory for this drive",
                                        "stopped", "a directory entry is not as expected" };
     oa_u16 __far *order;
-    int rc, i, mode = OA_DEFRAG_FULL;
+    int rc, i, mode = OFAT_DEFRAG_FULL;
     printf("DEFRAG " VERSION " - FAT defragmentation (OpenASPI)\n");
     for (i = 2; i < argc; ++i) {
-        if (!strcmp(argv[i], "/U") || !strcmp(argv[i], "/u")) mode = OA_DEFRAG_FILES;
-        else if (!strcmp(argv[i], "/A") || !strcmp(argv[i], "/a")) mode = OA_DEFRAG_ANALYZE;
+        if (!strcmp(argv[i], "/U") || !strcmp(argv[i], "/u")) mode = OFAT_DEFRAG_FILES;
+        else if (!strcmp(argv[i], "/A") || !strcmp(argv[i], "/a")) mode = OFAT_DEFRAG_ANALYZE;
         else if (!strcmp(argv[i], "/B") || !strcmp(argv[i], "/b")) batch = 1;
         else break;
     }
@@ -238,11 +238,11 @@ int main(int argc, char **argv)
     d.mem = mem; d.memsize = nchunks * (oa_u32)CHUNK; d.block = CHUNK;
     d.map = map; d.status = status; d.stop = stop;
     if (!batch) screen_on();
-    drv_begin(mode != OA_DEFRAG_ANALYZE);
-    rc = oa_defrag_run(&d);
-    drv_end(mode != OA_DEFRAG_ANALYZE);
+    drv_begin(mode != OFAT_DEFRAG_ANALYZE);
+    rc = ofat_defrag_run(&d);
+    drv_end(mode != OFAT_DEFRAG_ANALYZE);
     if (!batch) {
-        if (per) cells(2, nclu, OA_DEFRAG_USED);     /* "in place" up to the end */
+        if (per) cells(2, nclu, OFAT_DEFRAG_USED);     /* "in place" up to the end */
         line(23, rc ? why[-rc] : "Finished.", color(0x1F, 0x0F));
         line(24, "Press a key.", color(0x1F, 0x07));
         _bios_keybrd(_KEYBRD_READ);
@@ -255,10 +255,10 @@ int main(int argc, char **argv)
                (unsigned long)d.cluster_size, (unsigned long)d.used, (unsigned long)d.files, (unsigned long)d.dirs,
                (unsigned long)d.fragmented, (unsigned long)d.fragmented_after, (unsigned long)d.moves,
                (unsigned long)d.moved);
-    if (!rc) { printf(mode == OA_DEFRAG_ANALYZE ? "Analysis done.\n" : "Defragmentation done.\n"); return 0; }
+    if (!rc) { printf(mode == OFAT_DEFRAG_ANALYZE ? "Analysis done.\n" : "Defragmentation done.\n"); return 0; }
     printf("Stopped: %s.\n", why[-rc]);
-    if (rc == OA_DEFRAG_ESTOP) return 4;
-    if (rc == OA_DEFRAG_EMEM || rc == OA_DEFRAG_EBAD) return 2;
+    if (rc == OFAT_DEFRAG_ESTOP) return 4;
+    if (rc == OFAT_DEFRAG_EMEM || rc == OFAT_DEFRAG_EBAD) return 2;
     printf("Run ASPICHK %c: /F.\n", 'A' + drive);
     return 3;
 }

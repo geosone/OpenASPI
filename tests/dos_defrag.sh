@@ -44,7 +44,7 @@ steps() {   # DRIVE NAME OPTIONS
 }
 # an image of defrag_image.sh as partition 1 (sector 63) of a disk
 disk() {   # NAME SIZE_MB BITS SPC TYPE
-    sh "$ROOT/tests/defrag_image.sh" "$OUT/$1" "$2" "$3" "$4" >/dev/null
+    sh "$ROOT/deps/openfat/tests/defrag_image.sh" "$OUT/$1" "$2" "$3" "$4" >/dev/null
     python3 - "$OUT/$1/fat.img" "$3" <<'PY'
 import struct, sys
 f = open(sys.argv[1], 'r+b')

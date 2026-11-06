@@ -89,7 +89,7 @@ if test -n "$ASPI"; then
            -drive id=stick,if=none,format=raw,file="$OUT/exstick.img"
            -device scsi-hd,bus=bot1.0,drive=stick,removable=on,vendor=OPENASPI,product="$PRODUCT")
 else
-    sh "$ROOT/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
+    sh "$ROOT/deps/openfat/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
     truncate -s 65M "$OUT/exfat-disk.img"
     echo 'start=2048, type=7' | sfdisk -q "$OUT/exfat-disk.img"
     dd if="$OUT/x/exfat.img" of="$OUT/exfat-disk.img" bs=512 seek=2048 conv=notrunc status=none

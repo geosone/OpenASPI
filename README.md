@@ -64,6 +64,11 @@ layout. See [installation media](installer/README.md).
 - [Reference material](docs/reference-material.md) and
   [mhVTL integration](docs/qemu-mhvtl.md).
 - [Remaining driver work](docs/driver-status.md).
+- The FAT12/16/32 and exFAT code (reading, writing, formatting, checking,
+  defragmenting) is the portable library [openfat](https://github.com/geosone/openfat)
+  in `deps/openfat`; the DOS drivers and tools here use it. Planned: OFORMAT,
+  OFSCK and ODEFRAG for every FAT variant in place of ASPIFMT/EXFMT,
+  ASPICHK/EXCHK and DEFRAG.
 - [Future plans](docs/future-plans.md): exFAT through EXFAT.SYS, on BIOS disks and with ASPIDSK/ASPIFDD; ASPICHK and DEFRAG for all FAT variants.
 
 OpenTape is a separate sibling project for backup, restore and the user

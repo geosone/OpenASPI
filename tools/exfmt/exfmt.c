@@ -11,7 +11,7 @@
 #include <i86.h>
 #include <malloc.h>
 #include <stddef.h>
-#include "openaspi/exfat_format.h"
+#include "openfat/exfat_format.h"
 #include "openaspi/exfatsys.h"
 
 #define VERSION "0.1"
@@ -252,8 +252,8 @@ static void usage(void)
 int main(int argc, char **argv)
 {
     static oa_u8 mbr[512];
-    static oa_u32 bad[OA_EXFMT_MAXBAD];
-    struct oa_exfmt f;
+    static oa_u32 bad[OFAT_EXFMT_MAXBAD];
+    struct ofat_exfmt f;
     struct packet k;
     struct dosdate_t dd;
     struct dostime_t dt;
@@ -301,7 +301,7 @@ int main(int argc, char **argv)
             if (f.label_len == 11 || c < 0x20 || strchr("\"*/:<>?\\|", (int)c)) {
                 printf("Invalid volume label.\n"); return 2;
             }
-            f.label[f.label_len] = c < 0x80 ? (oa_u16)c : (cp == 850 ? oa_exfat_cp850 : oa_exfat_cp437).uni[c - 0x80];
+            f.label[f.label_len] = c < 0x80 ? (oa_u16)c : (cp == 850 ? ofat_exfat_cp850 : ofat_exfat_cp437).uni[c - 0x80];
         }
     }
     /* the medium */
@@ -350,7 +350,7 @@ int main(int argc, char **argv)
     _dos_gettime(&dt);
     f.serial = ((oa_u32)(dd.day | dd.month << 8) + (dt.second | dt.hsecond << 8)) << 16
              | (oa_u16)((dt.hour << 8 | dt.minute) + dd.year);
-    if (oa_exfmt_layout(&f)) {
+    if (ofat_exfmt_layout(&f)) {
         printf("No exFAT for %lu sectors with this cluster size.\n", (unsigned long)size); return 2;
     }
     if (m.aspi) printf("ASPI unit %u", m.unit);
@@ -374,7 +374,7 @@ int main(int argc, char **argv)
                 if (!io(0, vstart + f.heap + lba + i, 1, buf)) continue;
                 c = 2 + ((lba + i) >> f.cshift);
                 if (c >= f.clusters + 2 || (nbad && bad[nbad - 1] == c)) continue;
-                if (nbad == OA_EXFMT_MAXBAD) { printf("\nMore than %u bad clusters.\n", OA_EXFMT_MAXBAD); return 1; }
+                if (nbad == OFAT_EXFMT_MAXBAD) { printf("\nMore than %u bad clusters.\n", OFAT_EXFMT_MAXBAD); return 1; }
                 bad[nbad++] = c;
             }
         }
@@ -390,7 +390,7 @@ int main(int argc, char **argv)
         e[4] = 0x07;
         if (io(1, 0, 1, (void __far *)mbr)) { printf("Write error in the MBR.\n"); return 3; }
     }
-    rc = oa_exfmt_write(&f, vol_write, 0, bad, nbad, buf, NBUF);
+    rc = ofat_exfmt_write(&f, vol_write, 0, bad, nbad, buf, NBUF);
     if (rc) {
         printf(rc == -2 ? "Bad clusters where the file system must go.\n" : "Write error.\n");
         return rc == -2 ? 1 : 3;

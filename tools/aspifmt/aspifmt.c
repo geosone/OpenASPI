@@ -14,7 +14,7 @@
 #include <signal.h>
 #include <time.h>
 #include "openaspi/raw_media.h"
-#include "openaspi/fat_format.h"
+#include "openfat/fat_format.h"
 #include "openaspi/rescue.h"
 static unsigned char data[512], verify[512], boot[512];
 static unsigned char scan_buffer[16*512],fat_sector[512],fat_next[512];
@@ -31,7 +31,7 @@ static int put(struct oa_raw_media *m, oa_u32 sector, unsigned char *buf)
 }
 struct surface_scan {
     struct oa_raw_media *media;
-    const struct oa_fat_layout *fat;
+    const struct ofat_fat_layout *fat;
     oa_u32 base,data_start,bad_clusters,bad_sectors;
 };
 static unsigned scan_read(void *ctx,oa_u32 lba,unsigned n,void *buffer)
@@ -47,7 +47,7 @@ static unsigned scan_read(void *ctx,oa_u32 lba,unsigned n,void *buffer)
 static int bad_cluster(void *ctx,oa_u32 lba,unsigned error)
 {
     struct surface_scan *s=(struct surface_scan *)ctx;
-    const struct oa_fat_layout *f=s->fat;
+    const struct ofat_fat_layout *f=s->fat;
     oa_u32 cluster,offset,fat_lba;
     unsigned position,n,i,copy;
     unsigned char entry[4];
@@ -60,7 +60,7 @@ static int bad_cluster(void *ctx,oa_u32 lba,unsigned error)
         return -1;
     }
     ++s->bad_sectors;
-    offset=oa_fat_entry_offset(f->bits,cluster); position=(unsigned)(offset%512);
+    offset=ofat_fat_entry_offset(f->bits,cluster); position=(unsigned)(offset%512);
     if(offset/512>=f->fat_sectors) return -1;
     fat_lba=s->base+f->reserved+offset/512;
     n=f->bits==32 ? 4 : 2;
@@ -71,7 +71,7 @@ static int bad_cluster(void *ctx,oa_u32 lba,unsigned error)
         puts("Cannot read FAT entry continuation."); return -1;
     }
     for(i=0;i<n;++i) entry[i]=position+i<512 ? fat_sector[position+i] : fat_next[position+i-512];
-    changed=oa_fat_mark_bad(f->bits,cluster,entry);
+    changed=ofat_fat_mark_bad(f->bits,cluster,entry);
     if(changed<0) { puts("Cannot encode FAT bad-cluster entry."); return -1; }
     if(!changed) return 0;
     for(i=0;i<n;++i) {
@@ -90,7 +90,7 @@ static int bad_cluster(void *ctx,oa_u32 lba,unsigned error)
 int main(int argc, char **argv)
 {
     struct oa_raw_media m;
-    struct oa_fat_layout f;
+    struct ofat_fat_layout f;
     unsigned drive, i;
     oa_u32 base, length, end, sector, capacity, old_start, old_length;
     int yes=0, whole=0, fat32=0, rc=1;
@@ -111,7 +111,7 @@ int main(int argc, char **argv)
     capacity=m.sectors; old_start=m.start; old_length=m.length;
     if (fat32 && !m.fat32) { puts("This DOS/driver combination does not support FAT32."); return 2; }
     if (base >= m.sectors || length > m.sectors-base ||
-        (fat32 ? oa_fat_layout32(&f,length,base) : oa_fat_layout(&f,length,base))) {
+        (fat32 ? ofat_fat_layout32(&f,length,base) : ofat_fat_layout(&f,length,base))) {
         puts("Unsupported media size or partition bounds."); return 1;
     }
     printf("Format %c: FAT%u, %lu sectors at physical LBA %lu (ASPI %u:%u:%u).\n",
@@ -134,13 +134,13 @@ int main(int argc, char **argv)
             goto done;
         }
     }
-    oa_fat_boot(&f,(oa_u32)time(NULL),boot);
+    ofat_fat_boot(&f,(oa_u32)time(NULL),boot);
     end=f.reserved+2UL*f.fat_sectors+(f.bits==32 ? f.spc : f.root_sectors);
     for (sector=1; sector<end; ++sector) {
         memset(data,0,sizeof(data));
-        if (sector==f.reserved || sector==f.reserved+(oa_u32)f.fat_sectors) oa_fat_first(&f,data);
+        if (sector==f.reserved || sector==f.reserved+(oa_u32)f.fat_sectors) ofat_fat_first(&f,data);
         if (f.bits==32 && sector==6) memcpy(data,boot,512);
-        if (f.bits==32 && (sector==1 || sector==7)) oa_fat_fsinfo(&f,data);
+        if (f.bits==32 && (sector==1 || sector==7)) ofat_fat_fsinfo(&f,data);
         if (put(&m,base+sector,data)) goto done;
     }
     memset(&scan,0,sizeof(scan)); scan.media=&m; scan.fat=&f; scan.base=base;
@@ -158,7 +158,7 @@ int main(int argc, char **argv)
         if(scan.bad_clusters>=f.clusters-(f.bits==32 ? 1 : 0)) goto done;
     }
     if(f.bits==32 && scan.bad_clusters) {
-        oa_fat_fsinfo(&f,data);
+        ofat_fat_fsinfo(&f,data);
         *(oa_u32 *)(data+488)=f.clusters-1-scan.bad_clusters;
         *(oa_u32 *)(data+492)=0xFFFFFFFFUL;
         if(put(&m,base+1,data) || put(&m,base+7,data)) goto done;

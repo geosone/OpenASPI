@@ -12,8 +12,8 @@
 #include <dos.h>
 #include <i86.h>
 #include <malloc.h>
-#include "openaspi/fat_check.h"
-#include "openaspi/exfat.h"             /* the code page tables */
+#include "openfat/fat_check.h"
+#include "openfat/exfat.h"             /* the code page tables */
 #include "drive.h"
 
 #define VERSION "0.1"
@@ -30,8 +30,8 @@ static int wr(void *dev, oa_u32 lba, const void __far *buf) { (void)dev; return 
 static void msg(void *ctx, int level, const char *text)
 {
     (void)ctx;
-    printf("%s%s\n", level == OA_FATCHK_ERROR ? "Error: " : level == OA_FATCHK_WARN ? "Warning: " :
-           level == OA_FATCHK_FIXED ? "    Corrected: " : "", text);
+    printf("%s%s\n", level == OFAT_FATCHK_ERROR ? "Error: " : level == OFAT_FATCHK_WARN ? "Warning: " :
+           level == OFAT_FATCHK_FIXED ? "    Corrected: " : "", text);
 }
 
 static int mark(void *ctx, oa_u32 bit)
@@ -53,8 +53,8 @@ static void clear(void *ctx)
 
 int main(int argc, char **argv)
 {
-    static oa_u8 boot[OA_FATCHK_MAXSECT];
-    struct oa_fatchk c;
+    static oa_u8 boot[OFAT_FATCHK_MAXSECT];
+    struct ofat_fatchk c;
     union REGS r;
     oa_u32 need, total;
     int rc, fix = 0;
@@ -76,7 +76,7 @@ int main(int argc, char **argv)
     memset(&r, 0, sizeof(r));
     r.x.ax = 0x6601;
     intdos(&r, &r);
-    c.cp = (!r.x.cflag && r.x.bx == 850 ? &oa_exfat_cp850 : &oa_exfat_cp437)->uni;
+    c.cp = (!r.x.cflag && r.x.bx == 850 ? &ofat_exfat_cp850 : &ofat_exfat_cp437)->uni;
     c.read = rd; c.msg = msg; c.mark = mark; c.clear = clear;
     if (fix) c.write = wr;
     /* the cluster map: as much of it as there is memory for */
@@ -89,11 +89,11 @@ int main(int argc, char **argv)
     c.window = nchunks * CHUNK * 8UL;
     if (c.window / 8 < need) printf("(%lu passes)\n", (unsigned long)((need + c.window / 8 - 1) / (c.window / 8)));
     drv_begin(fix);
-    rc = oa_fatchk_run(&c);
+    rc = ofat_fatchk_run(&c);
     drv_end(fix);
     if (rc) {
-        printf(rc == OA_FATCHK_EIO ? "Read error in the boot sector.\n" : "%c: has no valid FAT boot sector.\n", 'A' + drive);
-        return rc == OA_FATCHK_EIO ? 3 : 2;
+        printf(rc == OFAT_FATCHK_EIO ? "Read error in the boot sector.\n" : "%c: has no valid FAT boot sector.\n", 'A' + drive);
+        return rc == OFAT_FATCHK_EIO ? 3 : 2;
     }
     if (c.serial) printf("Serial number %04lX-%04lX\n", (unsigned long)(c.serial >> 16), (unsigned long)(c.serial & 0xFFFF));
     printf("FAT%u\n%10lu files\n%10lu directories\n", c.bits, (unsigned long)c.files, (unsigned long)c.dirs);

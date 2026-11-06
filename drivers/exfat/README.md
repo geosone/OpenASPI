@@ -81,13 +81,13 @@ Up to eight volumes.
   drives); [EXCHK](../../tools/exchk/README.md) checks it,
   [EXFMT](../../tools/exfmt/README.md) formats it.
 
-The exFAT code is `common/exfat/exfat.c` (after the Microsoft exFAT file
+The exFAT code is `deps/openfat/src/exfat/exfat.c` (after the Microsoft exFAT file
 system specification), shared with the host test and the tools to come.
 Plans: [future plans](../../docs/future-plans.md).
 
 Tests: `build/host/test_exfat` (8.3 names; with an image it lists and reads
-it), `tests/exfat_image.sh` makes images through the Linux exFAT driver,
-`tests/exfat_write.sh` changes images with the write code on the host
+it), `deps/openfat/tests/exfat_image.sh` makes images through the Linux exFAT driver,
+`deps/openfat/tests/exfat_write.sh` changes images with the write code on the host
 (`tests/exfat_write_test.c`, also TexFAT and a full volume) and checks
 them with fsck.exfat and the Linux exFAT driver,
 `tests/dos_exfat_write.sh` writes through EXFAT.SYS under MS-DOS 7.1

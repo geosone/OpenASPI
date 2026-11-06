@@ -44,8 +44,8 @@ Exit codes: 0 done, 1 the drive has errors, 2 wrong use, no FAT drive or
 too little memory, 3 read or write error (run ASPICHK /F), 4 stopped with
 Esc.
 
-Tests: `tests/defrag_host.sh` (the core `common/fat/fat_defrag.c` on
-fragmented FAT12/16/32 images of `tests/defrag_image.sh`: no fragmented
+Tests: `deps/openfat/tests/defrag_host.sh` (the core `deps/openfat/src/fat/fat_defrag.c` on
+fragmented FAT12/16/32 images of `deps/openfat/tests/defrag_image.sh`: no fragmented
 file and no gap afterwards, files unchanged, `fsck.fat` clean; power loss
 after every N-th sector written, `defrag_host.sh DIR 100000` after every
 single one, then ASPICHK's repair), `tests/dos_defrag.sh` (MS-DOS 7.1: FAT16

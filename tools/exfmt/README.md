@@ -55,7 +55,7 @@ Formatting:
    boot region (sectors 0-11, with its checksum) last.
 
 The up-case table is the recommended one of the exFAT specification
-(compressed, 5836 bytes, `common/exfat/upcase.c`).  The boot code only halts:
+(compressed, 5836 bytes, `deps/openfat/src/exfat/upcase.c`).  The boot code only halts:
 an exFAT volume does not boot DOS.
 
 TexFAT (`/TEXFAT`): NumberOfFats 2, both FATs and both bitmaps written the
@@ -80,7 +80,7 @@ Exit codes: 0 formatted or the layout shown, 1 format failed (too many bad
 clusters, or bad ones where the file system must go), 2 wrong use or no
 such drive, 3 read or write error.
 
-The format is `common/exfat/exfat_format.c`.  Tests: `tests/exfmt_host.sh`
+The format is `deps/openfat/src/exfat/exfat_format.c`.  Tests: `deps/openfat/tests/exfmt_host.sh`
 formats images of 1 MB to 40 GB with all default and some chosen cluster
 sizes, TexFAT and bad clusters (`build/host/test_exfmt`), checks them with
 `build/host/test_exchk` and `fsck.exfat`, and fills one through the Linux

@@ -9,32 +9,12 @@ EXFATWRITETESTBIN := $(BUILD)/host/test_exfat_write
 EXCHKTESTBIN := $(BUILD)/host/test_exchk
 EXFMTTESTBIN := $(BUILD)/host/test_exfmt
 FATCHKTESTBIN := $(BUILD)/host/test_fatchk
-EXFATCORE := common/exfat/exfat.c common/exfat/codepage.c
-EXFATHDR := include/openaspi/exfat.h include/openaspi/exfatsys.h include/openaspi/exfat_check.h include/openaspi/exfat_format.h include/openaspi/types.h
+EXFATCORE := $(OPENFAT)/src/exfat/exfat.c $(OPENFAT)/src/exfat/codepage.c
+EXFATHDR := $(OPENFAT)/include/openfat/exfat.h include/openaspi/exfatsys.h $(OPENFAT)/include/openfat/exfat_check.h $(OPENFAT)/include/openfat/exfat_format.h include/openaspi/types.h
 EXFATOBJ := $(BUILD)/dos/exfatsys_a.obj $(BUILD)/dos/exfatsys.obj $(BUILD)/dos/exfat.obj $(BUILD)/dos/cpinit.obj
 EXFATLOBJ := $(BUILD)/dos/exfatsysl_a.obj $(BUILD)/dos/exfatsysl.obj $(BUILD)/dos/exfat.obj $(BUILD)/dos/cpinit.obj
 # small model, no stack checks, no C runtime start-up: CS = DS = SS
-EXFATWCC := $(WCC) -q -ms -0 -os -s -zl -zdp -wx -we -Iinclude -I$(WATCOM)/h
-
-$(EXFATTESTBIN): tests/exfat_test.c $(EXFATCORE) $(EXFATHDR)
-	mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/exfat_test.c $(EXFATCORE)
-
-$(EXFATWRITETESTBIN): tests/exfat_write_test.c $(EXFATCORE) $(EXFATHDR)
-	mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/exfat_write_test.c $(EXFATCORE)
-
-$(EXCHKTESTBIN): tests/exchk_test.c common/exfat/exfat_check.c $(EXFATCORE) $(EXFATHDR)
-	mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/exchk_test.c common/exfat/exfat_check.c $(EXFATCORE)
-
-$(EXFMTTESTBIN): tests/exfmt_test.c common/exfat/exfat_format.c common/exfat/upcase.c $(EXFATHDR)
-	mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/exfmt_test.c common/exfat/exfat_format.c common/exfat/upcase.c
-
-$(FATCHKTESTBIN): tests/fatchk_test.c common/fat/fat_check.c common/exfat/codepage.c include/openaspi/fat_check.h $(EXFATHDR)
-	mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/fatchk_test.c common/fat/fat_check.c common/exfat/codepage.c
+EXFATWCC := $(WCC) -q -ms -0 -os -s -zl -zdp -wx -we -Iinclude -I$(OPENFAT)/include -I$(WATCOM)/h
 
 $(BUILD)/dos/exfatsys_a.obj: drivers/exfat/exfatsys.asm | $(JWASM)
 	mkdir -p $(@D)
@@ -52,11 +32,11 @@ $(BUILD)/dos/exfatsysl.obj: drivers/exfat/exfatsys.c $(EXFATHDR)
 	mkdir -p $(@D)
 	$(EXFATWCC) -dEXFAT_LFN -fo=$@ $<
 
-$(BUILD)/dos/exfat.obj: common/exfat/exfat.c $(EXFATHDR)
+$(BUILD)/dos/exfat.obj: $(OPENFAT)/src/exfat/exfat.c $(EXFATHDR)
 	mkdir -p $(@D)
 	$(EXFATWCC) -fo=$@ $<
 
-$(BUILD)/dos/cpinit.obj: drivers/exfat/cpinit.c common/exfat/codepage.c $(EXFATHDR)
+$(BUILD)/dos/cpinit.obj: drivers/exfat/cpinit.c $(OPENFAT)/src/exfat/codepage.c $(EXFATHDR)
 	mkdir -p $(@D)
 	$(EXFATWCC) -fo=$@ $<
 

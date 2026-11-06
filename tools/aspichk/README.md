@@ -61,8 +61,8 @@ error in the boot sector.
 Not repaired: invalid characters in 8.3 names, a missing `.` or `..` entry
 whose slot holds another entry.
 
-Tests: `tests/aspichk_host.sh` (the check core `common/fat/fat_check.c` on
-FAT12/16/32 images of `tests/fat_image.sh` with the damages of
-`tests/fatchk_corrupt.py`, one pass and passes of 100 clusters, `fsck.fat`
+Tests: `deps/openfat/tests/fatchk_host.sh` (the check core `deps/openfat/src/fat/fat_check.c` on
+FAT12/16/32 images of `deps/openfat/tests/fat_image.sh` with the damages of
+`deps/openfat/tests/fatchk_corrupt.py`, one pass and passes of 100 clusters, `fsck.fat`
 after `/F`), `tests/dos_aspichk.sh` (MS-DOS 7.1: FAT16 and FAT32 BIOS
 disks; `ASPI=1`: a FAT16 USB stick through ASPIDSK).

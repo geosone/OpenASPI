@@ -76,9 +76,9 @@ echo 'start=63, type=6' | sfdisk -q "$OUT/fat.img"
 mkfs.fat -F16 -n FATDISK --offset 63 "$OUT/fat.img" $(( (32*2048 - 63) / 2 )) >/dev/null
 
 # the exFAT disk
-sh "$ROOT/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
-if test -n "$TEXFAT"; then python3 "$ROOT/tests/exfat_texfat.py" "$OUT/x/exfat.img" "$TEXFAT"; fi
-if test -n "$DAMAGE"; then python3 "$ROOT/tests/exchk_corrupt.py" "$OUT/x/exfat.img" "$DAMAGE"; fi
+sh "$ROOT/deps/openfat/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
+if test -n "$TEXFAT"; then python3 "$ROOT/deps/openfat/tests/exfat_texfat.py" "$OUT/x/exfat.img" "$TEXFAT"; fi
+if test -n "$DAMAGE"; then python3 "$ROOT/deps/openfat/tests/exchk_corrupt.py" "$OUT/x/exfat.img" "$DAMAGE"; fi
 if test "$SUPER" = 1; then
     cp "$OUT/x/exfat.img" "$OUT/exfat-disk.img"
 else

@@ -14,7 +14,6 @@ ASPICDA and ASPITAP retain their own CD-ROM and character-device contracts.
 | [`block_track.inc`](block_track.inc) | CHS track READ/WRITE/VERIFY, address conversion and bounded transfers. |
 | [`raw_media.inc`](raw_media.inc) | RAW1 exclusive physical-media sessions for tools. |
 | [`raw_client.c`](raw_client.c) | DOS client wrappers, session cleanup and read-error classification. |
-| [`fat_format.c`](fat_format.c) | I/O-independent FAT12/16/32 layout, metadata and bad-cluster encoding. |
 | [`rescue_read.c`](rescue_read.c) | Bounded retries and zero-fill/reporting for classified sector read faults. |
 
 ## Follow a request

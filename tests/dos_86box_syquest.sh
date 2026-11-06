@@ -72,7 +72,7 @@ printf '%s\r\n' 'Hello from the SyQuest cartridge' > "$OUT/HELLO.TXT"
 mcopy -i "$OUT/cart.img@@16384" "$OUT/HELLO.TXT" ::/
 head -c 100000 /dev/urandom > "$OUT/BIG.BIN"
 if [ "$EXFAT" = 1 ]; then
-    sh "$ROOT/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
+    sh "$ROOT/deps/openfat/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
     dd if="$OUT/x/exfat.img" of="$OUT/cart.img" bs=512 seek=32 conv=notrunc status=none
     printf '\007' | dd of="$OUT/cart.img" bs=1 seek=450 conv=notrunc status=none
     HELLO='hallo'

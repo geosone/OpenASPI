@@ -112,8 +112,8 @@ touch -d '2021-03-04 05:06:08' "$OUT/BIG.BIN"
 printf 'klein und fein\r\n' > "$OUT/SMALL.TXT"
 mcopy -m -i "$FAT" "$OUT/BIG.BIN" "$OUT/SMALL.TXT" ::/
 
-sh "$ROOT/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
-if test -n "$TEXFAT"; then python3 "$ROOT/tests/exfat_texfat.py" "$OUT/x/exfat.img" "$TEXFAT"; fi
+sh "$ROOT/deps/openfat/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
+if test -n "$TEXFAT"; then python3 "$ROOT/deps/openfat/tests/exfat_texfat.py" "$OUT/x/exfat.img" "$TEXFAT"; fi
 cp "$OUT/x/exfat.img" "$OUT/before.img"
 truncate -s 65M "$OUT/exfat-disk.img"
 echo 'start=2048, type=7' | sfdisk -q "$OUT/exfat-disk.img"

@@ -74,7 +74,7 @@ echo 'start=63, type=6' | sfdisk -q "$OUT/fat.img"
 mkfs.fat -F16 -n FATDISK --offset 63 "$OUT/fat.img" $(( (32*2048 - 63) / 2 )) >/dev/null
 printf 'auf C\r\n' > "$OUT/Langer Name auf C.txt"
 mcopy -i "$OUT/fat.img@@32256" "$OUT/Langer Name auf C.txt" ::/
-sh "$ROOT/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
+sh "$ROOT/deps/openfat/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
 truncate -s 65M "$OUT/exfat-disk.img"
 echo 'start=2048, type=7' | sfdisk -q "$OUT/exfat-disk.img"
 dd if="$OUT/x/exfat.img" of="$OUT/exfat-disk.img" bs=512 seek=2048 conv=notrunc status=none

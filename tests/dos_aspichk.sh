@@ -38,8 +38,8 @@ steps() {   # DRIVE NAME
 }
 # a FAT image of fat_image.sh with DAMAGE as partition 1 (sector 63) of a disk
 disk() {   # NAME SIZE_MB BITS DAMAGE TYPE
-    sh "$ROOT/tests/fat_image.sh" "$OUT/$1" "$2" "$3" >/dev/null
-    python3 "$ROOT/tests/fatchk_corrupt.py" "$OUT/$1/fat.img" "$4"
+    sh "$ROOT/deps/openfat/tests/fat_image.sh" "$OUT/$1" "$2" "$3" >/dev/null
+    python3 "$ROOT/deps/openfat/tests/fatchk_corrupt.py" "$OUT/$1/fat.img" "$4"
     python3 - "$OUT/$1/fat.img" "$3" <<'EOF'
 import struct, sys
 f = open(sys.argv[1], 'r+b')
