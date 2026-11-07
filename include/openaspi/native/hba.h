@@ -71,6 +71,10 @@ struct oa_hba_ops {
     void (*execute)(struct oa_hba *hba, struct oa_srb *srb);
     /* Optional: reset one target (NULL: not supported). */
     int (*reset_target)(struct oa_hba *hba, oa_u8 target);
+    /* Optional: nonzero if the target is floppy-class removable media (a
+     * floppy controller, a USB floppy speaking UFI, an LS-120/ZIP speaking
+     * SFF-8070i). Such media take the drive letters A:/B:. NULL: not. */
+    int (*is_floppy)(struct oa_hba *hba, oa_u8 target);
 };
 
 struct oa_hba {
@@ -103,7 +107,8 @@ struct oa_device {
     struct oa_hba *hba;
     oa_u8 target;
     oa_u8 lun;
-    oa_u8 reserved[2];
+    oa_u8 floppy;                   /* floppy-class removable media (A:/B:) */
+    oa_u8 reserved[1];
     struct oa_scsi_inquiry inquiry; /* device_type, removable, identity */
     struct oa_device *next;
 };

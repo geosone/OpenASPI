@@ -147,6 +147,8 @@ static unsigned scan_from(struct oa_hba *hba, struct oa_device *pool, unsigned p
                 d->target = (oa_u8)t;
                 d->lun = (oa_u8)l;
                 d->inquiry = inq;
+                d->floppy = (hba->ops && hba->ops->is_floppy &&
+                             hba->ops->is_floppy(hba, (oa_u8)t)) ? 1u : 0u;
                 *tail = d;
                 tail = &d->next;
                 oa_host_log(OA_LOG_INFO, "ASPI: %u:%u:%u type %02x%s %s %s %s\n",
