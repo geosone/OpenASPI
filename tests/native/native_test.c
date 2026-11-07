@@ -140,6 +140,20 @@ int main(void)
 	CHECK(dev && dev->inquiry.device_type == OA_ASPI_DEVICE_DISK && dev->target == 0 && dev->lun == 0);
 	CHECK(dev && strcmp(dev->inquiry.vendor, "ATA") == 0 && strcmp(dev->inquiry.product, "QEMU HARDDISK") == 0);
 
+	/* a second adapter later: only it is scanned, its device appended */
+	static struct oa_hba hba2 = { .name = "virtual", .ops = &hba_ops, .max_target = 0, .max_lun = 0 };
+	struct oa_device pool2[2];
+	CHECK(oa_scan_more(pool2, 2) == 0);
+	CHECK(oa_hba_register(&hba2) == 1);
+	CHECK(oa_scan_more(pool2, 2) == 1);
+	CHECK(oa_scan_more(pool2, 2) == 0);
+	CHECK(oa_device_first() == dev && dev->next == &pool2[0] && pool2[0].hba == &hba2);
+	/* taken over by another layer: off the list */
+	oa_device_remove(dev);
+	CHECK(oa_device_first() == &pool2[0]);
+	oa_device_remove(&pool2[0]);
+	CHECK(oa_device_first() == 0);
+
 	struct oa_disk disk;
 	CHECK(oa_disk_open(&disk, dev) == OA_OK);
 	CHECK(disk.blocks == 70000 && disk.block_size == 512 && !disk.write_protected);

@@ -112,6 +112,14 @@ struct oa_device {
  * build the device list from `pool` (`pool_count` entries). Returns the
  * number of devices found. */
 int oa_scan(struct oa_device *pool, unsigned pool_count);
+/* Probe only the adapters registered since the last scan (virtual ones,
+ * such as a software RAID over the disks found) and append their devices,
+ * from `pool` (`pool_count` entries; a new pool, the old one stays in
+ * use). Returns the number of devices added. */
+int oa_scan_more(struct oa_device *pool, unsigned pool_count);
+/* Take a device off the list: another layer has taken it over (a disk
+ * that is a member of a software RAID). */
+void oa_device_remove(struct oa_device *dev);
 struct oa_device *oa_device_first(void);
 
 #endif

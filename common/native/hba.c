@@ -11,6 +11,7 @@ static struct oa_hba *hbas;
 static struct oa_hba **hba_tail = &hbas;
 static unsigned hba_count;
 static struct oa_device *devices;
+static struct oa_hba *scanned; /* the last adapter scanned */
 
 int oa_hba_register(struct oa_hba *hba)
 {
@@ -111,16 +112,20 @@ static int inquiry(struct oa_hba *hba, oa_u8 target, oa_u8 lun,
     return oa_scsi_decode_inquiry(buf, (oa_u16)(sizeof(buf) - srb.residual), out);
 }
 
-int oa_scan(struct oa_device *pool, unsigned pool_count)
+/* Probes every target and LUN of the adapters from `hba` on and appends
+ * what answers to the device list, from pool[used] on. */
+static unsigned scan_from(struct oa_hba *hba, struct oa_device *pool, unsigned pool_count, unsigned used)
 {
     struct oa_device **tail = &devices;
     struct oa_scsi_inquiry inq;
-    struct oa_hba *hba;
     struct oa_device *d;
-    unsigned used = 0, t, l;
+    unsigned t, l;
 
-    devices = 0;
-    for (hba = hbas; hba != 0; hba = hba->next) {
+    while (*tail != 0) {
+        tail = &(*tail)->next;
+    }
+    for (; hba != 0; hba = hba->next) {
+        scanned = hba;
         for (t = 0; t <= hba->max_target; t++) {
             for (l = 0; l <= hba->max_lun; l++) {
                 if (inquiry(hba, (oa_u8)t, (oa_u8)l, &inq) < 0) {
@@ -134,7 +139,7 @@ int oa_scan(struct oa_device *pool, unsigned pool_count)
                 }
                 if (used == pool_count) {
                     oa_host_log(OA_LOG_WARN, "ASPI: device table full\n");
-                    return (int)used;
+                    return used;
                 }
                 d = &pool[used++];
                 memset(d, 0, sizeof(*d));
@@ -151,7 +156,32 @@ int oa_scan(struct oa_device *pool, unsigned pool_count)
             }
         }
     }
-    return (int)used;
+    return used;
+}
+
+int oa_scan(struct oa_device *pool, unsigned pool_count)
+{
+    devices = 0;
+    scanned = 0;
+    return (int)scan_from(hbas, pool, pool_count, 0);
+}
+
+int oa_scan_more(struct oa_device *pool, unsigned pool_count)
+{
+    return (int)scan_from(scanned ? scanned->next : hbas, pool, pool_count, 0);
+}
+
+void oa_device_remove(struct oa_device *dev)
+{
+    struct oa_device **p;
+
+    for (p = &devices; *p != 0; p = &(*p)->next) {
+        if (*p == dev) {
+            *p = dev->next;
+            dev->next = 0;
+            return;
+        }
+    }
 }
 
 struct oa_device *oa_device_first(void)
