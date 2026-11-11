@@ -71,4 +71,29 @@ void oa_host_outb(oa_u16 port, oa_u8 v);
 void oa_host_outw(oa_u16 port, oa_u16 v);
 void oa_host_outl(oa_u16 port, oa_u32 v);
 
+/* Interrupt-driven completion (optional). A transport that knows its interrupt
+ * source registers a handler and blocks on an event the handler signals,
+ * instead of polling a status register. All of this is best-effort: when the
+ * host has no interrupt support, oa_host_event_create returns NULL and the
+ * request functions return < 0, and the transport falls back to polling. The
+ * handler runs in interrupt context -- it may only touch oa_host_event_signal
+ * and port/MMIO register I/O, nothing that blocks or allocates.
+ *
+ * An event is a binary/counting completion: signal hands one unit to a waiter
+ * (or banks it), wait takes one or times out, reset drops any banked units
+ * before arming a fresh request. */
+typedef struct oa_host_event oa_host_event;
+oa_host_event *oa_host_event_create(void);
+void oa_host_event_destroy(oa_host_event *ev);
+void oa_host_event_signal(oa_host_event *ev);              /* interrupt context */
+void oa_host_event_reset(oa_host_event *ev);               /* drop banked units */
+int oa_host_event_wait(oa_host_event *ev, oa_u32 timeout_us); /* 1 signalled, 0 timeout */
+
+/* Bind fn(arg) to a legacy ISA IRQ line (e.g. 14/15 for legacy IDE). Returns
+ * 0, or < 0 when the host cannot route it (no port I/O / not x86). */
+int oa_host_irq_request(oa_u32 isa_irq, void (*fn)(void *), void *arg);
+/* Bind fn(arg) to a PCI function's MSI (dev as OA_PCI_ADDR). Returns a handle
+ * >= 0, or < 0 when MSI is unavailable. */
+int oa_host_pci_msi(oa_u32 dev, void (*fn)(void *), void *arg);
+
 #endif
