@@ -17,6 +17,7 @@ int oa_hba_register(struct oa_hba *hba)
 {
     hba->next = 0;
     hba->id = (oa_u8)hba_count++;
+    hba->lock = oa_host_lock_create(); /* NULL on a single-threaded host */
     *hba_tail = hba;
     hba_tail = &hba->next;
     oa_host_log(OA_LOG_INFO, "ASPI: adapter %u: %s\n", (unsigned)hba->id, hba->name);
@@ -62,7 +63,12 @@ void oa_execute(struct oa_hba *hba, struct oa_srb *srb)
         srb->host_status = OA_HOST_UNSUPPORTED;
         return;
     }
+    /* Serialise the whole command against other CPUs driving this adapter
+     * (SMP); no-op on a single-threaded host. The validation above touches only
+     * the caller's SRB, so it stays outside the lock. */
+    oa_host_lock_acquire(hba->lock);
     hba->ops->execute(hba, srb);
+    oa_host_lock_release(hba->lock);
     if (srb->sense_len > OA_SENSE_MAX) {
         srb->sense_len = OA_SENSE_MAX;
     }

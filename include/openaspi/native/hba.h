@@ -77,6 +77,8 @@ struct oa_hba_ops {
     int (*is_floppy)(struct oa_hba *hba, oa_u8 target);
 };
 
+struct oa_host_lock;
+
 struct oa_hba {
     const char *name;          /* e.g. "AHCI 0000:00:1f.2" */
     const struct oa_hba_ops *ops;
@@ -85,6 +87,7 @@ struct oa_hba {
     oa_u8 max_lun;             /* highest LUN probed (inclusive) */
     oa_u8 id;                  /* set by oa_hba_register() */
     oa_u8 reserved;
+    struct oa_host_lock *lock; /* set by oa_hba_register(): serialises oa_execute (SMP) */
     struct oa_hba *next;
 };
 

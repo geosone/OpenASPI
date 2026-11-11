@@ -89,6 +89,19 @@ void oa_host_event_signal(oa_host_event *ev);              /* interrupt context 
 void oa_host_event_reset(oa_host_event *ev);               /* drop banked units */
 int oa_host_event_wait(oa_host_event *ev, oa_u32 timeout_us); /* 1 signalled, 0 timeout */
 
+/* Per-adapter serialization for SMP. On a host with real threads (GDOS under
+ * SMP) oa_host_lock_create returns a blocking mutex the ASPI core takes around
+ * each command (oa_execute), so two CPUs can never drive one host adapter's
+ * registers/rings at once; acquire may block (the holder can be waiting on a
+ * device IRQ), which is fine -- it is a cooperative/SMP mutex, not a spinlock.
+ * On a single-threaded host it returns NULL and acquire/release are no-ops, so
+ * the DOS ABI and the native tests are unaffected. */
+typedef struct oa_host_lock oa_host_lock;
+oa_host_lock *oa_host_lock_create(void);
+void oa_host_lock_destroy(oa_host_lock *lock);
+void oa_host_lock_acquire(oa_host_lock *lock); /* NULL: no-op */
+void oa_host_lock_release(oa_host_lock *lock); /* NULL: no-op */
+
 /* Bind fn(arg) to a legacy ISA IRQ line (e.g. 14/15 for legacy IDE). Returns
  * 0, or < 0 when the host cannot route it (no port I/O / not x86). */
 int oa_host_irq_request(oa_u32 isa_irq, void (*fn)(void *), void *arg);

@@ -37,6 +37,11 @@ void *oa_host_dma_alloc(size_t size, size_t align, int below_4g, uint64_t *bus)
 }
 void oa_host_dma_free(void *p, size_t size) { (void)size; free(p); }
 void oa_host_mb(void) { }
+/* single-threaded test host: no per-adapter lock needed */
+oa_host_lock *oa_host_lock_create(void) { return NULL; }
+void oa_host_lock_destroy(oa_host_lock *l) { (void)l; }
+void oa_host_lock_acquire(oa_host_lock *l) { (void)l; }
+void oa_host_lock_release(oa_host_lock *l) { (void)l; }
 uint64_t oa_host_virt_to_bus(const void *p) { return (uint64_t)(uintptr_t)p; }
 volatile void *oa_host_map_mmio(uint64_t phys, size_t size) { (void)phys; (void)size; return NULL; }
 uint32_t oa_host_pci_read32(uint32_t dev, unsigned off) { (void)dev; (void)off; return 0xffffffffu; }
