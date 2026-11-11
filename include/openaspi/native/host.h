@@ -111,5 +111,10 @@ int oa_host_pci_msi(oa_u32 dev, void (*fn)(void *), void *arg);
 /* Same for MSI-X, binding fn(arg) to table entry 0. Returns a handle >= 0, or
  * < 0 when MSI-X is unavailable. */
 int oa_host_pci_msix(oa_u32 dev, void (*fn)(void *), void *arg);
+/* Bind fn(arg) to a PCI function's legacy INTx line (dev as OA_PCI_ADDR),
+ * resolved through the ACPI _PRT and routed level-triggered/shared. For devices
+ * with no MSI (EHCI/OHCI/UHCI). Returns a handle >= 0, or < 0 when the line
+ * cannot be routed (no ACPI namespace / device uses no INTx). */
+int oa_host_pci_intx(oa_u32 dev, void (*fn)(void *), void *arg);
 
 #endif
