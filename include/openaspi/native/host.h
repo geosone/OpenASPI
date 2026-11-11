@@ -95,5 +95,8 @@ int oa_host_irq_request(oa_u32 isa_irq, void (*fn)(void *), void *arg);
 /* Bind fn(arg) to a PCI function's MSI (dev as OA_PCI_ADDR). Returns a handle
  * >= 0, or < 0 when MSI is unavailable. */
 int oa_host_pci_msi(oa_u32 dev, void (*fn)(void *), void *arg);
+/* Same for MSI-X, binding fn(arg) to table entry 0. Returns a handle >= 0, or
+ * < 0 when MSI-X is unavailable. */
+int oa_host_pci_msix(oa_u32 dev, void (*fn)(void *), void *arg);
 
 #endif
