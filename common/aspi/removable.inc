@@ -84,4 +84,6 @@ fdd_models:
         db      'ZIP', 0, 'LS-120', 0, 'LS-240', 0, 'CLIK', 0
         db      'SUPERDISK', 0, 'JAZ', 0, 'SYQUEST', 0, 'EZ135', 0
         db      'EZFLYER', 0, 'SYJET', 0, 'SPARQ', 0
-        db      'FLOPPY', 0, 0          ; a floppy drive offered as SCSI
+        db      'FLOPPY', 0             ; a floppy drive offered as SCSI
+        db      'USB SLOT', 0, 0        ; EUSBASPI /H hot plug slot: a drive
+                                        ; letter while empty, sticks later
