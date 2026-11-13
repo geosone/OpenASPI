@@ -1,8 +1,10 @@
 #!/bin/bash
 # ASPIDSK on a write-protected medium: MS-DOS 7.1, EUSBASPI and a read-only
 # QEMU USB disk, whose target answers WRITE with DATA PROTECT. Absolute and
-# DOS writes to D: must fail with DOS error 00h (write protect), and D: stays
-# readable. FDD=1: ASPIFDD with the disk named as a ZIP drive.
+# DOS writes to C: must fail with DOS error 00h (write protect), and C: stays
+# readable. FDD=1: ASPIFDD with the disk named as a ZIP drive. The disk is
+# plugged in after the BIOS (DELAY.SYS), else EUSBASPI serves it as the BIOS
+# disk C: and the ASPI block driver leaves it alone.
 
 set -euo pipefail
 
@@ -12,15 +14,16 @@ EUSBASPI_DIR=${EUSBASPI_DIR:-$ROOT/../eusbaspi}
 AHCIASPI_DIR=${AHCIASPI_DIR:-$ROOT/../ahciaspi}
 MSDOS_IMG=${MSDOS_IMG:-$ROOT/../msdosinst/out/DISK1.IMG}
 BLK=ASPIDSK; PRODUCT=STICK
-if test -n "${FDD:-}"; then BLK=ASPIFDD; PRODUCT='ZIP 100'; fi
+if test -n "${FDD:-}"; then BLK=ASPIFDD; PRODUCT=ZIP-100; fi
 
 make -C "$ROOT" build/dos/$BLK.SYS >/dev/null
 rm -rf "$OUT"
 mkdir -p "$OUT"
 nasm -f bin -o "$OUT/QEXIT.COM" "$AHCIASPI_DIR/tools/qexit.asm"
+nasm -f bin -o "$OUT/DELAY.SYS" "$EUSBASPI_DIR/tools/delay.asm"
 nasm -f bin -w-reloc-abs-word -I"$EUSBASPI_DIR/src/" \
     -o "$OUT/EUSBASPI.SYS" "$EUSBASPI_DIR/src/eusbaspi.asm"
-"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX \
+"$ROOT/build/tools/jwasm/jwasm" -q -bin -0 -W4 -WX -DPROTECT_DRIVE=2 \
     -Fo="$OUT/PROTECT.COM" "$ROOT/tests/disk_protect.asm"
 
 cp "$MSDOS_IMG" "$OUT/boot.img"
@@ -30,13 +33,14 @@ while IFS= read -r file; do
         *) mdel -i "$OUT/boot.img" "$file" ;;
     esac
 done < <(mdir -b -i "$OUT/boot.img" ::/)
-printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' 'DEVICE=A:\EUSBASPI.SYS' \
+printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' 'DEVICE=A:\DELAY.SYS' 'DEVICE=A:\DELAY.SYS' \
+    'DEVICE=A:\EUSBASPI.SYS' \
     "DEVICE=A:\\$BLK.SYS" > "$OUT/CONFIG.SYS"
-printf '%s > AUX\r\n' 'ECHO === START' 'PROTECT' 'TYPE D:\README.TXT' \
+printf '%s > AUX\r\n' 'ECHO === START' 'PROTECT' 'TYPE C:\README.TXT' \
     'ECHO === END' > "$OUT/AUTOEXEC.BAT"
 printf '%s\r\n' 'QEXIT' >> "$OUT/AUTOEXEC.BAT"
 mcopy -o -i "$OUT/boot.img" "$OUT/CONFIG.SYS" "$OUT/AUTOEXEC.BAT" "$OUT/EUSBASPI.SYS" \
-    "$ROOT/build/dos/$BLK.SYS" "$OUT/PROTECT.COM" "$OUT/QEXIT.COM" ::/
+    "$ROOT/build/dos/$BLK.SYS" "$OUT/PROTECT.COM" "$OUT/QEXIT.COM" "$OUT/DELAY.SYS" ::/
 
 truncate -s 32M "$OUT/stick.img"
 echo 'start=63, type=6' | sfdisk -q "$OUT/stick.img"
@@ -46,15 +50,17 @@ mcopy -i "$OUT/stick.img@@32256" "$OUT/README.TXT" ::/
 sum_before=$(sha256sum < "$OUT/stick.img")
 
 set +e
+{ sleep 2; printf '%s\n' \
+    "drive_add 0 if=none,id=stick,format=raw,readonly=on,file=$OUT/stick.img" \
+    "device_add usb-bot,id=bot1,bus=usbhc.0,port=1" \
+    "device_add scsi-hd,bus=bot1.0,drive=stick,removable=on,vendor=OPENASPI,product=$PRODUCT" \
+    "qom-set /machine/peripheral/bot1 attached true"; sleep "${TIMEOUT:-120}"; } |
 timeout "${TIMEOUT:-120}" qemu-system-i386 \
-    -machine pc -m 32 -display none -vga std \
+    -machine pc -m 32 -display none -vga std -monitor stdio \
     -drive if=floppy,format=raw,file="$OUT/boot.img" -boot a \
     -device pci-ohci,id=usbhc \
-    -device usb-bot,id=bot1,bus=usbhc.0,port=1 \
-    -drive id=stick,if=none,format=raw,readonly=on,file="$OUT/stick.img" \
-    -device scsi-hd,bus=bot1.0,drive=stick,removable=on,vendor=OPENASPI,product="$PRODUCT" \
     -serial file:"$OUT/serial.log" \
-    -device isa-debug-exit,iobase=0xf4,iosize=0x04
+    -device isa-debug-exit,iobase=0xf4,iosize=0x04 > "$OUT/monitor.log" 2>&1
 rc=$?
 set -e
 tr -d '\0' < "$OUT/serial.log" > "$OUT/serial.txt"

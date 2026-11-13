@@ -1,4 +1,4 @@
-; After the F: scratch medium was ejected, current-parameter IOCTL must
+; After the D: scratch medium was ejected, current-parameter IOCTL must
 ; fail without overwriting the output with a cached BPB. DOS integration.
         .8086
         .model tiny
@@ -8,7 +8,7 @@ start:
         push cs
         pop ds
         mov ax, 440Dh
-        mov bx, 6
+        mov bx, 4
         mov cx, 0860h
         mov dx, offset params
         int 21h

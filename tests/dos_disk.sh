@@ -5,8 +5,10 @@
 # must be readable and writable through its driver (WRITE, and WRITE AND
 # VERIFY with VERIFY ON).
 #
-# SeaBIOS presents the partitioned USB devices as BIOS disks as well, so DOS
-# gives them C: and D:; ASPIDSK gets E:, ASPIFDD F: (ZIP) and G: (LS-120).
+# The devices are plugged in after the BIOS (DELAY.SYS waits for them):
+# SeaBIOS would offer them as BIOS disks, and EUSBASPI then takes those over
+# for INT 13h, so DOS would have them through the BIOS.  ASPIDSK gets C:,
+# ASPIFDD D: (ZIP) and E: (LS-120).
 
 set -euo pipefail
 
@@ -42,6 +44,7 @@ mkdir -p "$OUT"
 nasm -f bin -w-reloc-abs-word -I"$EUSBASPI_DIR/src/" \
     -o "$OUT/EUSBASPI.SYS" "$EUSBASPI_DIR/src/eusbaspi.asm"
 nasm -f bin -o "$OUT/QEXIT.COM" "$AHCIASPI_DIR/tools/qexit.asm"
+nasm -f bin -o "$OUT/DELAY.SYS" "$EUSBASPI_DIR/tools/delay.asm"
 
 unzip -p "$SVARDOS_ZIP" svdos-1.44M-disk-1.img > "$OUT/boot.img"
 while IFS= read -r file; do
@@ -53,6 +56,8 @@ while IFS= read -r file; do
 done < <(mdir -b -i "$OUT/boot.img" ::/)
 
 printf '%s\r\n' \
+    'DEVICE=DELAY.SYS' \
+    'DEVICE=DELAY.SYS' \
     'DEVICE=EUSBASPI.SYS' \
     'DEVICE=ASPIDSK.SYS' \
     'DEVICE=ASPIFDD.SYS' \
@@ -73,33 +78,33 @@ printf '%s\r\n' \
     'TRACKFDD > AUX' \
     'FMTFDD > AUX' \
     'DOSIO > AUX' \
+    'MIDLIVE C: > AUX' \
+    'MIDLIVE D: > AUX' \
     'MIDLIVE E: > AUX' \
-    'MIDLIVE F: > AUX' \
-    'MIDLIVE G: > AUX' \
-    'TYPE E:\DSKTEST.TXT > AUX' \
-    'TYPE F:\ZIPTEST.TXT > AUX' \
-    'TYPE G:\SFTEST.TXT > AUX' \
-    'IF EXIST H:\NUL ECHO EXTRA DRIVE H > AUX' \
-    'COPY E:\BIG.BIN BIG.BIN > NUL' \
-    'COPY BIG.BIN E:\BIGW.BIN > NUL' \
+    'TYPE C:\DSKTEST.TXT > AUX' \
+    'TYPE D:\ZIPTEST.TXT > AUX' \
+    'TYPE E:\SFTEST.TXT > AUX' \
+    'IF EXIST F:\NUL ECHO EXTRA DRIVE F > AUX' \
+    'COPY C:\BIG.BIN BIG.BIN > NUL' \
+    'COPY BIG.BIN C:\BIGW.BIN > NUL' \
     'VERIFY ON' \
-    'COPY BIG.BIN F:\BIGW.BIN > NUL' \
-    'COPY BIG.BIN G:\BIGW.BIN > NUL' \
+    'COPY BIG.BIN D:\BIGW.BIN > NUL' \
+    'COPY BIG.BIN E:\BIGW.BIN > NUL' \
     'VERIFY OFF' \
-    'MD E:\NEWDIR' \
-    'ECHO written by ASPIDSK > E:\NEWDIR\W.TXT' \
+    'MD C:\NEWDIR' \
+    'ECHO written by ASPIDSK > C:\NEWDIR\W.TXT' \
     'CALL CTLTEST.BAT' \
     'QEXIT' > "$OUT/AUTOEXEC.BAT"
 printf '%s\r\n' '@ECHO OFF' \
-    'ASPICTL LOCK F: > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
-    'ASPICTL LOCK F: > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
-    'ASPICTL STATUS F: > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
-    'EJECT F: > AUX' 'IF NOT ERRORLEVEL 1 GOTO FAILED' \
-    'ASPICTL UNLOCK F: > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
-    'EJECT F: > AUX' 'IF NOT ERRORLEVEL 1 GOTO FAILED' \
-    'CLOSE F: > AUX' 'IF NOT ERRORLEVEL 2 GOTO FAILED' \
-    'EJECT F: /FORCE > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
-    'ASPICTL STATUS F: > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
+    'ASPICTL LOCK D: > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
+    'ASPICTL LOCK D: > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
+    'ASPICTL STATUS D: > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
+    'EJECT D: > AUX' 'IF NOT ERRORLEVEL 1 GOTO FAILED' \
+    'ASPICTL UNLOCK D: > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
+    'EJECT D: > AUX' 'IF NOT ERRORLEVEL 1 GOTO FAILED' \
+    'CLOSE D: > AUX' 'IF NOT ERRORLEVEL 2 GOTO FAILED' \
+    'EJECT D: /FORCE > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
+    'ASPICTL STATUS D: > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
     'FDDGONE > AUX' 'IF ERRORLEVEL 1 GOTO FAILED' \
     'ECHO FDD ASPICTL locks/force/eject passed > AUX' 'GOTO DONE' \
     ':FAILED' 'ECHO FDD ASPICTL FAILED > AUX' ':DONE' > "$OUT/CTLTEST.BAT"
@@ -114,7 +119,8 @@ fi
 mcopy -o -i "$OUT/boot.img" "$OUT/CONFIG.SYS" "$OUT/AUTOEXEC.BAT" \
     "$OUT/EUSBASPI.SYS" "$ROOT/build/dos/ASPIDSK.SYS" \
     "$ROOT/build/dos/ASPIFDD.SYS" "$ROOT/build/dos/ASPISCAN.COM" "$OUT/BLKFALL.COM" \
-    "$OUT/BLKIO.COM" "$OUT/FDDIO.COM" "$OUT/DOSIO.COM" "$OUT/QEXIT.COM" ::/
+    "$OUT/BLKIO.COM" "$OUT/FDDIO.COM" "$OUT/DOSIO.COM" "$OUT/QEXIT.COM" \
+    "$OUT/DELAY.SYS" ::/
 mcopy -o -i "$OUT/boot.img" "$OUT/CTLTEST.BAT" "$OUT/FDDGONE.COM" \
     "$ROOT/build/dos/ASPICTL.EXE" "$ROOT/build/dos/EJECT.EXE" "$ROOT/build/dos/CLOSE.EXE" ::/
 mcopy -o -i "$OUT/boot.img" "$OUT/BLKACC.COM" "$OUT/FDDACC.COM" ::/
@@ -142,26 +148,32 @@ mkfs.fat -F16 -i 55556666 -n SUPERDISK "$OUT/ls120.img" >/dev/null
 printf 'ASPIFDD LS-120 PASSED\r\n' > "$OUT/SFTEST.TXT"
 mcopy -i "$OUT/ls120.img" "$OUT/SFTEST.TXT" ::/
 
-fdd_devices=()
+# plugged in through the monitor while DELAY.SYS waits (usb-bot: attached
+# by hand once its SCSI device is there)
+plug=(
+    "drive_add 0 if=none,id=stick,format=raw,file=$OUT/stick.img"
+    "device_add usb-bot,id=bot1,bus=usbhc.0,port=1"
+    "device_add scsi-hd,bus=bot1.0,drive=stick,removable=on,vendor=OPENASPI,product=STICK"
+    "qom-set /machine/peripheral/bot1 attached true")
 if test "$DETECT_ONLY" = 0; then
-    fdd_devices=(-device usb-bot,id=bot2,bus=usbhc.0,port=2
-        -drive "id=zip,if=none,format=raw,file=$OUT/zip.img"
-        -device scsi-hd,bus=bot2.0,drive=zip,removable=on,vendor=IOMEGA,product=ZIP-100
-        -device usb-bot,id=bot3,bus=usbhc.0,port=3
-        -drive "id=ls120,if=none,format=raw,file=$OUT/ls120.img"
-        -device scsi-hd,bus=bot3.0,drive=ls120,removable=on,vendor=MATSHITA,product=LS-120)
+    plug+=(
+        "drive_add 0 if=none,id=zip,format=raw,file=$OUT/zip.img"
+        "device_add usb-bot,id=bot2,bus=usbhc.0,port=2"
+        "device_add scsi-hd,bus=bot2.0,drive=zip,removable=on,vendor=IOMEGA,product=ZIP-100"
+        "qom-set /machine/peripheral/bot2 attached true"
+        "drive_add 0 if=none,id=ls120,format=raw,file=$OUT/ls120.img"
+        "device_add usb-bot,id=bot3,bus=usbhc.0,port=3"
+        "device_add scsi-hd,bus=bot3.0,drive=ls120,removable=on,vendor=MATSHITA,product=LS-120"
+        "qom-set /machine/peripheral/bot3 attached true")
 fi
 set +e
+{ sleep 2; printf '%s\n' "${plug[@]}"; sleep "${TIMEOUT:-90}"; } |
 timeout "${TIMEOUT:-90}" qemu-system-i386 \
-    -machine pc -m 32 -display none -vga std \
+    -machine pc -m 32 -display none -vga std -monitor stdio \
     -drive if=floppy,format=raw,file="$OUT/boot.img" -boot a \
     -device pci-ohci,id=usbhc \
-    -device usb-bot,id=bot1,bus=usbhc.0,port=1 \
-    -drive id=stick,if=none,format=raw,file="$OUT/stick.img" \
-    -device scsi-hd,bus=bot1.0,drive=stick,removable=on,vendor=OPENASPI,product=STICK \
-    "${fdd_devices[@]}" \
     -serial file:"$OUT/serial.log" \
-    -device isa-debug-exit,iobase=0xf4,iosize=0x04
+    -device isa-debug-exit,iobase=0xf4,iosize=0x04 > "$OUT/monitor.log" 2>&1
 rc=$?
 set -e
 

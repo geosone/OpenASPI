@@ -57,7 +57,7 @@ start:
         pushf
         push    ax
         mov     ax, 440Dh
-        mov     bx, 0004h
+        mov     bx, PROTECT_DRIVE+1
         mov     cx, 086Ah                       ; unlock logical volume
         int     21h
         pop     ax

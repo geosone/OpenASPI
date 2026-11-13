@@ -1,4 +1,4 @@
-; End-to-end DOS INT 21h IOCTL against E: stick, F: ZIP, G: superfloppy
+; End-to-end DOS INT 21h IOCTL against C: stick, D: ZIP, E: superfloppy
 ; in dos_disk.sh. Parameter changes are in memory and restored before exit.
         .8086
         option casemap:none
@@ -113,7 +113,7 @@ unsupported_format:
         int 21h
         REQUIRE_CLEAR
         inc byte ptr [drive]
-        cmp byte ptr [drive], 8
+        cmp byte ptr [drive], 6
         jae finished_drives
         jmp next_drive
 finished_drives:
@@ -260,7 +260,7 @@ check_parameters proc near
         jne invalid
         xor bh, bh
         mov bl, [drive]
-        sub bx, 5
+        sub bx, 3
         shl bx, 1
         mov ax, [hidden+bx]
         cmp word ptr [parameters+7+17], ax
@@ -287,7 +287,7 @@ check_media_id proc near
         jne id_invalid
         xor bh, bh
         mov bl, [drive]
-        sub bx, 5
+        sub bx, 3
         mov si, bx
         shl bx, 1
         shl bx, 1
@@ -319,7 +319,7 @@ id_invalid:
         stc
         ret
 check_media_id endp
-drive db 5
+drive db 3
 BPB_SPT_LOCAL equ 13
 BPB_HEADS_LOCAL equ 15
 parameters_saved db 0
