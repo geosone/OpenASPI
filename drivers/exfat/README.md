@@ -28,8 +28,9 @@ EXFAT.SYS finds exFAT volumes in two places:
 - BIOS disks (INT 13h, with the extensions for LBA when the BIOS has them):
   superfloppies, MBR partitions of type 07h (primary and logical) and GPT
   basic data partitions.  They get free drive letters, taken when the
-  first program starts, since DOS builds its drive table only after
-  CONFIG.SYS; LASTDRIVE must leave free letters.
+  first program starts or ends, since DOS builds its drive table only
+  after CONFIG.SYS (loaded by DEVLOAD, the letters are there when DEVLOAD
+  returns); LASTDRIVE must leave free letters.
 - ASPIDSK and ASPIFDD units (USB sticks, card readers, ZIP): load
   `EXFAT.SYS` after them.  Such a unit keeps the drive letter of ASPIDSK or
   ASPIFDD; while an exFAT medium is in, EXFAT.SYS takes the letter over and

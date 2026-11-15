@@ -199,7 +199,9 @@ chain_restore:
 int2f   endp
 
 ; INT 21h: the drive letters are taken when the first program is started
-; (AH=4Bh), as the DOS drive table (CDS) exists only after CONFIG.SYS.
+; (AH=4Bh), as the DOS drive table (CDS) exists only after CONFIG.SYS, or
+; when a program ends (AH=00h, 31h, 4Ch): loaded by DEVLOAD, no program may
+; start before the shell's own commands use the drive.
 ; AH=71h (long file names) goes to the C function lfn, as INT 2Fh to redir,
 ; but on a stack of its own: lfn calls DOS, and DOS the redirector.
 int21   proc far
@@ -208,7 +210,14 @@ ifdef EXFAT_LFN
         je      lfn21
 endif
         cmp     ah, 4Bh
+        je      first21
+        cmp     ah, 4Ch
+        je      first21
+        cmp     ah, 31h
+        je      first21
+        cmp     ah, 0
         jne     chain21
+first21:
         cmp     cs:assigned, 0
         jne     chain21
         cmp     cs:busy, 0

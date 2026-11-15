@@ -6,6 +6,9 @@
 # the files written by the Linux exFAT driver.
 #   SUPER=1: the exFAT disk without a partition table (superfloppy)
 #   SVARDOS=1: SvarDOS (EDR-DOS kernel) instead of MS-DOS 7.1
+#   DEVLOAD=1: SvarDOS with FreeCOM, EXFAT.SYS loaded by FreeDOS DEVLOAD in
+#              AUTOEXEC.BAT; FreeCOM's internal commands must see D: at once
+#              (GitHub issue #1)
 #   HIGH=DIR: MS-DOS with HIMEM.SYS, EMM386.EXE and MEM.EXE from DIR and
 #             DEVICEHIGH=EXFAT.SYS; MEM /C must show it in upper memory
 #   TEXFAT=0|1: the exFAT disk as TexFAT (tests/exfat_texfat.py), 1: the
@@ -27,7 +30,10 @@ HIGH=${HIGH:-}
 OPTS=${OPTS:-}
 DAMAGE=${DAMAGE:-}
 TEXFAT=${TEXFAT:-}
+DEVLOAD=${DEVLOAD:-0}
 SVARDOS_ZIP=${SVARDOS_ZIP:-$HOME/Iso/Dos/svardos-20250427-floppy-1.44M.zip}
+FREEDOS_IMG=${FREEDOS_IMG:-$HOME/Iso/Dos/freedos/FD14LITE.img}
+if test "$DEVLOAD" = 1; then SVARDOS=1; fi
 
 make -C "$ROOT" build/dos/EXFAT.SYS build/dos/EXCHK.EXE >/dev/null
 rm -rf "$OUT"
@@ -46,7 +52,12 @@ while IFS= read -r file; do
         *) mdel -i "$OUT/boot.img" "$file" ;;
     esac
 done < <(mdir -b -i "$OUT/boot.img" ::/)
-if test -n "$HIGH"; then
+if test "$DEVLOAD" = 1; then
+    # FreeCOM and DEVLOAD of FreeDOS 1.4
+    mcopy -o -i "$FREEDOS_IMG@@32256" ::/COMMAND.COM ::/FREEDOS/BIN/DEVLOAD.COM "$OUT/"
+    mcopy -o -i "$OUT/boot.img" "$OUT/COMMAND.COM" "$OUT/DEVLOAD.COM" ::/
+    printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' 'SHELL=A:\COMMAND.COM A:\ /E:1024 /P' > "$OUT/CONFIG.SYS"
+elif test -n "$HIGH"; then
     printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' 'DEVICE=A:\HIMEM.SYS' \
         'DEVICE=A:\EMM386.EXE NOEMS' 'DOS=HIGH,UMB' "DEVICEHIGH=A:\\EXFAT.SYS $OPTS" > "$OUT/CONFIG.SYS"
     mcopy -o -i "$OUT/boot.img" "$HIGH/HIMEM.SYS" "$HIGH/EMM386.EXE" "$HIGH/MEM.EXE" ::/
@@ -54,6 +65,12 @@ else
     printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' "DEVICE=A:\\EXFAT.SYS $OPTS" > "$OUT/CONFIG.SYS"
 fi
 # every command with "> AUX": SvarCOM has no CTTY
+: > "$OUT/AUTOEXEC.BAT"
+if test "$DEVLOAD" = 1; then
+    # no program may run between DEVLOAD and the first access
+    printf '%s > AUX\r\n' "DEVLOAD A:\\EXFAT.SYS $OPTS" \
+        'IF EXIST D:\README.TXT ECHO FIRST ACCESS OK' > "$OUT/AUTOEXEC.BAT"
+fi
 printf '%s > AUX\r\n' \
     'ECHO === DIR' 'DIR D:' \
     'ECHO === DIR /S' 'DIR D:\UNTERO~1 /S' \
@@ -63,7 +80,7 @@ printf '%s > AUX\r\n' \
     'ECHO === COPY' 'MD C:\OUT' 'COPY D:\*.* C:\OUT' 'COPY D:\SUB\*.* C:\OUT' \
     'ECHO === EXCHK' 'EXCHK D:' 'IF ERRORLEVEL 1 ECHO EXCHK FAILED' \
     'ECHO === EXCHK /F' 'EXCHK D: /F' 'EXCHK D:' 'IF ERRORLEVEL 1 ECHO AFTER FIX FAILED' 'DIR D:\SUB' \
-    'ECHO === END' > "$OUT/AUTOEXEC.BAT"
+    'ECHO === END' >> "$OUT/AUTOEXEC.BAT"
 if test -n "$HIGH"; then printf '%s > AUX\r\n' 'MEM /C' >> "$OUT/AUTOEXEC.BAT"; fi
 printf '%s\r\n' \
     'QEXIT' >> "$OUT/AUTOEXEC.BAT"
@@ -102,6 +119,7 @@ tr -d '\0' < "$OUT/serial.log" > "$OUT/serial.txt"
 fail=0
 check() { grep -q "$1" "$OUT/serial.txt" || { echo "missing: $1"; fail=1; }; }
 check '=== END'
+if test "$DEVLOAD" = 1; then check 'FIRST ACCESS OK'; fi
 check '        21 files'
 if test -n "$DAMAGE"; then
     check 'EXCHK FAILED'

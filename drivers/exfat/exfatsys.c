@@ -12,7 +12,7 @@
 #include "openfat/exfat.h"
 #include "openaspi/exfatsys.h"
 
-#define VERSION "0.4"
+#define VERSION "0.5"
 #define MAXVOL 8
 #define STACKSIZE 1024                  /* as in exfatsys.asm */
 
