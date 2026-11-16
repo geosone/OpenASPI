@@ -11,6 +11,20 @@ LS-120, ZIP and similar removable-media drives are left to `ASPIFDD.SYS`.
 Options (as ASPIDISK has them; `/` or `-`, upper or lower case, values
 after `:` or `=`):
 
+- `/I13`: each disk is also a BIOS hard disk (INT 13h), after the BIOS's
+  own: 80h + the count at 0040:0075, which grows by these disks. Programs
+  that read disks through the BIOS find them then, such as NTFSDOS and
+  NTFS4DOS for NTFS partitions (ASPIDSK gives NTFS no letter), disk
+  editors or EXFAT.SYS's BIOS back end. A disk without a FAT volume gets
+  its drive too; with only such disks ASPIDSK stays as a character device.
+  Up to 8 disks of 512-byte sectors (others get no drive), below 2 TB.
+  Functions 00h-04h, 08h, 0Ch, 0Dh, 10h, 11h, 14h, 15h and the extensions
+  41h-44h, 47h, 48h (EDD 1.1); CHS with 255 heads and 63 sectors (16 heads
+  below 8 MB), at most 1024 cylinders. A removable device's capacity is read
+  again by 08h, 15h and 48h. Writes through INT 13h bypass DOS: do not
+  write a volume that also has a drive letter of ASPIDSK that way.
+  Disks the manager already gives the BIOS (EUSBASPI's BIOS takeover) are
+  left alone, as without `/I13`.
 - `/ID:[h:]t[,[h:]t...]`: only these targets, up to 8 (`h` = host adapter;
   without it the target on any adapter). `/ID:1` takes only target 1.
 - `/NOSPINUP`: a stopped drive is not started. By default, a drive that
@@ -69,6 +83,8 @@ Implemented behavior:
 
 FAT32 extended BPBs and `48h/60h`, `48h/66h` are qualified on FreeDOS 1.4;
 MS-DOS 7.1/Windows 9x qualification remains open.
+
+`/I13` is tested with NTFSDOS 3.02R (`tests/dos_ntfs_i13.sh`).
 
 Not yet: more partitions, variable track tables, physical format IOCTLs and independent detection of
 BIOS mappings that the ASPI manager does not report; see

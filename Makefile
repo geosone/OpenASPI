@@ -211,6 +211,7 @@ $(DOSCDA): drivers/aspicda/aspicda.asm common/aspi/dos_aspi.inc common/aspi/aspi
 BLKDEPS := common/dos/blkdrv.inc common/aspi/dos_aspi.inc common/aspi/aspi_client.inc \
 		common/aspi/aspi_init.inc common/aspi/removable.inc common/aspi/media_control.inc common/dos/devreq.inc
 BLKDEPS += common/dos/raw_media.inc common/dos/block_capacity.inc common/dos/block_params.inc common/dos/block_track.inc common/dos/exfat_svc.inc
+BLKDEPS += common/dos/int13.inc common/dos/int13_init.inc
 
 $(DOSDSK): drivers/aspidsk/aspidsk.asm $(BLKDEPS) | $(JWASM)
 	mkdir -p $(@D)

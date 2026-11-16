@@ -2088,6 +2088,9 @@ ifdef FDD_DRIVER
         include common/dos/raw_media.inc
 endif
         include common/dos/exfat_svc.inc
+ifndef FDD_DRIVER
+        include common/dos/int13.inc
+endif
 ; Resident placeholder: also needed after runtime blank-media exchanges, and
 ; the BPB of exFAT units.
 default_bpb     dw      512
@@ -2125,6 +2128,9 @@ resident_end label byte
 
 ; INQUIRY vendor/product substrings of removable-media drives for ASPIFDD
         include common/aspi/removable.inc
+ifndef FDD_DRIVER
+        include common/dos/int13_init.inc
+endif
 
 first_drive     db      0
 dev_units       db      0               ; units of the device being added
@@ -2142,6 +2148,7 @@ opt_nospinup    db      0
 opt_pause       db      0
 opt_reserve     db      1
 opt_sec         db      0               ; /SEC:n given
+opt_i13         db      0               ; ASPIDSK /I13: INT 13h drives
 ID_MAX          equ     8
 id_count        db      0
 id_list         dw      ID_MAX dup (0)  ; low byte target, high byte HA or 0FFh
@@ -2151,6 +2158,7 @@ kw_pause        db      'PAUSE', 0
 kw_id           db      'ID', 0
 kw_r            db      'R', 0
 kw_sec          db      'SEC', 0
+kw_i13          db      'I13', 0
 msg_pause       db      'Press any key to continue . . .', 13, 10, '$'
 msg_bad_option  db      '  Unknown option ignored', 13, 10, '$'
 
@@ -2342,10 +2350,15 @@ po_name:
         ja      po_upper
         sub     al, 20h
 po_upper:
+        cmp     al, '0'                         ; digits too (/I13)
+        jb      po_name_end
+        cmp     al, '9'
+        jbe     po_name_char
         cmp     al, 'A'
         jb      po_name_end
         cmp     al, 'Z'
         ja      po_name_end
+po_name_char:
         stosb
         inc     si
         loop    po_name
@@ -2401,6 +2414,12 @@ po_sec_ok:
         mov     byte ptr cs:[opt_sec], 1
         jmp     po_next
 po_not_sec:
+        mov     di, offset kw_i13
+        call    po_is
+        jne     po_not_i13
+        mov     byte ptr cs:[opt_i13], 1
+        jmp     po_next
+po_not_i13:
         mov     di, offset kw_id
         call    po_is
         jne     po_bad
@@ -2671,6 +2690,9 @@ ifdef FDD_DRIVER
 endif
         call    test_unit_ready                 ; clear UNIT ATTENTION
         call    spin_up
+ifndef FDD_DRIVER
+        call    i13_add
+endif
 init_try_volume:
         call    load_volume_x
         jnc     init_add_unit
@@ -2786,6 +2808,10 @@ ifdef FDD_DRIVER
         ; drops a block device without units
         cmp     byte ptr [take_first], MAX_UNITS
         jb      init_char_only
+else
+        ; only INT 13h drives (/I13, no FAT volume): the same
+        cmp     byte ptr [i13_count], 0
+        jne     init_char_only
 endif
         mov     dx, offset msg_no_device
 init_failed:
@@ -2799,7 +2825,6 @@ init_failed:
         mov     word ptr es:[bx+RH_STATUS], ST_DONE
         call    init_pause
         jmp     request_done
-ifdef FDD_DRIVER
 init_char_only:
         mov     word ptr [driver_start+4], 8000h        ; character device
         mov     byte ptr [sec_shift_grow], 0
@@ -2809,9 +2834,11 @@ init_char_only:
         mov     word ptr es:[bx+RH_INIT_END+2], cs
         mov     byte ptr es:[bx+RH_INIT_UNITS], 0
         mov     word ptr es:[bx+RH_STATUS], ST_DONE
+ifndef FDD_DRIVER
+        call    i13_install
+endif
         call    init_pause
         jmp     request_done
-endif
 init_installed:
         mov     byte ptr [sec_shift_grow], 0
         call    init_sector_size                ; -> AX = resident end
@@ -2823,6 +2850,9 @@ init_installed:
         mov     word ptr es:[bx+RH_INIT_ARGS], offset bpb_pointers
         mov     word ptr es:[bx+RH_INIT_ARGS+2], cs
         mov     word ptr es:[bx+RH_STATUS], ST_DONE
+ifndef FDD_DRIVER
+        call    i13_install
+endif
         call    init_pause
         jmp     request_done
 
