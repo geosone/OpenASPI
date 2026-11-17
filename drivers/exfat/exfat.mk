@@ -9,10 +9,9 @@ EXFATWRITETESTBIN := $(BUILD)/host/test_exfat_write
 EXCHKTESTBIN := $(BUILD)/host/test_exchk
 EXFMTTESTBIN := $(BUILD)/host/test_exfmt
 FATCHKTESTBIN := $(BUILD)/host/test_fatchk
-EXFATCORE := $(OPENFAT)/src/exfat/exfat.c $(OPENFAT)/src/codepage.c $(OPENFAT)/src/name83.c
 EXFATHDR := $(OPENFAT)/include/openfat/exfat.h include/openaspi/exfatsys.h $(OPENFAT)/include/openfat/exfat_check.h $(OPENFAT)/include/openfat/exfat_format.h include/openaspi/types.h
-EXFATOBJ := $(BUILD)/dos/exfatsys_a.obj $(BUILD)/dos/exfatsys.obj $(BUILD)/dos/exfat.obj $(BUILD)/dos/name83.obj $(BUILD)/dos/cpinit.obj
-EXFATLOBJ := $(BUILD)/dos/exfatsysl_a.obj $(BUILD)/dos/exfatsysl.obj $(BUILD)/dos/exfat.obj $(BUILD)/dos/name83.obj $(BUILD)/dos/cpinit.obj
+EXFATOBJ := $(BUILD)/dos/exfatsys_a.obj $(BUILD)/dos/exfatsys.obj $(BUILD)/dos/exfat.obj $(BUILD)/dos/name83.obj $(BUILD)/dos/latin.obj $(BUILD)/dos/cpinit.obj
+EXFATLOBJ := $(BUILD)/dos/exfatsysl_a.obj $(BUILD)/dos/exfatsysl.obj $(BUILD)/dos/exfat.obj $(BUILD)/dos/name83.obj $(BUILD)/dos/latin.obj $(BUILD)/dos/cpinit.obj
 # small model, no stack checks, no C runtime start-up: CS = DS = SS
 EXFATWCC := $(WCC) -q -ms -0 -os -s -zl -zdp -wx -we -Iinclude -I$(OPENFAT)/include -I$(WATCOM)/h
 
@@ -36,7 +35,7 @@ $(BUILD)/dos/exfat.obj: $(OPENFAT)/src/exfat/exfat.c $(EXFATHDR)
 	mkdir -p $(@D)
 	$(EXFATWCC) -fo=$@ $<
 
-$(BUILD)/dos/cpinit.obj: drivers/exfat/cpinit.c $(OPENFAT)/src/codepage.c $(EXFATHDR)
+$(BUILD)/dos/cpinit.obj: drivers/exfat/cpinit.c common/cptab.c include/openaspi/cptab.h $(EXFATHDR)
 	mkdir -p $(@D)
 	$(EXFATWCC) -fo=$@ $<
 
@@ -58,5 +57,8 @@ $(BUILD)/dos/LFNTEST.EXE: tests/lfntest.c
 	WATCOM=$(WATCOM) $(WLINK) format dos name $@ file $(BUILD)/dos/lfntest/lfntest.obj \
 		libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286 option quiet,stack=4096
 $(BUILD)/dos/name83.obj: $(OPENFAT)/src/name83.c $(EXFATHDR)
+	mkdir -p $(@D)
+	$(EXFATWCC) -fo=$@ $<
+$(BUILD)/dos/latin.obj: $(OPENFAT)/src/latin.c $(EXFATHDR)
 	mkdir -p $(@D)
 	$(EXFATWCC) -fo=$@ $<

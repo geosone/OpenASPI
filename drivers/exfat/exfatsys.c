@@ -11,6 +11,7 @@
 #include <i86.h>
 #include "openfat/exfat.h"
 #include "openaspi/exfatsys.h"
+#include "openaspi/cptab.h"
 
 #define VERSION "0.5"
 #define MAXVOL 8
@@ -491,7 +492,10 @@ static int disk_space(struct regs *r, struct drive *d)
         return error(r, E_NOTREADY);
     avail = d->v.free;
     while (total > 0xFFFF) { total >>= 1; avail >>= 1; bytes <<= 1; }
-    while (bytes / bps > 128 && bps < 0x8000) bps <<= 1;
+    /* one sector per cluster where it fits: EDR-DOS's INT 21h AH=36h
+       takes the sectors per cluster of a redirector drive as 1 (its
+       redir_getdpb sets the cluster mask, not the shift func36 uses) */
+    while (bytes / bps > 1 && bps < 0x8000) bps <<= 1;
     if (bytes / bps > 128) { bytes = 128UL * bps; }
     r->ax = (oa_u16)(bytes / bps) | 0xF8 << 8;
     r->bx = (oa_u16)total; r->cx = bps; r->dx = (oa_u16)avail;

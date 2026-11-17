@@ -21,6 +21,12 @@ build/tools/jwlink/jwlink
 The DOS `ASPIMGR.EXE` and `ASPIDDG.EXE` interfaces link the pinned Open386MAX QUILIB
 submodule. Its library and compatible assembler are built locally below
 `build/tools/quilib-US` (or `quilib-GR`) and `build/tools/qui-jwasm`.
+
+openfat's host tests (`make check`) load their code pages from
+[mars-unicode-tables](https://gitea.disconnected-by-peer.at/mars_nwe/mars-unicode-tables): a
+checkout next to this one (`../mars-unicode-tables`), or set `UNITAB` to its
+`TAB/unitables`. The DOS drivers and tools have code pages 437 and 850 built
+in: `common/cptab.c`, checked in, made from the same tables by `make cptab`.
 Use `make MAXLANG=US` or `make MAXLANG=GR` for English or German. See
 [ASPIMGR](../tools/aspimgr/README.md) for the native DOS GUI test.
 `ASPICTL.EXE` and its EJECT/CLOSE/LOCK/UNLOCK/STATUS aliases provide drive-letter media

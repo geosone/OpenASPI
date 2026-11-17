@@ -4,7 +4,7 @@ DEFRAGTESTBIN := $(BUILD)/host/test_defrag
 
 DOSDEFRAG := $(BUILD)/dos/DEFRAG.EXE
 DEFRAGOBJ := $(addprefix $(BUILD)/dos/defrag/,defrag.obj fat_defrag.obj) \
-	$(addprefix $(BUILD)/dos/aspichk/,drive.obj fat_check.obj codepage.obj)
+	$(addprefix $(BUILD)/dos/aspichk/,drive.obj fat_check.obj cptab.obj)
 
 $(BUILD)/dos/defrag/defrag.obj: tools/defrag/defrag.c tools/aspichk/drive.h $(OPENFAT)/include/openfat/fat_defrag.h $(ASPICHKHDR)
 	mkdir -p $(@D)

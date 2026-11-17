@@ -1,5 +1,7 @@
 JWASM_DIR  ?= deps/JWasm
 OPENFAT    ?= deps/openfat
+# mars-unicode-tables: the code pages of openfat's host tests and of make cptab
+UNITAB     ?= $(abspath ../mars-unicode-tables/TAB/unitables)
 JWLINK_DIR ?= deps/jwlink
 GDI        ?= deps/gdi
 GDIINSTALL = $(GDI_OUT)/INSTALL.EXE
@@ -63,6 +65,7 @@ CFLAGS  ?= -std=c90 -Wall -Wextra -Werror -pedantic -O2
 CPPFLAGS += -Iinclude -I$(OPENFAT)/include
 
 include drivers/exfat/exfat.mk
+include drivers/ntfs/ntfs.mk
 include tools/exchk/exchk.mk
 include tools/aspichk/aspichk.mk
 include tools/defrag/defrag.mk
@@ -70,7 +73,7 @@ include tools/exfmt/exfmt.mk
 
 .PHONY: exfat-dist all tools test check dos-c-check dos-smoke dos-cda-smoke dos-media-smoke dos-disk-smoke dos-tape-smoke dos-mhvtl-smoke dos-mhvtl-roundtrip dos-mhvtl-write-protect gdi-install dist disksets clean
 
-all: $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(DOSEXFAT) $(DOSEXFATL) $(EXFATTESTBIN) $(DOSEXCHK) $(EXCHKTESTBIN) $(DOSASPICHK) $(FATCHKTESTBIN) $(DOSDEFRAG) $(DEFRAGTESTBIN) $(DOSEXFMT) $(EXFMTTESTBIN) $(DOSSHSUCDX) $(DOSCDAUDIO) $(DOSSCAN) $(DOSMGR) $(DOSCTL) $(DOSCTLALIASES) $(DOSFMT) $(DOSDD) $(DOSDDGUI) $(DOSTAPECTL) $(DOSAPIINFO) $(DOSWINCHECK) $(WIN16CHECK) $(TESTBIN) $(ASPITESTBIN)
+all: $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(DOSEXFAT) $(DOSEXFATL) $(DOSNTFS) $(EXFATTESTBIN) $(DOSEXCHK) $(EXCHKTESTBIN) $(DOSASPICHK) $(FATCHKTESTBIN) $(DOSDEFRAG) $(DEFRAGTESTBIN) $(DOSEXFMT) $(EXFMTTESTBIN) $(DOSSHSUCDX) $(DOSCDAUDIO) $(DOSSCAN) $(DOSMGR) $(DOSCTL) $(DOSCTLALIASES) $(DOSFMT) $(DOSDD) $(DOSDDGUI) $(DOSTAPECTL) $(DOSAPIINFO) $(DOSWINCHECK) $(WIN16CHECK) $(TESTBIN) $(ASPITESTBIN)
 
 test: $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(EXFATTESTBIN) $(TESTBIN) $(ASPITESTBIN) $(FATTESTBIN) $(RESCUETESTBIN) $(NATIVEAPITESTBIN)
 	$(TESTBIN)
@@ -92,7 +95,15 @@ OFHOSTBINS := $(EXFATTESTBIN) $(EXFATWRITETESTBIN) $(EXCHKTESTBIN) $(EXFMTTESTBI
 	$(FATCHKTESTBIN) $(DEFRAGTESTBIN) $(FATTESTBIN)
 .PHONY: openfat-host
 openfat-host:
-	$(MAKE) -C $(OPENFAT) -s all
+	$(MAKE) -C $(OPENFAT) -s all UNITAB=$(UNITAB)
+
+# common/cptab.c (checked in): code pages 437 and 850 of the DOS programs
+.PHONY: cptab
+cptab:
+	mkdir -p $(BUILD)/host
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $(BUILD)/host/mkcptab tools/mkcptab/mkcptab.c \
+		$(OPENFAT)/src/codepage.c $(OPENFAT)/src/latin.c $(OPENFAT)/src/exfat/upcase.c
+	$(BUILD)/host/mkcptab $(UNITAB) > common/cptab.c
 $(OFHOSTBINS): openfat-host
 	mkdir -p $(@D)
 	cp $(OPENFAT)/build/host/$(@F) $@

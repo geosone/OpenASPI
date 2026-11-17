@@ -3,7 +3,8 @@
 ; Device header, strategy and interrupt routines, the INT 2Fh (AH=11h,
 ; network redirector) and INT 21h hooks, and BIOS/DOS calls for the C part
 ; (exfatsys.c).  All code and data are in one group, so CS = DS = SS while C
-; runs on the driver's own stack.
+; runs on the driver's own stack.  With NTFS_SYS the frame of NTFS.SYS
+; (drivers/ntfs/ntfssys.c), which has no ASPI units.
 ;
 ;   DEVICE=C:\DOS\EXFAT.SYS [/L:x] [/Q]
 ;
@@ -50,8 +51,13 @@ _HDR    segment
         dw      8000h                   ; character device
         dw      offset DGROUP:strategy
         dw      offset DGROUP:interrupt
+ifdef NTFS_SYS
+        db      '$NTFS$  '              ; NTFS.SYS (drivers/ntfs/ntfssys.c)
+        db      'NTI1'
+else
         db      '$EXFAT$ '
         db      'EXI1'                  ; the volumes for the tools
+endif
         dw      offset DGROUP:_exfat_info
 
 req     dd      0

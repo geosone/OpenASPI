@@ -18,6 +18,7 @@
 #include "openfat/fat_defrag.h"
 #include "openfat/exfat.h"             /* the code page tables */
 #include "../aspichk/drive.h"
+#include "openaspi/cptab.h"
 
 #define VERSION "0.1"
 #define CHUNK 32768U                    /* bytes of one block of work memory */

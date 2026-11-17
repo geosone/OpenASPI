@@ -3,16 +3,14 @@
 Ideas that are planned but not started yet.  Remaining work on the existing
 drivers is in [driver-status.md](driver-status.md).
 
-## NTFS: NTFS.SYS (idea)
+## NTFS: NTFS.SYS
 
-ASPIDSK `/I13` makes the disks BIOS drives, so the old NTFS drivers
-(NTFSDOS, NTFS4DOS) can read them.  An NTFS.SYS of our own would be a
-redirector like EXFAT.SYS on the same two back ends (INT 13h, the service
-of ASPIDSK/ASPIFDD).  Reading first: MFT records with their fixups,
-attribute lists, runlists, the $I30 index B+ trees, resident and
-non-resident data, LZNT1 compression.  Writing safely needs $LogFile
-handling (or refusing a dirty volume) and is much more work.  ntfs-3g
-(GPLv2+) is the reference for the on-disk structures.
+NTFS.SYS 0.1 reads NTFS through INT 13h (BIOS disks and ASPIDSK `/I13`),
+see `drivers/ntfs/README.md`.  Next: LZNT1 compressed files; the long names
+(71xxh, from EXFATL.SYS); the service of ASPIDSK/ASPIFDD as a second back
+end, so units need no `/I13` and media can change; reading more than one
+sector per call.  Writing safely needs $LogFile handling (or refusing a
+dirty volume) and is much more work.
 
 ## exFAT: EXFAT.SYS
 

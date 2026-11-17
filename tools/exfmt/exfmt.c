@@ -13,6 +13,7 @@
 #include <stddef.h>
 #include "openfat/exfat_format.h"
 #include "openaspi/exfatsys.h"
+#include "openaspi/cptab.h"
 
 #define VERSION "0.1"
 #define NBUF 32                         /* sectors of the transfer buffer */

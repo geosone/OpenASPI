@@ -13,8 +13,9 @@ after `:` or `=`):
 
 - `/I13`: each disk is also a BIOS hard disk (INT 13h), after the BIOS's
   own: 80h + the count at 0040:0075, which grows by these disks. Programs
-  that read disks through the BIOS find them then, such as NTFSDOS and
-  NTFS4DOS for NTFS partitions (ASPIDSK gives NTFS no letter), disk
+  that read disks through the BIOS find them then, such as NTFS.SYS
+  (`drivers/ntfs`) or NTFSDOS for NTFS partitions (ASPIDSK gives NTFS no
+  letter), disk
   editors or EXFAT.SYS's BIOS back end. A disk without a FAT volume gets
   its drive too; with only such disks ASPIDSK stays as a character device.
   Up to 8 disks of 512-byte sectors (others get no drive), below 2 TB.
@@ -84,7 +85,8 @@ Implemented behavior:
 FAT32 extended BPBs and `48h/60h`, `48h/66h` are qualified on FreeDOS 1.4;
 MS-DOS 7.1/Windows 9x qualification remains open.
 
-`/I13` is tested with NTFSDOS 3.02R (`tests/dos_ntfs_i13.sh`).
+`/I13` is tested with NTFS.SYS (`tests/dos_ntfs.sh`) and NTFSDOS 3.02R
+(`tests/dos_ntfs_i13.sh`).
 
 Not yet: more partitions, variable track tables, physical format IOCTLs and independent detection of
 BIOS mappings that the ASPI manager does not report; see

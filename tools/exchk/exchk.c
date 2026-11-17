@@ -13,6 +13,7 @@
 #include <stddef.h>
 #include "openfat/exfat_check.h"
 #include "openaspi/exfatsys.h"
+#include "openaspi/cptab.h"
 
 #define VERSION "0.1"
 #define CHUNK 32768U                    /* bytes of one block of the cluster map */
