@@ -1,4 +1,4 @@
-OpenASPI exFAT 0.5 - exFAT-Laufwerke fuer DOS
+OpenASPI exFAT 0.6 - exFAT-Laufwerke fuer DOS
 ==============================================
 
   EXFAT.SYS  exFAT-Datentraeger als DOS-Laufwerke
