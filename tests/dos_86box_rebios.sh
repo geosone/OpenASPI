@@ -34,7 +34,7 @@ case "$MODE" in ls120|zip|ab) ;; *) echo "MODE: ls120, zip or ab" >&2; exit 2;; 
 test -x "$BOX"
 test -f "$ROMDIR/machines/686nx/6nx.140"
 mkdir -p "$OUT"
-make -C "$ROOT" build/dos/ASPIFDD.SYS build/dos/ASPIFMT.EXE >/dev/null
+make -C "$ROOT" build/dos/ASPIFDD.SYS build/dos/ASPIFMT.EXE build/dos/ASPICTL.EXE >/dev/null
 make -C "$AHCIASPI_DIR" >/dev/null
 cp "$AHCIASPI_DIR/build/AHCIASPI.SYS" "$OUT/AHCIASPI.SYS"
 
@@ -101,6 +101,7 @@ printf '%s\n' '' '[Virtual Console (COM) #1]' 'mode = 0' >> "$OUT/86box.cfg"
 
 mcopy -o -i "$I" "$OUT/AHCIASPI.SYS" "$ROOT/build/dos/ASPIFDD.SYS" \
     "$ROOT/build/dos/ASPIFMT.EXE" ::/
+for t in ASPICTL EJECT STATUS; do mcopy -o -i "$I" "$ROOT/build/dos/ASPICTL.EXE" "::/$t.EXE"; done
 printf '%s\r\n' 'FILES=30' 'BUFFERS=20' "DEVICE=$boot:\\AHCIASPI.SYS /V" \
     "DEVICE=$boot:\\ASPIFDD.SYS /V" 'LASTDRIVE=Z' \
     "SHELL=$boot:\\COMMAND.COM $boot:\\ /P" > "$OUT/CONFIG.SYS"
@@ -123,14 +124,25 @@ next=$([ "$MODE" = zip ] && echo D || echo C)
             "COPY $ext:\\BIG.BIN $boot:\\BACK.BIN > NUL"
     fi
     printf '%s\n' "IF EXIST $next:\\NUL ECHO SECOND LETTER $next: > AUX" \
-        'ECHO ReBIOS read/write passed > AUX' 'ECHO OPENASPI 86BOX REBIOS DONE > AUX'
+        'ECHO ReBIOS read/write passed > AUX'
+    # EJECT through ASPIFDD on the taken-over letters: refused while locked,
+    # then for real. The boot drive goes last: COMMAND.COM reads this file
+    # from it line by line, so its "EJECT x: OK" ends the test.
+    # (LOCK and UNLOCK are COMMAND.COM commands of MS-DOS 7: ASPICTL LOCK)
+    printf '%s\n' "ASPICTL LOCK $boot: > AUX" "EJECT $boot: > AUX" \
+        "IF ERRORLEVEL 1 ECHO locked $boot: not ejected > AUX" \
+        "ASPICTL UNLOCK $boot: > AUX" "STATUS $boot: > AUX"
+    [ -z "$ext" ] || printf '%s\n' "EJECT $ext: > AUX"
+    printf '%s\n' "EJECT $boot: > AUX"
 } | sed 's/$/\r/' > "$OUT/AUTOEXEC.BAT"
 mcopy -o -i "$I" "$OUT/CONFIG.SYS" "$OUT/AUTOEXEC.BAT" ::/
 
 expect=(--expect 'ReBIOS read/write passed' --expect "ASPIFMT $boot: preview passed")
-[ -z "$ext" ] || expect+=(--expect "ASPIFMT $ext: preview passed" --expect 'ZIP superfloppy B: read passed')
+[ -z "$ext" ] || expect+=(--expect "ASPIFMT $ext: preview passed" --expect 'ZIP superfloppy B: read passed' \
+    --expect "EJECT $ext: OK")
+expect+=(--expect "locked $boot: not ejected" --expect "UNLOCK $boot: OK" --expect "STATUS $boot: OK")
 source "$ROOT/tests/86box_run.sh"
-run_86box_dos --done 'OPENASPI 86BOX REBIOS DONE' "${expect[@]}" --count 1 \
+run_86box_dos --done "EJECT $boot: OK" "${expect[@]}" --count 1 \
     --read-text "$(mtype -i "$I" "::/$read_text" | tr -d '\r' | head -1)"
 if tr -d '\r' < "$OUT/serial.log" | grep -q 'SECOND LETTER'; then
     echo "a second letter $next: for the drive" >&2

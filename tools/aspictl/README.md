@@ -29,6 +29,11 @@ UNLOCK F:
 STATUS F:
 ```
 
+MS-DOS 7 (Windows 95/98/ME) has `LOCK` and `UNLOCK` as commands of
+COMMAND.COM for its own disk locking; they come before `LOCK.EXE` and
+`UNLOCK.EXE`, so there `ASPICTL LOCK F:` and `ASPICTL UNLOCK F:` lock the
+medium.
+
 MSCDEX drive detection selects the CD packet interface. Other drives use
 DOS generic block IOCTLs; the driver decides whether the medium and operation
 are supported. CLOSE is restricted to CD drives. Unsupported operations
