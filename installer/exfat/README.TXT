@@ -19,7 +19,7 @@ needs about 24 KB (34 KB with long file names) and can be loaded high:
   /R    read-only: writing, creating, deleting and renaming are refused
 
 With OpenASPI, EXFAT.SYS must come after ASPIDSK.SYS and ASPIFDD.SYS.
-DOS shows long names as 8.3 names (LETTER~1.TXT) in code page 437 or 850.
+DOS shows long names as 8.3 names (LETTE~1K.TXT) in code page 437 or 850.
 With the setup option "Long file names" (EXFATL.SYS, installed as
 EXFAT.SYS), programs for long file names (INT 21h AX=71xxh, as with DOSLFN
 or Windows 95: the DIR of MS-DOS 7, file managers) see the long names;

@@ -46,7 +46,11 @@ Up to eight volumes.
 - Names: exFAT stores long Unicode names only.  EXFAT.SYS shows them as 8.3
   names in the DOS code page (437, or 850 when that is active): names that
   fit stay as they are (`README.TXT`, `klein.txt` as `KLEIN.TXT`), others
-  get `~n` in the order of the directory (`EINLAN~1.TXT`, `EINLA~10.TXT`).
+  get "~" and the number of their entry in the directory in base 36
+  (`EINLAN~L.TXT`, `EINLA~1T.TXT`): unique, and found without a search.
+  (Up to 0.6 the names counted `~1`, `~2` ... in the order of the
+  directory; that gave two files the same name when the shortened names
+  were the same.)
 - EXFATL.SYS only: long names (INT 21h AX=71xxh, the calls of DOSLFN and
   Windows 95) for the own drives: find first/next/close (six searches; when a program
   ends without closing its search, the least used one is reused), open
@@ -82,13 +86,13 @@ Up to eight volumes.
   drives); [EXCHK](../../tools/exchk/README.md) checks it,
   [EXFMT](../../tools/exfmt/README.md) formats it.
 
-The exFAT code is `deps/openfat/src/exfat/exfat.c` (after the Microsoft exFAT file
+The exFAT code is `deps/OpenFileSystem/src/exfat/exfat.c` (after the Microsoft exFAT file
 system specification), shared with the host test and the tools to come.
 Plans: [future plans](../../docs/future-plans.md).
 
 Tests: `build/host/test_exfat` (8.3 names; with an image it lists and reads
-it), `deps/openfat/tests/exfat_image.sh` makes images through the Linux exFAT driver,
-`deps/openfat/tests/exfat_write.sh` changes images with the write code on the host
+it), `deps/OpenFileSystem/tests/exfat_image.sh` makes images through the Linux exFAT driver,
+`deps/OpenFileSystem/tests/exfat_write.sh` changes images with the write code on the host
 (`tests/exfat_write_test.c`, also TexFAT and a full volume) and checks
 them with fsck.exfat and the Linux exFAT driver,
 `tests/dos_exfat_write.sh` writes through EXFAT.SYS under MS-DOS 7.1

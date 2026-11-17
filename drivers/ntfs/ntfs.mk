@@ -2,7 +2,7 @@
 # Makefile.  The assembler frame is EXFAT.SYS's (exfatsys.asm, NTFS_SYS).
 
 DOSNTFS := $(BUILD)/dos/NTFS.SYS
-NTFSHDR := $(OPENFAT)/include/openfat/ntfs.h include/openaspi/exfatsys.h include/openaspi/types.h
+NTFSHDR := $(OPENFILESYSTEM)/include/openfat/ntfs.h include/openaspi/exfatsys.h include/openaspi/types.h
 NTFSOBJ := $(BUILD)/dos/ntfssys_a.obj $(BUILD)/dos/ntfssys.obj $(BUILD)/dos/ntfs.obj $(BUILD)/dos/name83.obj $(BUILD)/dos/latin.obj $(BUILD)/dos/cpinit.obj
 
 $(BUILD)/dos/ntfssys_a.obj: drivers/exfat/exfatsys.asm | $(JWASM)
@@ -13,7 +13,7 @@ $(BUILD)/dos/ntfssys.obj: drivers/ntfs/ntfssys.c $(NTFSHDR)
 	mkdir -p $(@D)
 	$(EXFATWCC) -fo=$@ $<
 
-$(BUILD)/dos/ntfs.obj: $(OPENFAT)/src/ntfs/ntfs.c $(NTFSHDR)
+$(BUILD)/dos/ntfs.obj: $(OPENFILESYSTEM)/src/ntfs/ntfs.c $(NTFSHDR)
 	mkdir -p $(@D)
 	$(EXFATWCC) -fo=$@ $<
 

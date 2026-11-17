@@ -1,7 +1,7 @@
 # EXFMT.EXE; included by the Makefile.
 
 DOSEXFMT := $(BUILD)/dos/EXFMT.EXE
-EXFMTWCC := $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -iinclude -i$(OPENFAT)/include -i$(WATCOM)/h
+EXFMTWCC := $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -iinclude -i$(OPENFILESYSTEM)/include -i$(WATCOM)/h
 EXFMTOBJ := $(addprefix $(BUILD)/dos/exfmt/,exfmt.obj exfat_format.obj upcase.obj cptab.obj)
 
 $(BUILD)/dos/exfmt/cptab.obj: common/cptab.c include/openaspi/cptab.h $(EXFATHDR)
@@ -12,10 +12,10 @@ $(BUILD)/dos/exfmt/exfmt.obj: tools/exfmt/exfmt.c $(EXFATHDR)
 	mkdir -p $(@D)
 	WATCOM=$(WATCOM) $(EXFMTWCC) -fo=$@ $<
 
-$(BUILD)/dos/exfmt/%.obj: $(OPENFAT)/src/exfat/%.c $(EXFATHDR)
+$(BUILD)/dos/exfmt/%.obj: $(OPENFILESYSTEM)/src/exfat/%.c $(EXFATHDR)
 	mkdir -p $(@D)
 	WATCOM=$(WATCOM) $(EXFMTWCC) -fo=$@ $<
-$(BUILD)/dos/exfmt/%.obj: $(OPENFAT)/src/%.c $(EXFATHDR)
+$(BUILD)/dos/exfmt/%.obj: $(OPENFILESYSTEM)/src/%.c $(EXFATHDR)
 	mkdir -p $(@D)
 	WATCOM=$(WATCOM) $(EXFMTWCC) -fo=$@ $<
 

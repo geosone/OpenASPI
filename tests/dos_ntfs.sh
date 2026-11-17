@@ -1,6 +1,6 @@
 #!/bin/bash
 # NTFS.SYS: MS-DOS 7.1 with a FAT16 IDE disk (C:) and an IDE disk with an
-# NTFS partition made by openfat's tests/ntfs_image.sh (long and German
+# NTFS partition made by OpenFileSystem's tests/ntfs_image.sh (long and German
 # names, 150 files in a directory, fragmented, sparse, resident and
 # compressed files, a file with an attribute list, a DOS name of its own);
 # EUSBASPI and ASPIDSK /I13 add a USB disk with a second NTFS volume.
@@ -17,7 +17,7 @@ OUT=${OUT:-$ROOT/build/dos-ntfs}
 EUSBASPI_DIR=${EUSBASPI_DIR:-$ROOT/../eusbaspi}
 AHCIASPI_DIR=${AHCIASPI_DIR:-$ROOT/../ahciaspi}
 MSDOS_IMG=${MSDOS_IMG:-$ROOT/../msdosinst/out/DISK1.IMG}
-OPENFAT=$ROOT/deps/openfat
+OPENFILESYSTEM=$ROOT/deps/OpenFileSystem
 SVARDOS=${SVARDOS:-0}
 OPTS=${OPTS:-}
 SVARDOS_ZIP=${SVARDOS_ZIP:-$HOME/Iso/Dos/svardos-20250427-floppy-1.44M.zip}
@@ -45,10 +45,10 @@ printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' 'DEVICE=A:\DELAY.SYS' 'DEVICE=A:\DELAY.
     'DEVICE=A:\EUSBASPI.SYS' 'DEVICE=A:\ASPIDSK.SYS /I13' "DEVICE=A:\\NTFS.SYS /L:N /Z:2 $OPTS" > "$OUT/CONFIG.SYS"
 {
     printf '%s > AUX\r\n' 'ECHO === DIR' 'DIR N:' 'DIR N:\VIELE' 'DIR O:'
-    printf '%s > AUX\r\n' 'ECHO === TYPE' 'TYPE N:\README.TXT' 'TYPE N:\UNTERO~1\TIEFER\DATEI.DAT' \
+    printf '%s > AUX\r\n' 'ECHO === TYPE' 'TYPE N:\README.TXT' 'TYPE N:\UNTERO~R\TIEFER\DATEI.DAT' \
         'TYPE O:\README.TXT' 'CD N:\SUB' 'TYPE N:A.B' 'VOL N:'
     printf '%s > AUX\r\n' 'ECHO === COPY'
-    for f in GROSS.BIN VIELE.BIN FRAG.BIN SPARSE.DAT ZUFALL.BIN LANGDOS.TXT EINLA~12.TXT 'VIELE\DATEI150.TXT'; do
+    for f in GROSS.BIN VIELE.BIN FRAG.BIN SPARSE.DAT ZUFALL.BIN LANGDOS.TXT EINLA~5E.TXT 'VIELE\DATEI150.TXT'; do
         printf 'COPY N:\\%s C:\\ > AUX\r\n' "$f"
     done
     printf '%s > AUX\r\n' 'ECHO === DENIED' 'COPY N:\KOMPR\ZAHLEN.TXT C:\' 'COPY A:\QEXIT.COM N:\' \
@@ -64,7 +64,7 @@ truncate -s 64M "$OUT/c.img"
 echo 'start=63, type=6' | sfdisk -q "$OUT/c.img"
 mkfs.fat -F16 -n DOSDISK --offset 63 "$OUT/c.img" $(( (64*2048 - 63) / 2 )) >/dev/null
 # IDE NTFS disk: the image of ntfs_image.sh in a type 07h partition at 1 MB
-sh "$OPENFAT/tests/ntfs_image.sh" "$OUT/n" 64 4096 >/dev/null
+sh "$OPENFILESYSTEM/tests/ntfs_image.sh" "$OUT/n" 64 4096 >/dev/null
 SECTORS=$(( (64 + 1) * 2048 ))
 truncate -s $((SECTORS * 512)) "$OUT/ntfs.img"
 echo 'start=2048, type=7' | sfdisk -q "$OUT/ntfs.img"
@@ -116,15 +116,15 @@ ap=a; test "$h" -ge 12 && ap=p
 section DIR | grep -q "README   TXT  *34 .* $hh:..$ap" || { echo "O:\README.TXT: not $hh:xx$ap (/Z:2)"; fail=1; }
 # the free space as the library counts it on the host (EDR-DOS: one
 # sector per cluster, see disk_space in ntfssys.c)
-make -C "$OPENFAT" build/host/test_ntfs >/dev/null
-free=$("$OPENFAT/build/host/test_ntfs" "$OUT/n/ntfs.img" 2>/dev/null | sed -n 's/.*, \([0-9]*\) of [0-9]* clusters of \([0-9]*\) bytes free/\1 \2/p')
+make -C "$OPENFILESYSTEM" build/host/test_ntfs >/dev/null
+free=$("$OPENFILESYSTEM/build/host/test_ntfs" "$OUT/n/ntfs.img" 2>/dev/null | sed -n 's/.*, \([0-9]*\) of [0-9]* clusters of \([0-9]*\) bytes free/\1 \2/p')
 free=$(printf "%'d" $(( ${free% *} * ${free#* } )) | tr . ,)
 section DIR | grep -q " $free [Bb]ytes fre" || { echo "DIR N: not $free bytes free"; fail=1; }
-section DIR | grep -q 'EINLA~12 TXT' || { echo 'DIR N: lacks EINLA~12.TXT'; fail=1; }
+section DIR | grep -q 'EINLA~5E TXT' || { echo 'DIR N: lacks EINLA~5E.TXT'; fail=1; }
 section DIR | grep -q 'LANGDOS  TXT' || { echo 'DIR N: lacks LANGDOS.TXT'; fail=1; }
 test "$(section DIR | grep -c '^DATEI[0-9]* *TXT')" = 150 || { echo 'DIR N:\VIELE: not 150 files'; fail=1; }
 mkdir -p "$OUT/c"
-for f in GROSS.BIN VIELE.BIN FRAG.BIN SPARSE.DAT ZUFALL.BIN LANGDOS.TXT EINLA~12.TXT DATEI150.TXT; do
+for f in GROSS.BIN VIELE.BIN FRAG.BIN SPARSE.DAT ZUFALL.BIN LANGDOS.TXT EINLA~5E.TXT DATEI150.TXT; do
     mcopy -o -i "$OUT/c.img@@32256" "::/$f" "$OUT/c/$f" 2>/dev/null || { echo "C:\\$f missing"; fail=1; }
 done
 cmpf() { cmp -s "$OUT/c/$1" "$OUT/n/files/$2" || { echo "$1 differs from $2"; fail=1; }; }
@@ -134,7 +134,7 @@ cmpf FRAG.BIN frag.bin
 cmpf SPARSE.DAT sparse.dat
 cmpf ZUFALL.BIN zufall.bin
 cmpf LANGDOS.TXT 'Langer Dateiname mit DOS.txt'
-cmpf EINLA~12.TXT 'Ein langer Name 9.txt'
+cmpf EINLA~5E.TXT 'Ein langer Name 9.txt'
 cmpf DATEI150.TXT VIELE/DATEI150.TXT
 mdir -i "$OUT/c.img@@32256" ::/ZAHLEN.TXT >/dev/null 2>&1 && { echo 'the compressed file was copied'; fail=1; }
 mdir -i "$OUT/c.img@@32256" ::/ 2>/dev/null | grep -q '^ZAHLEN' && { echo 'C:\ZAHLEN.TXT exists'; fail=1; }

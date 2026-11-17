@@ -20,7 +20,7 @@ kann hoch geladen werden:
   /R    nur lesen: Schreiben, Anlegen, Loeschen und Umbenennen abgelehnt
 
 Mit OpenASPI muss EXFAT.SYS nach ASPIDSK.SYS und ASPIFDD.SYS stehen. DOS
-zeigt lange Namen als 8.3-Namen (LETTER~1.TXT) in Codepage 437 oder 850.
+zeigt lange Namen als 8.3-Namen (LETTE~1K.TXT) in Codepage 437 oder 850.
 Mit der Option "Lange Dateinamen" (EXFATL.SYS, als EXFAT.SYS installiert)
 sehen Programme fuer lange Dateinamen (INT 21h AX=71xxh, wie mit DOSLFN
 oder Windows 95: das DIR von MS-DOS 7, Dateimanager) die langen Namen;

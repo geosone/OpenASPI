@@ -45,7 +45,7 @@ L='A:\LFNTEST'
         'ECHO === SUB' "$L DIR \"D:\\Unterordner mit langem Namen\\*.*\"" \
         'ECHO === TRUE' "$L TRUE \"d:\\unterordner mit langem namen\\tiefer\\datei.dat\"" \
         'ECHO === CD' "$L CD \"D:\\Unterordner mit langem Namen\\Tiefer\"" 'D:' "$L TRUE Datei.dat" "$L CD D:..\\.." 'A:' \
-        'ECHO === TYPE' "$L TYPE \"D:\\Ärger über Größe.txt\"" "$L TYPE D:\\EINLAN~1.TXT" "$L TYPE D:\\archiv.tar.gz" \
+        'ECHO === TYPE' "$L TYPE \"D:\\Ärger über Größe.txt\"" "$L TYPE D:\\EINLAN~L.TXT" "$L TYPE D:\\archiv.tar.gz" \
         'ECHO === ATTR' "$L ATTR \"D:\\Unterordner mit langem Namen\"" "$L ATTR D:\\README.TXT" \
         'ECHO === INFO' "$L INFO \"D:\\Ärger über Größe.txt\"" \
         'ECHO === LEAK' "$L LEAK D:\\*" "$L DIR \"D:\\Ein langer Name 1?.txt\"" \
@@ -74,7 +74,7 @@ echo 'start=63, type=6' | sfdisk -q "$OUT/fat.img"
 mkfs.fat -F16 -n FATDISK --offset 63 "$OUT/fat.img" $(( (32*2048 - 63) / 2 )) >/dev/null
 printf 'auf C\r\n' > "$OUT/Langer Name auf C.txt"
 mcopy -i "$OUT/fat.img@@32256" "$OUT/Langer Name auf C.txt" ::/
-sh "$ROOT/deps/openfat/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
+sh "$ROOT/deps/OpenFileSystem/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
 truncate -s 65M "$OUT/exfat-disk.img"
 echo 'start=2048, type=7' | sfdisk -q "$OUT/exfat-disk.img"
 dd if="$OUT/x/exfat.img" of="$OUT/exfat-disk.img" bs=512 seek=2048 conv=notrunc status=none
@@ -94,7 +94,7 @@ section() { sed -n "/=== $1 *\$/,/=== $2 *\$/p" "$OUT/serial.txt"; }
 need() { section "$1" "$2" | grep -qF -- "$3" || { echo "missing in $1: $3"; fail=1; }; }
 need VOL DIR 'fs exFAT flags 4006 name 255 path 260'
 for f in "$OUT"/x/files/*; do need DIR PATTERN "$(basename "$f")|"; done
-need DIR PATTERN 'Ein langer Name 10.txt|EINLA~10.TXT|20|'
+need DIR PATTERN 'Ein langer Name 10.txt|EINLA~1L.TXT|20|'
 need DIR PATTERN 'README.TXT||20|7|'
 need DIR PATTERN 'klein.txt|KLEIN.TXT|20|18|'
 need DIR PATTERN 'end 18'
@@ -104,7 +104,7 @@ need SUB TRUE '.||10|'
 need SUB TRUE '..||10|'
 need SUB TRUE 'Tiefer|TIEFER|10|'
 need TRUE CD '0 D:\unterordner mit langem namen\tiefer\datei.dat'
-need TRUE CD '1 D:\UNTERO~1\TIEFER\DATEI.DAT'
+need TRUE CD '1 D:\UNTERO~4\TIEFER\DATEI.DAT'
 need TRUE CD '2 D:\Unterordner mit langem Namen\Tiefer\Datei.dat'
 need CD TYPE 'cwd \Unterordner mit langem Namen\Tiefer'
 need CD TYPE '2 D:\Unterordner mit langem Namen\Tiefer\Datei.dat'

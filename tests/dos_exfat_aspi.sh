@@ -41,7 +41,7 @@ done < <(mdir -b -i "$OUT/boot.img" ::/)
 printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' 'DEVICE=A:\EUSBASPI.SYS' \
     "DEVICE=A:\\$BLK.SYS" 'DEVICE=A:\EXFAT.SYS' > "$OUT/CONFIG.SYS"
 printf '%s > AUX\r\n' \
-    'ECHO === EXFAT1' 'DIR D:' 'TYPE D:\EINLA~11.TXT' 'MD C:\OUT' 'COPY D:\*.* C:\OUT' \
+    'ECHO === EXFAT1' 'DIR D:' 'TYPE D:\EINLA~1P.TXT' 'MD C:\OUT' 'COPY D:\*.* C:\OUT' \
     "EXCHK D:$FIX" 'EXCHK D:' 'COPY A:\QEXIT.COM D:\NEU.COM' 'MD D:\NEU' 'COPY C:\OUT\FRAG.BIN D:\NEU' \
     'EXCHK D:' 'ECHO === SWAP1' > "$OUT/AUTOEXEC.BAT"
 printf '%s\r\n' 'WAIT' >> "$OUT/AUTOEXEC.BAT"
@@ -62,8 +62,8 @@ echo 'start=63, type=6' | sfdisk -q "$OUT/fat.img"
 mkfs.fat -F16 -n FATDISK --offset 63 "$OUT/fat.img" $(( (32*2048 - 63) / 2 )) >/dev/null
 
 # the exFAT stick (MBR, type 07h) and a FAT16 stick
-sh "$ROOT/deps/openfat/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
-if test -n "$DAMAGE"; then python3 "$ROOT/deps/openfat/tests/exchk_corrupt.py" "$OUT/x/exfat.img" "$DAMAGE"; fi
+sh "$ROOT/deps/OpenFileSystem/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
+if test -n "$DAMAGE"; then python3 "$ROOT/deps/OpenFileSystem/tests/exchk_corrupt.py" "$OUT/x/exfat.img" "$DAMAGE"; fi
 truncate -s 65M "$OUT/exstick.img"
 echo 'start=2048, type=7' | sfdisk -q "$OUT/exstick.img"
 dd if="$OUT/x/exfat.img" of="$OUT/exstick.img" bs=512 seek=2048 conv=notrunc status=none
@@ -105,7 +105,7 @@ tr -d '\0' < "$OUT/serial.log" > "$OUT/serial.txt"
 fail=0
 section() { sed -n "/=== $1/,/=== $2/p" "$OUT/serial.txt"; }
 need() { section "$1" "$2" | grep -q "$3" || { echo "missing in $1: $3"; fail=1; }; }
-need EXFAT1 SWAP1 'EINLA~11'
+need EXFAT1 SWAP1 'EINLA~1P'
 need EXFAT1 SWAP1 'Datei 11'
 need EXFAT1 SWAP1 'No errors found'
 if test -n "$DAMAGE"; then
@@ -118,7 +118,7 @@ need FAT SWAP2 'FAT stick read by'
 need FAT SWAP2 'FATSTICK'
 need EXFAT2 END 'OPENASPI'
 need EXFAT2 END 'hallo'
-test "$(grep -c 'EINLA~11' "$OUT/serial.txt")" -ge 2 || { echo "exFAT not back"; fail=1; }
+test "$(grep -c 'EINLA~1P' "$OUT/serial.txt")" -ge 2 || { echo "exFAT not back"; fail=1; }
 mkdir -p "$OUT/copies"
 mcopy -n -i "$OUT/fat.img@@32256" '::/OUT/*' "$OUT/copies/" 2>/dev/null || fail=1
 cmp -s "$OUT/copies/FRAG.BIN" "$OUT/x/files/frag.bin" || { echo "differs: FRAG.BIN"; fail=1; }

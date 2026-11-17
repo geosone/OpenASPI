@@ -2,7 +2,7 @@
    interface (INT 2Fh AH=11h), read-only.  The volumes are found on the BIOS
    hard disks (INT 13h), and so on the disks of ASPIDSK /I13 too:
    superfloppies, MBR partitions of type 07h (also logical ones) and GPT
-   basic data partitions.  The NTFS part is openfat's src/ntfs/ntfs.c; the
+   basic data partitions.  The NTFS part is OpenFileSystem's src/ntfs/ntfs.c; the
    DOS side follows EXFAT.SYS (drivers/exfat/exfatsys.c), whose assembler
    frame it shares (exfatsys.asm with NTFS_SYS).  8.3 names: the DOS names
    Windows gave, else "~n" names as EXFAT.SYS makes them.  Compressed and

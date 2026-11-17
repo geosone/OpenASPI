@@ -29,8 +29,10 @@ What it reads:
   in many pieces (also with an attribute list), sparse files (the holes
   are zeros), small files kept in the MFT record;
 - names: the 8.3 name Windows gave a file (its DOS name), else an 8.3 name
-  made as EXFAT.SYS does (`EINLAN~1.TXT`) in the DOS code page (437, or 850
-  when that is active); the system files ($MFT ...) are not shown;
+  in the DOS code page (437, or 850 when that is active): as much of the
+  name as fits, "~" and the file's MFT record number in base 36
+  (`EINLA~5E.TXT`).  Unique, the same on every run, and found without a
+  search of the directory; the system files ($MFT ...) are not shown;
 - the volume label (`VOL`, `DIR`) and the free space.
 
 Not (yet): compressed and encrypted files ("access denied"), long file
@@ -41,11 +43,11 @@ fast startup) is read anyway; the start message says "not cleanly
 unmounted", and what Windows still had in its log is missing.
 
 NTFS.SYS stays resident with about 32 KB, 13 KB of which are buffers for
-MFT records and index blocks.  The NTFS part is openfat's `src/ntfs/ntfs.c`
+MFT records and index blocks.  The NTFS part is OpenFileSystem's `src/ntfs/ntfs.c`
 (ntfs-3g's `layout.h` is the reference for the structures); the assembler
 frame is EXFAT.SYS's (`drivers/exfat/exfatsys.asm`, built with `NTFS_SYS`).
 
 Tests: `tests/dos_ntfs.sh` (MS-DOS 7.1, SvarDOS with `SVARDOS=1`, `OPTS=/C`)
-with an IDE disk from openfat's `tests/ntfs_image.sh` and a USB disk through
-EUSBASPI and `ASPIDSK /I13`; openfat's `tests/ntfs_host.sh` checks the
+with an IDE disk from OpenFileSystem's `tests/ntfs_image.sh` and a USB disk through
+EUSBASPI and `ASPIDSK /I13`; OpenFileSystem's `tests/ntfs_host.sh` checks the
 library on the host.

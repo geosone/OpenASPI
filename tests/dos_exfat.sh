@@ -73,10 +73,10 @@ if test "$DEVLOAD" = 1; then
 fi
 printf '%s > AUX\r\n' \
     'ECHO === DIR' 'DIR D:' \
-    'ECHO === DIR /S' 'DIR D:\UNTERO~1 /S' \
+    'ECHO === DIR /S' 'DIR D:\UNTERO~4 /S' \
     'ECHO === LABEL' 'VOL D:' \
-    'ECHO === TYPE' 'TYPE D:\README.TXT' 'TYPE D:\EINLA~11.TXT' \
-    'ECHO === CD' 'D:' 'CD \UNTERO~1\TIEFER' 'CD' 'TYPE DATEI.DAT' 'CD ..' 'CD' 'CD \NIX' 'A:' \
+    'ECHO === TYPE' 'TYPE D:\README.TXT' 'TYPE D:\EINLA~1P.TXT' \
+    'ECHO === CD' 'D:' 'CD \UNTERO~4\TIEFER' 'CD' 'TYPE DATEI.DAT' 'CD ..' 'CD' 'CD \NIX' 'A:' \
     'ECHO === COPY' 'MD C:\OUT' 'COPY D:\*.* C:\OUT' 'COPY D:\SUB\*.* C:\OUT' \
     'ECHO === EXCHK' 'EXCHK D:' 'IF ERRORLEVEL 1 ECHO EXCHK FAILED' \
     'ECHO === EXCHK /F' 'EXCHK D: /F' 'EXCHK D:' 'IF ERRORLEVEL 1 ECHO AFTER FIX FAILED' 'DIR D:\SUB' \
@@ -93,9 +93,9 @@ echo 'start=63, type=6' | sfdisk -q "$OUT/fat.img"
 mkfs.fat -F16 -n FATDISK --offset 63 "$OUT/fat.img" $(( (32*2048 - 63) / 2 )) >/dev/null
 
 # the exFAT disk
-sh "$ROOT/deps/openfat/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
-if test -n "$TEXFAT"; then python3 "$ROOT/deps/openfat/tests/exfat_texfat.py" "$OUT/x/exfat.img" "$TEXFAT"; fi
-if test -n "$DAMAGE"; then python3 "$ROOT/deps/openfat/tests/exchk_corrupt.py" "$OUT/x/exfat.img" "$DAMAGE"; fi
+sh "$ROOT/deps/OpenFileSystem/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
+if test -n "$TEXFAT"; then python3 "$ROOT/deps/OpenFileSystem/tests/exfat_texfat.py" "$OUT/x/exfat.img" "$TEXFAT"; fi
+if test -n "$DAMAGE"; then python3 "$ROOT/deps/OpenFileSystem/tests/exchk_corrupt.py" "$OUT/x/exfat.img" "$DAMAGE"; fi
 if test "$SUPER" = 1; then
     cp "$OUT/x/exfat.img" "$OUT/exfat-disk.img"
 else
@@ -135,8 +135,8 @@ else
     check 'No errors found'
     grep -q 'EXCHK FAILED' "$OUT/serial.txt" && { echo "EXCHK failed"; fail=1; }
 fi
-check 'EINLA~11'
-check 'UNTERO~1'
+check 'EINLA~1P'
+check 'UNTERO~4'
 check 'Datei 11'
 check 'tief'
 if test -n "$HIGH"; then
@@ -151,6 +151,6 @@ cmp_file ZUFALL.BIN "$F/zufall.bin"
 cmp_file FRAG.BIN "$F/frag.bin"
 cmp_file SPARSE.DAT "$F/sparse.dat"
 cmp_file README.TXT "$F/README.TXT"
-cmp_file EINLA~12.TXT "$F/Ein langer Name 12.txt"
+cmp_file EINLA~1T.TXT "$F/Ein langer Name 12.txt"
 cmp_file A.B "$F/SUB/A.B"
 if test "$fail" = 0; then echo "EXFAT.SYS test passed (qemu rc=$rc)"; else cat "$OUT/serial.txt"; exit 1; fi

@@ -22,7 +22,7 @@ The DOS `ASPIMGR.EXE` and `ASPIDDG.EXE` interfaces link the pinned Open386MAX QU
 submodule. Its library and compatible assembler are built locally below
 `build/tools/quilib-US` (or `quilib-GR`) and `build/tools/qui-jwasm`.
 
-openfat's host tests (`make check`) load their code pages from
+OpenFileSystem's host tests (`make check`) load their code pages from
 [mars-unicode-tables](https://gitea.disconnected-by-peer.at/mars_nwe/mars-unicode-tables): a
 checkout next to this one (`../mars-unicode-tables`), or set `UNITAB` to its
 `TAB/unitables`. The DOS drivers and tools have code pages 437 and 850 built

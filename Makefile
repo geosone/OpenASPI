@@ -1,6 +1,6 @@
 JWASM_DIR  ?= deps/JWasm
-OPENFAT    ?= deps/openfat
-# mars-unicode-tables: the code pages of openfat's host tests and of make cptab
+OPENFILESYSTEM ?= deps/OpenFileSystem
+# mars-unicode-tables: the code pages of OpenFileSystem's host tests and of make cptab
 UNITAB     ?= $(abspath ../mars-unicode-tables/TAB/unitables)
 JWLINK_DIR ?= deps/jwlink
 GDI        ?= deps/gdi
@@ -62,7 +62,7 @@ DISTDIR := $(BUILD)/dist
 RELEASEDIR ?= release
 
 CFLAGS  ?= -std=c90 -Wall -Wextra -Werror -pedantic -O2
-CPPFLAGS += -Iinclude -I$(OPENFAT)/include
+CPPFLAGS += -Iinclude -I$(OPENFILESYSTEM)/include
 
 include drivers/exfat/exfat.mk
 include drivers/ntfs/ntfs.mk
@@ -89,24 +89,24 @@ test: $(DOSDRV) $(DOSCDA) $(DOSDSK) $(DOSFDD) $(EXFATTESTBIN) $(TESTBIN) $(ASPIT
 
 check: tools all test dos-c-check
 
-# The host programs of the FAT and exFAT tests come from openfat; the DOS
+# The host programs of the FAT and exFAT tests come from OpenFileSystem; the DOS
 # tests run them from build/host like OpenASPI's own.
 OFHOSTBINS := $(EXFATTESTBIN) $(EXFATWRITETESTBIN) $(EXCHKTESTBIN) $(EXFMTTESTBIN) \
 	$(FATCHKTESTBIN) $(DEFRAGTESTBIN) $(FATTESTBIN)
-.PHONY: openfat-host
-openfat-host:
-	$(MAKE) -C $(OPENFAT) -s all UNITAB=$(UNITAB)
+.PHONY: openfilesystem-host
+openfilesystem-host:
+	$(MAKE) -C $(OPENFILESYSTEM) -s all UNITAB=$(UNITAB)
 
 # common/cptab.c (checked in): code pages 437 and 850 of the DOS programs
 .PHONY: cptab
 cptab:
 	mkdir -p $(BUILD)/host
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $(BUILD)/host/mkcptab tools/mkcptab/mkcptab.c \
-		$(OPENFAT)/src/codepage.c $(OPENFAT)/src/latin.c $(OPENFAT)/src/exfat/upcase.c
+		$(OPENFILESYSTEM)/src/codepage.c $(OPENFILESYSTEM)/src/latin.c $(OPENFILESYSTEM)/src/exfat/upcase.c
 	$(BUILD)/host/mkcptab $(UNITAB) > common/cptab.c
-$(OFHOSTBINS): openfat-host
+$(OFHOSTBINS): openfilesystem-host
 	mkdir -p $(@D)
-	cp $(OPENFAT)/build/host/$(@F) $@
+	cp $(OPENFILESYSTEM)/build/host/$(@F) $@
 
 $(NATIVEAPITESTBIN): tests/native_tape_api_test.c common/tape/tape_api.c include/openaspi/tape_api.h include/openaspi/types.h
 	mkdir -p $(@D)
@@ -259,23 +259,23 @@ $(DOSCTLALIASES): $(DOSCTL)
 
 $(BUILD)/dos/raw_client.obj: common/dos/raw_client.c include/openaspi/raw_media.h include/openaspi/rescue.h include/openaspi/types.h
 	mkdir -p $(@D)
-	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFAT)/include -i=$(WATCOM)/h -fo=$@ $<
+	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFILESYSTEM)/include -i=$(WATCOM)/h -fo=$@ $<
 
-$(BUILD)/dos/fat_format.obj: $(OPENFAT)/src/fat/fat_format.c $(OPENFAT)/include/openfat/fat_format.h include/openaspi/types.h
+$(BUILD)/dos/fat_format.obj: $(OPENFILESYSTEM)/src/fat/fat_format.c $(OPENFILESYSTEM)/include/openfat/fat_format.h include/openaspi/types.h
 	mkdir -p $(@D)
-	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFAT)/include -i=$(WATCOM)/h -fo=$@ $<
+	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFILESYSTEM)/include -i=$(WATCOM)/h -fo=$@ $<
 
-$(BUILD)/dos/aspifmt.obj: tools/aspifmt/aspifmt.c include/openaspi/raw_media.h $(OPENFAT)/include/openfat/fat_format.h include/openaspi/rescue.h include/openaspi/types.h
+$(BUILD)/dos/aspifmt.obj: tools/aspifmt/aspifmt.c include/openaspi/raw_media.h $(OPENFILESYSTEM)/include/openfat/fat_format.h include/openaspi/rescue.h include/openaspi/types.h
 	mkdir -p $(@D)
-	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFAT)/include -i=$(WATCOM)/h -fo=$@ $<
+	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFILESYSTEM)/include -i=$(WATCOM)/h -fo=$@ $<
 
 $(BUILD)/dos/aspidd.obj: tools/aspidd/aspidd.c include/openaspi/raw_media.h include/openaspi/rescue.h include/openaspi/types.h
 	mkdir -p $(@D)
-	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFAT)/include -i=$(WATCOM)/h -fo=$@ $<
+	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFILESYSTEM)/include -i=$(WATCOM)/h -fo=$@ $<
 
 $(BUILD)/dos/rescue_read.obj: common/dos/rescue_read.c include/openaspi/rescue.h
 	mkdir -p $(@D)
-	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFAT)/include -i=$(WATCOM)/h -fo=$@ $<
+	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFILESYSTEM)/include -i=$(WATCOM)/h -fo=$@ $<
 
 $(DOSFMT): $(BUILD)/dos/aspifmt.obj $(BUILD)/dos/raw_client.obj $(BUILD)/dos/fat_format.obj $(BUILD)/dos/rescue_read.obj Makefile
 	WATCOM=$(WATCOM) $(WLINK) format dos name $@ \
@@ -326,11 +326,11 @@ $(DOSAPIINFO): $(BUILD)/dos/otapinfo.obj $(BUILD)/dos/tape_api.obj
 
 $(BUILD)/dos/otapinfo.obj: tools/otapinfo/otapinfo.c include/openaspi/tape_api.h include/openaspi/types.h
 	mkdir -p $(@D)
-	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFAT)/include -i=$(WATCOM)/h -fo=$@ $<
+	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFILESYSTEM)/include -i=$(WATCOM)/h -fo=$@ $<
 
 $(BUILD)/dos/tape_api.obj: common/tape/tape_api.c include/openaspi/tape_api.h include/openaspi/types.h
 	mkdir -p $(@D)
-	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFAT)/include -i=$(WATCOM)/h -fo=$@ $<
+	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFILESYSTEM)/include -i=$(WATCOM)/h -fo=$@ $<
 
 $(DOSWINCHECK): tools/wincheck/wincheck.asm | $(JWASM)
 	mkdir -p $(@D)
@@ -348,19 +348,19 @@ $(WIN16CHECK): $(WIN16CHECKOBJ)
 
 $(BUILD)/dos/tape_cdb.obj: common/scsi/tape_cdb.c include/openaspi/scsi_tape.h include/openaspi/types.h
 	mkdir -p $(@D)
-	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFAT)/include -i=$(WATCOM)/h -fo=$@ $<
+	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFILESYSTEM)/include -i=$(WATCOM)/h -fo=$@ $<
 
 $(BUILD)/dos/tape_abi.obj: tests/tape_abi.c include/openaspi/aspitape.h include/openaspi/tape_api.h include/openaspi/types.h
 	mkdir -p $(@D)
-	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFAT)/include -i=$(WATCOM)/h -fo=$@ $<
+	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFILESYSTEM)/include -i=$(WATCOM)/h -fo=$@ $<
 
 $(BUILD)/dos/%.obj: common/scsi/%.c $(SCSIHDR)
 	mkdir -p $(@D)
-	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFAT)/include -i=$(WATCOM)/h -fo=$@ $<
+	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFILESYSTEM)/include -i=$(WATCOM)/h -fo=$@ $<
 
 $(BUILD)/dos/native_%.obj: common/native/%.c $(NATIVEHDR)
 	mkdir -p $(@D)
-	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFAT)/include -i=$(WATCOM)/h -fo=$@ $<
+	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFILESYSTEM)/include -i=$(WATCOM)/h -fo=$@ $<
 
 $(BUILD)/host/tape_cdb.o: common/scsi/tape_cdb.c include/openaspi/scsi_tape.h include/openaspi/types.h
 	mkdir -p $(@D)

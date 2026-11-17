@@ -71,13 +71,13 @@ L="$B:\\LFNTEST"
 {
 printf '%s > AUX\r\n' \
     'ECHO === COPY' "COPY $B:\\QEXIT.COM D:\\NEU.COM" 'COPY C:\BIG.BIN D:\' \
-    'COPY C:\BIG.BIN D:\UNTERO~1\TIEFER\BIG2.BIN' \
+    'COPY C:\BIG.BIN D:\UNTERO~4\TIEFER\BIG2.BIN' \
     'ECHO === MD' 'MD D:\NEU' 'MD D:\NEU\TIEF' 'COPY C:\SMALL.TXT D:\NEU\TIEF' \
     'ECHO === APPEND'
 # these two write into the file themselves
 printf '%s\r\n' 'ECHO Zeile 1>D:\NEU\LOG.TXT' 'ECHO Zeile 2>>D:\NEU\LOG.TXT'
 printf '%s > AUX\r\n' 'TYPE D:\NEU\LOG.TXT' \
-    'ECHO === REN' 'REN D:\KLEIN.TXT GROSS.TXT' 'REN D:\UNTERO~1 ORDNER' \
+    'ECHO === REN' 'REN D:\KLEIN.TXT GROSS.TXT' 'REN D:\UNTERO~4 ORDNER' \
     'ECHO === DEL' 'DEL D:\README.TXT' 'DEL D:\*.GZ' 'DEL D:\SUB\A.B' 'RD D:\SUB' \
     'ECHO === ATTR' "$L DOSATTR D:\\NEU.COM 21" 'DEL D:\NEU.COM' \
     'ECHO === XOPEN' "$L XOPEN D:\\NEU\\X.TXT 12 neu" "$L XOPEN D:\\NEU\\X.TXT 12 zwei" \
@@ -112,8 +112,8 @@ touch -d '2021-03-04 05:06:08' "$OUT/BIG.BIN"
 printf 'klein und fein\r\n' > "$OUT/SMALL.TXT"
 mcopy -m -i "$FAT" "$OUT/BIG.BIN" "$OUT/SMALL.TXT" ::/
 
-sh "$ROOT/deps/openfat/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
-if test -n "$TEXFAT"; then python3 "$ROOT/deps/openfat/tests/exfat_texfat.py" "$OUT/x/exfat.img" "$TEXFAT"; fi
+sh "$ROOT/deps/OpenFileSystem/tests/exfat_image.sh" "$OUT/x" 64 >/dev/null
+if test -n "$TEXFAT"; then python3 "$ROOT/deps/OpenFileSystem/tests/exfat_texfat.py" "$OUT/x/exfat.img" "$TEXFAT"; fi
 cp "$OUT/x/exfat.img" "$OUT/before.img"
 truncate -s 65M "$OUT/exfat-disk.img"
 echo 'start=2048, type=7' | sfdisk -q "$OUT/exfat-disk.img"

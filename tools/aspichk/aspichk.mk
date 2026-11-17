@@ -2,13 +2,13 @@
 
 DOSASPICHK := $(BUILD)/dos/ASPICHK.EXE
 ASPICHKOBJ := $(addprefix $(BUILD)/dos/aspichk/,aspichk.obj drive.obj fat_check.obj cptab.obj)
-ASPICHKHDR := $(OPENFAT)/include/openfat/fat_check.h include/openaspi/types.h $(EXFATHDR)
+ASPICHKHDR := $(OPENFILESYSTEM)/include/openfat/fat_check.h include/openaspi/types.h $(EXFATHDR)
 
 $(BUILD)/dos/aspichk/%.obj: tools/aspichk/%.c tools/aspichk/drive.h $(ASPICHKHDR)
 	mkdir -p $(@D)
 	WATCOM=$(WATCOM) $(EXCHKWCC) -fo=$@ $<
 
-$(BUILD)/dos/aspichk/fat_check.obj: $(OPENFAT)/src/fat/fat_check.c $(ASPICHKHDR)
+$(BUILD)/dos/aspichk/fat_check.obj: $(OPENFILESYSTEM)/src/fat/fat_check.c $(ASPICHKHDR)
 	mkdir -p $(@D)
 	WATCOM=$(WATCOM) $(EXCHKWCC) -fo=$@ $<
 
