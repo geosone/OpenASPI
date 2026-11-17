@@ -18,6 +18,8 @@ after `:` or `=`):
   letter), disk
   editors or EXFAT.SYS's BIOS back end. A disk without a FAT volume gets
   its drive too; with only such disks ASPIDSK stays as a character device.
+  A removable disk (USB sticks mostly) keeps its drive letter all the same
+  (`/R`), "not ready" while it has no FAT volume.
   Up to 8 disks of 512-byte sectors (others get no drive), below 2 TB.
   Functions 00h-04h, 08h, 0Ch, 0Dh, 10h, 11h, 14h, 15h and the extensions
   41h-44h, 47h, 48h (EDD 1.1); CHS with 255 heads and 63 sectors (16 heads
@@ -85,8 +87,9 @@ Implemented behavior:
 FAT32 extended BPBs and `48h/60h`, `48h/66h` are qualified on FreeDOS 1.4;
 MS-DOS 7.1/Windows 9x qualification remains open.
 
-`/I13` is tested with NTFS.SYS (`tests/dos_ntfs.sh`) and NTFSDOS 3.02R
-(`tests/dos_ntfs_i13.sh`).
+`/I13` is tested with NTFS.SYS (`tests/dos_ntfs.sh`), NTFSDOS 3.02R and
+NTFS4DOS 1.9 (`tests/dos_ntfs_i13.sh`; NTFS4DOS needs KVM, its DOS extender
+fails under QEMU's TCG, and asks a question before it mounts).
 
 Not yet: more partitions, variable track tables, physical format IOCTLs and independent detection of
 BIOS mappings that the ASPI manager does not report; see

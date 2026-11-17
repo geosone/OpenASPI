@@ -10,6 +10,8 @@
 #   unit then and must stay as a character device for its INT 13h drive
 #   NTFSDOS_DIR=~/mars/scratch/ntfs/ntfsdos
 #   NTFS4DOS=~/mars/scratch/ntfs/ntfs4dos/fw/ntfs4dos.us
+#   NTFS4DOS needs KVM (its DOS extender fails under TCG); its shell gets
+#   TYPE D:\README.TXT and EXIT typed
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -48,7 +50,9 @@ if test -n "$NTFSDOS_DIR"; then
 fi
 if test -n "$NTFS4DOS"; then
     cp "$NTFS4DOS" "$OUT/NTFS4DOS.EXE"
-    printf '%s > AUX\r\n' 'ECHO === NTFS4DOS' 'NTFS4DOS' 'DIR N:' 'DIR O:' >> "$OUT/AUTOEXEC.BAT"
+    # NTFS4DOS asks "private computers only? (Yes/No)", mounts and starts
+    # a shell of its own: the answer and the commands come as key presses
+    printf '%s > AUX\r\n' 'ECHO === NTFS4DOS' 'NTFS4DOS' >> "$OUT/AUTOEXEC.BAT"
     files+=("$OUT/NTFS4DOS.EXE")
 fi
 printf '%s > AUX\r\n' 'ECHO === END' >> "$OUT/AUTOEXEC.BAT"
@@ -84,9 +88,29 @@ plug+=(
     "device_add usb-bot,id=bot2,bus=usbhc.0,port=2"
     "device_add scsi-hd,bus=bot2.0,drive=ntfs,vendor=OPENASPI,product=NTFS"
     "qom-set /machine/peripheral/bot2 attached true")
+keys=()
+accel=()
+if test -n "$NTFS4DOS"; then
+    accel=(-enable-kvm -cpu host)
+    keys+=(sleep:40)
+    for k in y e s ret; do keys+=("sendkey $k"); done
+    keys+=(sleep:8)
+    for k in t y p e spc d shift-semicolon backslash r e a d m e dot t x t \
+        spc shift-dot spc a u x ret; do keys+=("sendkey $k"); done
+    keys+=(sleep:4)
+    for k in e x i t ret; do keys+=("sendkey $k"); done
+fi
+feed() {
+    sleep 2
+    printf '%s\n' "${plug[@]}"
+    for k in "${keys[@]}"; do
+        case $k in sleep:*) sleep "${k#sleep:}" ;; *) echo "$k"; sleep 0.2 ;; esac
+    done
+    sleep "${TIMEOUT:-120}"
+}
 set +e
-{ sleep 2; printf '%s\n' "${plug[@]}"; sleep "${TIMEOUT:-120}"; } |
-timeout "${TIMEOUT:-120}" qemu-system-i386 \
+feed |
+timeout "${TIMEOUT:-120}" qemu-system-i386 "${accel[@]}" \
     -machine pc -m 32 -display none -vga std -monitor stdio \
     -drive if=floppy,format=raw,file="$OUT/boot.img" -boot a \
     -device pci-ohci,id=usbhc \
@@ -115,8 +139,9 @@ if test -n "$NTFSDOS_DIR"; then
     need 'NTFS volume read through INT 13h'
 fi
 if test -n "$NTFS4DOS"; then
-    sed -n '/=== NTFS4DOS/,/=== END/p' "$OUT/serial.txt" | grep -q 'README' ||
-        { echo 'NTFS4DOS: no README.TXT'; fail=1; }
+    sed -n '/=== NTFS4DOS/,/=== END/p' "$OUT/serial.txt" |
+        grep -q 'NTFS volume read through INT 13h' ||
+        { echo 'NTFS4DOS: README.TXT not read'; fail=1; }
     sed -n '/=== NTFS4DOS/,/=== END/p' "$OUT/serial.txt" | grep -q 'CauseWay error' &&
         { echo 'NTFS4DOS crashed'; fail=1; }
 fi
