@@ -74,6 +74,9 @@ XF_CHANGED      equ     01h
 ; error 00h, as the drive would refuse them. Probed with each volume load,
 ; cleared with the medium. A device without the bit just leaves it clear.
 XF_WPROT        equ     02h
+; The device is on a hot plug adapter (HA_U_HOTPLUG): another device can
+; take its ASPI target, so MEDIA CHECK asks it even when it is fixed.
+XF_HOTPLUG      equ     04h
 
 ; BPB offsets (from the boot sector offset 0Bh)
 BPB_BYTES       equ     0
@@ -241,7 +244,9 @@ interrupt endp
 ; A current UNIT ATTENTION seen by any command of this request means a
 ; removable medium may have changed even if a later TEST UNIT READY succeeds.
 ; Drop the cached BPB/override and keep XF_CHANGED until MEDIA CHECK reports
-; it. Fixed units are not latched: a bus reset does not exchange their medium.
+; it. Fixed units only for MEDIUM MAY HAVE CHANGED (ASC 28h): a bus reset
+; (29h) does not exchange their medium, a hot plugged device in their ASPI
+; target (EUSBASPI /H, which keeps the device's removable bit) does.
 ; Preserves all registers except flags.
 latch_unit_attention proc near
         cmp     byte ptr [aspi_attention], 0
@@ -250,7 +255,10 @@ latch_unit_attention proc near
         push    di
         mov     di, word ptr [unit_ptr]
         test    byte ptr [di+U_FLAGS], UF_REMOVABLE
-        jz      latch_attention_fixed
+        jnz     latch_attention_unit
+        cmp     byte ptr [aspi_attn_asc], 28h
+        jne     latch_attention_fixed
+latch_attention_unit:
         and     byte ptr [di+U_FLAGS], not (UF_MEDIA or UF_BPB_OVERRIDE)
         or      byte ptr [di+U_XFLAGS], XF_CHANGED
         and     byte ptr [di+U_XFLAGS], not XF_WPROT
@@ -1158,7 +1166,11 @@ media_check_dos:
         test    byte ptr [di+U_FLAGS], UF_REMOVABLE
         jnz     media_check_removable
         test    byte ptr [di+U_FLAGS], UF_MEDIA
-        jnz     media_check_done
+        jz      media_check_fixed_gone
+        test    byte ptr [di+U_XFLAGS], XF_HOTPLUG
+        jz      media_check_done
+        jmp     short media_check_removable    ; hot plug: still the same?
+media_check_fixed_gone:
         mov     ah, 0                          ; invalidated fixed unit needs BPB
         jmp     short media_check_done
 media_check_removable:
@@ -1295,9 +1307,13 @@ read_not_exfat:
         test    byte ptr [di+U_FLAGS], UF_MEDIA
         jnz     read_have_media
         ; after MEDIA CHECK reported a change DOS reads the FAT before it
-        ; asks for the BPB: load the new medium here
+        ; asks for the BPB: load the new medium here (also a fixed disk
+        ; that a hot plugged device replaced)
         test    byte ptr [di+U_FLAGS], UF_REMOVABLE
+        jnz     read_load_new
+        test    byte ptr [di+U_XFLAGS], XF_HOTPLUG
         jz      read_no_media
+read_load_new:
         push    es
         push    bx
         call    load_volume_x
@@ -2685,6 +2701,10 @@ endif
 init_flags_ready:
         mov     byte ptr [di+U_PART], 0
         mov     byte ptr [di+U_XFLAGS], 0
+        cmp     byte ptr [scan_hot], 0
+        je      init_xflags_ready
+        mov     byte ptr [di+U_XFLAGS], XF_HOTPLUG
+init_xflags_ready:
 ifdef FDD_DRIVER
         call    format_profile
 endif
@@ -2789,7 +2809,9 @@ ifndef FDD_DRIVER
         and     al, UF_REMOVABLE
         mov     byte ptr [di+U_FLAGS], al
         mov     byte ptr [di+U_LOCKS], 0
-        mov     byte ptr [di+U_XFLAGS], 0
+        mov     al, byte ptr [si+U_XFLAGS]
+        and     al, XF_HOTPLUG
+        mov     byte ptr [di+U_XFLAGS], al
         mov     al, byte ptr [si+U_PART]
         inc     al
         mov     byte ptr [di+U_PART], al

@@ -27,6 +27,7 @@ scan_adapters   db      0
 scan_targets    db      0
 scan_own_id     db      0
 scan_ext_flags  dw      0               ; HA_ExtFlags of scan_ha
+scan_hot        db      0               ; 80h: scan_ha's targets hot plug
 inquiry_data    db      INQUIRY_LEN dup (0)
         include common/aspi/inquiry.inc
 
@@ -173,6 +174,11 @@ scan_ha_inquiry proc near
         call    call_aspi
         HA_EXT_GET dx
         mov     word ptr [scan_ext_flags], dx
+        ; HA_Unique byte 2 bit 7 (reserved in ASPI): another device can
+        ; appear in a target of this adapter (EUSBASPI /H)
+        mov     al, byte ptr [srb+HA_Unique+2]
+        and     al, HA_U_HOTPLUG
+        mov     byte ptr [scan_hot], al
         ret
 scan_ha_inquiry endp
 

@@ -18,6 +18,7 @@ HA_SCSI_ID              equ     09h
 HA_ManagerId            equ     0Ah
 HA_Identifier           equ     1Ah
 HA_Unique               equ     2Ah
+HA_U_HOTPLUG            equ     80h     ; HA_Unique+2: targets hot plug
 HA_ExtFlags             equ     3Ah
 HA_EXT_RESIDUAL         equ     0002h
 ; A host inquiry asks for HA_ExtFlags with signature AA55h and the wanted

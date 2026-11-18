@@ -62,6 +62,11 @@ Implemented behavior:
   doesn't report the bit is written to, and its own refusal gives the error.
 - Media check and BUILD BPB for devices with the removable bit (USB
   sticks, card readers): a new medium is read again.
+- Hot plug adapters (bit 7 of byte 2 of the HA inquiry's unique parameters,
+  EUSBASPI `/H`): a fixed disk is asked at each media check too (TEST UNIT
+  READY); UNIT ATTENTION "medium may have changed" means another device
+  took its ASPI target, and its volume is read again. A bus reset (power
+  on / reset occurred) does not count as a change.
 - exFAT media (superfloppy, or MBR partition of type 07h) for
   `EXFAT.SYS`: DOS sees an empty, write-protected disk until EXFAT.SYS
   takes the drive letter over; it reads the sectors through the exFAT

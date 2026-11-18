@@ -27,6 +27,7 @@ srb             db      ASPI_SRB_SIZE dup (0)
 ; clear it when a DOS request starts and transfer it to the selected unit when
 ; the request ends, so a change consumed by any command is not lost.
 aspi_attention  db      0
+aspi_attn_asc   db      0               ; its ASC (28h: medium may have changed)
 
 ; the device of the current request (set by the driver from its unit table)
 unit_ha         db      0
@@ -200,8 +201,9 @@ aspi_sense_invalid:
         ret
 aspi_sense endp
 
-; AL = checked key, BX = CDB length (sense base). Set aspi_attention only for
-; current UNIT ATTENTION; deferred sense does not describe this command.
+; AL = checked key, AH = ASC, BX = CDB length (sense base). Set aspi_attention
+; (and aspi_attn_asc) only for current UNIT ATTENTION; deferred sense does not
+; describe this command.
 aspi_note_attention proc near
         cmp     al, 06h
         jne     aspi_attention_done
@@ -214,6 +216,7 @@ aspi_note_attention proc near
         jne     aspi_attention_restore
 aspi_attention_current:
         mov     byte ptr [aspi_attention], 1
+        mov     byte ptr [aspi_attn_asc], ah
 aspi_attention_restore:
         pop     ax
 aspi_attention_done:
