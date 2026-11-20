@@ -37,19 +37,33 @@ What it reads:
   search of the directory; the system files ($MFT ...) are not shown;
 - the volume label (`VOL`, `DIR`) and the free space.
 
-Not (yet): encrypted files ("access denied"), long file
-names (INT 21h AX=71xxh), writing (creating, deleting, renaming, writing
+Not (yet): encrypted files ("access denied"), writing (creating, deleting, renaming, writing
 give "access denied"), ASPIDSK/ASPIFDD units without `/I13`, sectors other
 than 512 bytes.  A volume Windows left without unmounting (hibernation,
 fast startup) is read anyway; the start message says "not cleanly
 unmounted", and what Windows still had in its log is missing.
+
+## Long file names: NTFSL.SYS
+
+NTFSL.SYS is the same driver with the long file names of Windows 95 and
+DOSLFN (INT 21h AX=71xxh) for its drives, read-only, as EXFATL.SYS has them
+for exFAT: find (714Eh, 714Fh, 71A1h), open (716Ch), change and current
+directory (713Bh, 7147h), attributes, size and times (7143h), TRUENAME
+(7160h), volume information (71A0h, "NTFS"), file information by handle
+(71A6h) and the time conversion (71A7h).  Paths may use the long names and
+the 8.3 names of NTFS.SYS.  Making, removing, deleting, renaming and setting
+attributes give "access denied".  The calls for other drives go on to DOS,
+or to DOSLFN when it is loaded after NTFSL.SYS (`DOSLFN -f-`, which then
+gives the FAT drives long names too).  COMMAND.COM of MS-DOS 7 then shows
+the long names in DIR.  It takes about 9 KB more than NTFS.SYS.
 
 NTFS.SYS stays resident with about 36 KB, 13 KB of which are buffers for
 MFT records and index blocks.  The NTFS part is OpenFileSystem's `src/ntfs/ntfs.c`
 (ntfs-3g's `layout.h` is the reference for the structures); the assembler
 frame is EXFAT.SYS's (`drivers/exfat/exfatsys.asm`, built with `NTFS_SYS`).
 
-Tests: `tests/dos_ntfs.sh` (MS-DOS 7.1, SvarDOS with `SVARDOS=1`, `OPTS=/C`)
+Tests: `tests/dos_ntfs.sh` (MS-DOS 7.1, SvarDOS with `SVARDOS=1`, `OPTS=/C`),
+`tests/dos_ntfs_lfn.sh` (NTFSL.SYS, `DOSLFN=` DOSLFN.COM)
 with an IDE disk from OpenFileSystem's `tests/ntfs_image.sh` and a USB disk through
 EUSBASPI and `ASPIDSK /I13`; OpenFileSystem's `tests/ntfs_host.sh` checks the
 library on the host.
