@@ -5,8 +5,8 @@
 # compressed files, a file with an attribute list, a DOS name of its own);
 # EUSBASPI and ASPIDSK /I13 add a USB disk with a second NTFS volume.
 # NTFS.SYS /L:N gives them N: and O:, /Z:2 the time UTC + 2 hours.  DIR, TYPE and COPY to C:; the copies
-# must equal the originals.  Writing, the compressed file and an open for
-# writing are refused; the NTFS disks are not changed.
+# must equal the originals (the compressed files too).  Writing and an open
+# for writing are refused; the NTFS disks are not changed.
 #   SVARDOS=1: SvarDOS (EDR-DOS kernel, SvarCOM) instead of MS-DOS 7.1
 #   OPTS=/C: more options for NTFS.SYS (/C: CHS reads without INT 13h
 #            extensions)
@@ -51,7 +51,9 @@ printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' 'DEVICE=A:\DELAY.SYS' 'DEVICE=A:\DELAY.
     for f in GROSS.BIN VIELE.BIN FRAG.BIN SPARSE.DAT ZUFALL.BIN LANGDOS.TXT EINLA~5E.TXT 'VIELE\DATEI150.TXT'; do
         printf 'COPY N:\\%s C:\\ > AUX\r\n' "$f"
     done
-    printf '%s > AUX\r\n' 'ECHO === DENIED' 'COPY N:\KOMPR\ZAHLEN.TXT C:\' 'COPY A:\QEXIT.COM N:\' \
+    printf '%s > AUX\r\n' 'COPY N:\KOMPR\ZAHLEN.TXT C:\' 'COPY N:\KOMPR\GEMISCHT.BIN C:\' \
+        'COPY N:\KOMPR\ZUFALL.BIN C:\KZUFALL.BIN'
+    printf '%s > AUX\r\n' 'ECHO === DENIED' 'COPY A:\QEXIT.COM N:\' \
         'MD N:\NEU' 'DEL N:\README.TXT' 'REN N:\README.TXT X.TXT' 'DIR N:\README.TXT'
     printf '%s > AUX\r\n' 'ECHO === END'
     printf '%s\r\n' 'QEXIT'
@@ -116,7 +118,7 @@ ap=a; test "$h" -ge 12 && ap=p
 section DIR | grep -q "README   TXT  *34 .* $hh:..$ap" || { echo "O:\README.TXT: not $hh:xx$ap (/Z:2)"; fail=1; }
 # the free space as the library counts it on the host (EDR-DOS: one
 # sector per cluster, see disk_space in ntfssys.c)
-make -C "$OPENFILESYSTEM" build/host/test_ntfs >/dev/null
+make -C "$OPENFILESYSTEM" build/host/test_ntfs UNITAB="${UNITAB:-$ROOT/../mars-unicode-tables/TAB/unitables}" >/dev/null
 free=$("$OPENFILESYSTEM/build/host/test_ntfs" "$OUT/n/ntfs.img" 2>/dev/null | sed -n 's/.*, \([0-9]*\) of [0-9]* clusters of \([0-9]*\) bytes free/\1 \2/p')
 free=$(printf "%'d" $(( ${free% *} * ${free#* } )) | tr . ,)
 section DIR | grep -q " $free [Bb]ytes fre" || { echo "DIR N: not $free bytes free"; fail=1; }
@@ -124,7 +126,8 @@ section DIR | grep -q 'EINLA~5E TXT' || { echo 'DIR N: lacks EINLA~5E.TXT'; fail
 section DIR | grep -q 'LANGDOS  TXT' || { echo 'DIR N: lacks LANGDOS.TXT'; fail=1; }
 test "$(section DIR | grep -c '^DATEI[0-9]* *TXT')" = 150 || { echo 'DIR N:\VIELE: not 150 files'; fail=1; }
 mkdir -p "$OUT/c"
-for f in GROSS.BIN VIELE.BIN FRAG.BIN SPARSE.DAT ZUFALL.BIN LANGDOS.TXT EINLA~5E.TXT DATEI150.TXT; do
+for f in GROSS.BIN VIELE.BIN FRAG.BIN SPARSE.DAT ZUFALL.BIN LANGDOS.TXT EINLA~5E.TXT DATEI150.TXT \
+    ZAHLEN.TXT GEMISCHT.BIN KZUFALL.BIN; do
     mcopy -o -i "$OUT/c.img@@32256" "::/$f" "$OUT/c/$f" 2>/dev/null || { echo "C:\\$f missing"; fail=1; }
 done
 cmpf() { cmp -s "$OUT/c/$1" "$OUT/n/files/$2" || { echo "$1 differs from $2"; fail=1; }; }
@@ -136,8 +139,9 @@ cmpf ZUFALL.BIN zufall.bin
 cmpf LANGDOS.TXT 'Langer Dateiname mit DOS.txt'
 cmpf EINLA~5E.TXT 'Ein langer Name 9.txt'
 cmpf DATEI150.TXT VIELE/DATEI150.TXT
-mdir -i "$OUT/c.img@@32256" ::/ZAHLEN.TXT >/dev/null 2>&1 && { echo 'the compressed file was copied'; fail=1; }
-mdir -i "$OUT/c.img@@32256" ::/ 2>/dev/null | grep -q '^ZAHLEN' && { echo 'C:\ZAHLEN.TXT exists'; fail=1; }
+cmpf ZAHLEN.TXT KOMPR/zahlen.txt
+cmpf GEMISCHT.BIN KOMPR/gemischt.bin
+cmpf KZUFALL.BIN KOMPR/zufall.bin
 section DENIED | grep -q 'X       TXT' && { echo 'renamed'; fail=1; }
 section DENIED | grep -q 'README   TXT' || { echo 'README.TXT gone'; fail=1; }
 cmp -s "$OUT/ntfs.img" "$OUT/ntfs-before.img" || { echo 'the IDE NTFS disk changed'; fail=1; }

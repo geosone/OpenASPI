@@ -5,8 +5,8 @@
    basic data partitions.  The NTFS part is OpenFileSystem's src/ntfs/ntfs.c; the
    DOS side follows EXFAT.SYS (drivers/exfat/exfatsys.c), whose assembler
    frame it shares (exfatsys.asm with NTFS_SYS).  8.3 names: the DOS names
-   Windows gave, else "~n" names as EXFAT.SYS makes them.  Compressed and
-   encrypted files cannot be read (access denied).  NTFS keeps UTC: /Z:h
+   Windows gave, else "~n" names as EXFAT.SYS makes them.  Compressed files
+   are read (LZNT1); encrypted ones cannot be (access denied).  NTFS keeps UTC: /Z:h
    (or /Z:-h, /Z:h:mm) gives the local time for DOS.
 
    Copyright (C) 2026 GeosOne.  GNU General Public License version 2 or later. */
@@ -221,8 +221,8 @@ static int ok(struct regs *r)
     return 0;
 }
 
-/* SFT: 7 initialized size, 0Bh flags (1 resident, 2 compressed, 4 cut at
-   4 GB), 11h size, 1Bh MFT record */
+/* SFT: 7 initialized size, 0Bh flags (bits 0-1: 1 resident, 2 encrypted,
+   3 compressed; 4 cut at 4 GB), 11h size, 1Bh MFT record */
 static void fill_sft(oa_u8 __far *sft, struct drive *d)
 {
     sft[4] = (oa_u8)ent.attr;

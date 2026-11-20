@@ -28,6 +28,8 @@ What it reads:
 - directories of any size (the $I30 index with its index blocks), files
   in many pieces (also with an attribute list), sparse files (the holes
   are zeros), small files kept in the MFT record;
+- compressed files (NTFS compression, LZNT1), decompressed 4 KB at a time
+  in the index block buffer;
 - names: the 8.3 name Windows gave a file (its DOS name), else an 8.3 name
   in the DOS code page (437, or 850 when that is active): as much of the
   name as fits, "~" and the file's MFT record number in base 36
@@ -35,14 +37,14 @@ What it reads:
   search of the directory; the system files ($MFT ...) are not shown;
 - the volume label (`VOL`, `DIR`) and the free space.
 
-Not (yet): compressed and encrypted files ("access denied"), long file
+Not (yet): encrypted files ("access denied"), long file
 names (INT 21h AX=71xxh), writing (creating, deleting, renaming, writing
 give "access denied"), ASPIDSK/ASPIFDD units without `/I13`, sectors other
 than 512 bytes.  A volume Windows left without unmounting (hibernation,
 fast startup) is read anyway; the start message says "not cleanly
 unmounted", and what Windows still had in its log is missing.
 
-NTFS.SYS stays resident with about 32 KB, 13 KB of which are buffers for
+NTFS.SYS stays resident with about 36 KB, 13 KB of which are buffers for
 MFT records and index blocks.  The NTFS part is OpenFileSystem's `src/ntfs/ntfs.c`
 (ntfs-3g's `layout.h` is the reference for the structures); the assembler
 frame is EXFAT.SYS's (`drivers/exfat/exfatsys.asm`, built with `NTFS_SYS`).

@@ -6,7 +6,7 @@ drivers is in [driver-status.md](driver-status.md).
 ## NTFS: NTFS.SYS
 
 NTFS.SYS 0.1 reads NTFS through INT 13h (BIOS disks and ASPIDSK `/I13`),
-see `drivers/ntfs/README.md`.  Next: LZNT1 compressed files; the long names
+see `drivers/ntfs/README.md`; compressed files (LZNT1) too.  Next: the long names
 (71xxh, from EXFATL.SYS); the service of ASPIDSK/ASPIFDD as a second back
 end, so units need no `/I13` and media can change; reading more than one
 sector per call.  Writing safely needs $LogFile handling (or refusing a
