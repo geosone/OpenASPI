@@ -125,7 +125,7 @@ set -e
 tr -d '\0' < "$OUT/serial.log" > "$OUT/serial.txt"
 
 fail=0
-section() { sed -n "/=== $1/,/=== $2/p" "$OUT/serial.txt"; }
+section() { sed -n "/=== $1/,/=== $2/p" "$OUT/serial.txt" || :; }
 need() { section "$1" "$2" | grep -q "$3" || { echo "missing in $1: $3"; fail=1; }; }
 # the host check of a volume image: fsck.exfat (not for TexFAT), test_exchk
 host_check() {   # IMAGE LABEL [BAD]

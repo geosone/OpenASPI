@@ -105,7 +105,7 @@ tr -d '\0' < "$OUT/serial.log" > "$OUT/serial.txt"
 
 fail=0
 need() { grep -q -- "$1" "$OUT/serial.txt" || { echo "missing: $1"; fail=1; }; }
-section() { sed -n "/=== $1/,/=== /p" "$OUT/serial.txt"; }
+section() { sed -n "/=== $1/,/=== /p" "$OUT/serial.txt" || :; }
 need '=== END'
 need 'hallo'
 need 'tief'

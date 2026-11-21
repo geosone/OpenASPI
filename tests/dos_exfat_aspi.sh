@@ -103,7 +103,7 @@ set -e
 tr -d '\0' < "$OUT/serial.log" > "$OUT/serial.txt"
 
 fail=0
-section() { sed -n "/=== $1/,/=== $2/p" "$OUT/serial.txt"; }
+section() { sed -n "/=== $1/,/=== $2/p" "$OUT/serial.txt" || :; }
 need() { section "$1" "$2" | grep -q "$3" || { echo "missing in $1: $3"; fail=1; }; }
 need EXFAT1 SWAP1 'EINLA~1P'
 need EXFAT1 SWAP1 'Datei 11'

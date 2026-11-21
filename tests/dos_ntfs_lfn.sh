@@ -86,7 +86,7 @@ set -e
 tr -d '\0\r' < "$OUT/serial.log" | iconv -f cp850 -t utf-8 > "$OUT/serial.txt"
 
 fail=0
-section() { sed -n "/=== $1 *\$/,/=== $2 *\$/p" "$OUT/serial.txt"; }
+section() { sed -n "/=== $1 *\$/,/=== $2 *\$/p" "$OUT/serial.txt" || :; }
 need() { section "$1" "$2" | grep -qF -- "$3" || { echo "missing in $1: $3"; fail=1; }; }
 need VOL DIR 'fs NTFS flags 4006 name 255 path 260'
 for f in "$OUT"/n/files/*; do need DIR PATTERN "$(basename "$f")|"; done

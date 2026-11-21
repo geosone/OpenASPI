@@ -128,7 +128,7 @@ set -e
 tr -d '\0' < "$OUT/serial.log" > "$OUT/serial.txt"
 
 fail=0
-section() { sed -n "/=== $1 /,/=== $2 /p" "$OUT/serial.txt" | tr -d '\r'; }
+section() { sed -n "/=== $1 /,/=== $2 /p" "$OUT/serial.txt" | tr -d '\r' || :; }
 need() { section "$1" "$2" | grep -q "$3" || { echo "missing in $1: $3"; fail=1; }; }
 host() {   # NAME: the volume of a disk image on the host
     dd if="$OUT/$1.img" of="$OUT/$1.vol" bs=512 skip=63 status=none

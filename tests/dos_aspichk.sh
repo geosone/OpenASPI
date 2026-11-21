@@ -110,7 +110,7 @@ set -e
 tr -d '\0' < "$OUT/serial.log" > "$OUT/serial.txt"
 
 fail=0
-section() { sed -n "/=== $1 /,/=== $2 /p" "$OUT/serial.txt" | tr -d '\r'; }
+section() { sed -n "/=== $1 /,/=== $2 /p" "$OUT/serial.txt" | tr -d '\r' || :; }
 need() { section "$1" "$2" | grep -q "$3" || { echo "missing in $1: $3"; fail=1; }; }
 lack() { ! section "$1" "$2" | grep -q "$3" || { echo "unexpected in $1: $3"; fail=1; }; }
 grep -q 'STILL BAD' "$OUT/serial.txt" && { echo "errors left after /F"; fail=1; }
