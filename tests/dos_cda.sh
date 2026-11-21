@@ -139,7 +139,7 @@ grep -q 'SHSUCDX UPC forwarding in analog/digital modes passed' "$OUT/serial.log
 
 # QEMU's drive reports Audio Play but no CD-DA in MODE SENSE page 2Ah
 # (the screen, CONFIG.SYS output included, goes to COM2 through SeaBIOS)
-grep -a -q 'DVD-ROM.*(analog audio, no digital audio)' "$OUT/console.log"
+grep -a -q 'HA 0:SCSI ID 0:Lun 0: .*DVD-ROM (analog, no CD-DA)' "$OUT/console.log"
 log=$(tr -d '\r' < "$OUT/serial.log")
 # AUTO without a player: analog; ON: digital; OFF: analog
 grep -A2 'CD audio mode: AUTO' <<<"$log" | grep -q 'PLAY goes to: the drive'

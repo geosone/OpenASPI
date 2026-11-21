@@ -8,6 +8,13 @@ LS-120, ZIP and similar removable-media drives are left to `ASPIFDD.SYS`.
     DEVICE=C:\OPENASPI\EUSBASPI.SYS
     DEVICE=C:\OPENASPI\ASPIDSK.SYS
 
+At startup each disk gets one line under the title of its host adapter,
+with its address, name and drive letters (ASPIFDD the same):
+
+    Host Adapter #0  EUSBASPI  USB Mass Storage
+    HA 0:SCSI ID 0:Lun 0: Legend zhenOKfast Fixed Disk C:-H:
+    HA 0:SCSI ID 0:Lun 2: Iv3268 Ip128G Removable Media J: (empty)
+
 Options (as ASPIDISK has them; `/` or `-`, upper or lower case, values
 after `:` or `=`):
 

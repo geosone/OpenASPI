@@ -42,9 +42,12 @@ Implemented behavior:
   failed commands do not fake transitions. Active status/open/close/flush
   calls poll the drive; playing audio sets busy and device-status bit 10.
 - The audio capabilities from MODE SENSE page 2Ah, listed by `/V`:
-  "analog audio" (Audio Play: the drive plays audio itself, to its
-  analog output) and "digital audio" (CD-DA: audio sectors can be read
-  for VSBHDA; "inexact" when the stream is not accurate).
+  "analog" (Audio Play: the drive plays audio itself, to its analog
+  output) and "CD-DA" (digital audio: audio sectors can be read for
+  VSBHDA; "inexact" when the stream is not accurate), as in
+
+      Host Adapter #0  EUSBASPI  USB Mass Storage
+      HA 0:SCSI ID 0:Lun 1: Innostor CD-ROM on Flash (analog, CD-DA)
 - A private stack for the ASPI manager.
 
 ### Analog or digital CD audio

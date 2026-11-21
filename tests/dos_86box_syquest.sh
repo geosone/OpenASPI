@@ -153,7 +153,7 @@ if [ -n "$SQATDRVR" ]; then
 fi
 if [ "$ASPI" = bios ]; then
     # ASPIFDD takes the BIOS disk's letter over, no second letter
-    grep -q '(BIOS drive taken over)' "$OUT/screen.txt"
+    grep -q 'C: (from BIOS)' "$OUT/screen.txt"
 fi
 if [ "$ASPI" = 1 ]; then
     want=00

@@ -32,6 +32,6 @@ test "$rc" = 1
 ! grep -Fq 'FAILED' "$OUT/serial.log"
 test "$(grep -Fc 'Block INIT BIOS ownership tests passed' "$OUT/serial.log")" = 2
 grep -Fq 'OWNERSHIP PASSED' "$OUT/serial.log"
-grep -Fq 'BIOS/DOS-owned device skipped: 12:31:0' "$OUT/serial.log"
+grep -Fq 'BIOS/DOS-owned device skipped: HA 12:SCSI ID 31:Lun 0:' "$OUT/serial.log"
 test "$(grep -Fc 'GET DISK INFO unsupported' "$OUT/serial.log")" = 4
 echo 'ASPIDSK/ASPIFDD INIT ownership, unsupported-manager and error tests passed'

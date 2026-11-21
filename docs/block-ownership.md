@@ -64,9 +64,9 @@ probing, the preloaded ISA VGA ROM) and, in `boot_init`, the ROM file
 (QEMU's SeaBIOS, SyQuest on AHCI as C:) and `dos_86box_syquest.sh
 ASPI=bios` check the hard disk case on other BIOSes.
 
-INIT prints `X: (BIOS drive taken over)`. If no such letter exists (another
-DOS, no drive data tables, a volume start that does not match), the device
-is skipped as before.
+INIT ends the device line with `X: (from BIOS)`. If no such letter exists
+(another DOS, no drive data tables, a volume start that does not match), the
+device is skipped as before.
 
 A kernel that sends generic IOCTL category `80h` of a block device to no
 driver (MS-DOS 7.1 fails it with error 1) cannot carry the raw-media

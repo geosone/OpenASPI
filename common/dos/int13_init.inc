@@ -55,8 +55,9 @@ i13_add_done:
         ret
 i13_add endp
 
-; "  INT 13h 82h: h:t:l VENDOR PRODUCT" without the line end
+; "  INT 13h 82h: HA h:SCSI ID t:Lun l: VENDOR PRODUCT" without the line end
 i13_print proc near
+        call    print_ha_title
         mov     dx, offset msg_i13
         mov     ah, 09h
         int     21h
@@ -79,24 +80,11 @@ i13_print proc near
         int     21h
         mov     dl, ' '
         int     21h
-        mov     al, byte ptr [scan_ha]
-        call    print_digit
-        mov     dl, ':'
-        mov     ah, 02h
-        int     21h
-        mov     al, byte ptr [scan_target]
-        call    print_digit
-        mov     dl, ':'
-        mov     ah, 02h
-        int     21h
-        mov     al, byte ptr [scan_lun]
-        call    print_digit
+        call    print_address
         mov     dl, ' '
         mov     ah, 02h
         int     21h
-        push    di
         call    print_inquiry_name
-        pop     di
         ret
 i13_print endp
 

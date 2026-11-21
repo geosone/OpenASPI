@@ -47,10 +47,10 @@ letter instead.
 
 On the BIOS channel (`ASPI=bios`), the BIOS has the drive as hard disk 80h.
 AHCIASPI finds that through EDD and reports it in GET DISK INFO, so ASPIFDD
-takes the letter DOS has over (`C: (BIOS drive taken over)`, see
+takes the letter DOS has over (`C: (from BIOS)`, see
 [ownership](block-ownership.md)): one letter, reached through ASPI.
 
-Without a cartridge, ASPIFDD registers the drive as `(no disk)`, and an access
+Without a cartridge, ASPIFDD registers the drive as `(empty)`, and an access
 gives `C: - READ FAILURE`.
 
 ## SQATDRVR.SYS 1.75 as observed

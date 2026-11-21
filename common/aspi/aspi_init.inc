@@ -28,6 +28,8 @@ scan_targets    db      0
 scan_own_id     db      0
 scan_ext_flags  dw      0               ; HA_ExtFlags of scan_ha
 scan_hot        db      0               ; 80h: scan_ha's targets hot plug
+scan_ha_name    db      32 dup (' ')    ; HA_ManagerId, HA_Identifier
+title_ha        db      0FFh            ; adapter whose title is printed
 inquiry_data    db      INQUIRY_LEN dup (0)
         include common/aspi/inquiry.inc
 
@@ -179,6 +181,28 @@ scan_ha_inquiry proc near
         mov     al, byte ptr [srb+HA_Unique+2]
         and     al, HA_U_HOTPLUG
         mov     byte ptr [scan_hot], al
+        ; manager and adapter name for print_ha_title, blank on failure
+        push    si
+        push    di
+        push    cx
+        push    es
+        push    ds
+        pop     es
+        mov     di, offset scan_ha_name
+        mov     cx, 32
+        mov     al, ' '
+        cmp     byte ptr [srb+SRB_Status], SS_COMP
+        jne     scan_ha_blank
+        mov     si, offset srb+HA_ManagerId     ; HA_Identifier follows
+        rep     movsb
+        jmp     short scan_ha_named
+scan_ha_blank:
+        rep     stosb
+scan_ha_named:
+        pop     es
+        pop     cx
+        pop     di
+        pop     si
         ret
 scan_ha_inquiry endp
 
@@ -220,22 +244,3 @@ inquiry_prepared:
 inquiry_done:
         ret
 aspi_inquiry endp
-
-; Print the vendor and product of inquiry_data (24 characters).
-print_inquiry_name proc near
-        push    si
-        mov     si, offset inquiry_data+8
-        mov     cx, 24
-print_inquiry_loop:
-        lodsb
-        cmp     al, ' '
-        jae     print_inquiry_char
-        mov     al, ' '
-print_inquiry_char:
-        mov     dl, al
-        mov     ah, 02h
-        int     21h
-        loop    print_inquiry_loop
-        pop     si
-        ret
-print_inquiry_name endp

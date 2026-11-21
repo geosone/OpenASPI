@@ -2141,6 +2141,7 @@ resident_end label byte
 ;=============================================================================
 
         include common/aspi/aspi_init.inc
+        include common/aspi/aspi_print.inc
 
 ; INQUIRY vendor/product substrings of removable-media drives for ASPIFDD
         include common/aspi/removable.inc
@@ -2653,6 +2654,7 @@ init_request:
 init_scan:
         call    aspi_scan_first
 init_next_device:
+        call    close_device                    ; the line of the last one
         call    aspi_scan_next
         jnc     init_device
         jmp     init_scan_done
@@ -2786,7 +2788,7 @@ endif
         shl     bx, 1
         lea     ax, [di+U_BPB]
         mov     word ptr [bpb_pointers+bx], ax
-        call    print_unit
+        call    note_unit
         inc     byte ptr [unit_count]
         inc     byte ptr [dev_units]
 ifndef FDD_DRIVER
@@ -2820,6 +2822,7 @@ init_device_full:
 endif
         jmp     init_next_device
 init_scan_done:
+        call    close_device
 ifdef FDD_DRIVER
         call    take_over_dpbs
 endif
@@ -2986,20 +2989,10 @@ SHUTTLE_ID_LEN  equ     $ - shuttle_id
 
 ; DX points to the diagnostic prefix. No device commands are issued here.
 print_ownership_device proc near
+        call    print_ha_title
         mov     ah, 09h
         int     21h
-        mov     al, byte ptr [scan_ha]
-        call    print_digit
-        mov     dl, ':'
-        mov     ah, 02h
-        int     21h
-        mov     al, byte ptr [scan_target]
-        call    print_digit
-        mov     dl, ':'
-        mov     ah, 02h
-        int     21h
-        mov     al, byte ptr [scan_lun]
-        call    print_digit
+        call    print_address
         mov     dx, offset msg_crlf
         mov     ah, 09h
         int     21h
@@ -3014,7 +3007,7 @@ take_drive      db      0                       ; BIOS drive
 take_match      db      0                       ; find_take_dpb: by take_start
 take_start      dd      0
 take_letter     db      MAX_UNITS dup (0)       ; per taken slot: DOS letter
-msg_taken       db      ' (BIOS drive taken over)$'
+msg_taken       db      ' (from BIOS)$'
 
 ; The letter DOS has BIOS drive AL as, and its DPB. A floppy drive n is
 ; the built-in driver's unit n, letter n; a hard disk's FAT volumes are
@@ -3143,20 +3136,12 @@ take_unit proc near
         or      byte ptr [di+U_XFLAGS], XF_CHANGED
         pop     di
         pop     es
-        mov     dl, ' '
-        mov     ah, 02h
-        int     21h
-        int     21h
-        mov     dl, byte ptr [take_letter+bx]
-        add     dl, 'A'
-        int     21h
-        mov     dl, ':'
-        int     21h
+        call    save_dev_name
+        mov     al, byte ptr [take_letter+bx]
+        mov     ah, al
+        mov     bl, byte ptr [di+U_FLAGS]
         mov     dx, offset msg_taken
-        mov     ah, 09h
-        int     21h
-        mov     dx, offset msg_crlf
-        int     21h
+        call    print_device_line
 take_unit_full:
         ret
 take_unit_lost:
@@ -3219,49 +3204,137 @@ msg_bios_owned db '  BIOS/DOS-owned device skipped: $'
 msg_ownership_failed db '  Disk ownership query failed; device skipped: $'
 msg_ownership_unknown db '  GET DISK INFO unsupported; BIOS ownership unknown.',13,10,'$'
 
-; "  D: ha:target:lun VENDOR PRODUCT"
-print_unit proc near
+; One line per device, after its last unit:
+;   HA 0:SCSI ID 0:Lun 0: VENDOR PRODUCT Fixed Disk C:-H:
+;   HA 0:SCSI ID 1:Lun 2: VENDOR PRODUCT Removable Media J: (empty)
+; With the 49 columns of print_address and the name, "Removable Media",
+; two letters and " (empty)" stay inside 80 columns.
+dev_open        db      0               ; a device line is pending
+dev_first       db      0               ; its first and last drive (0 = A:)
+dev_last        db      0
+dev_flags       db      0               ; UF_REMOVABLE
+dev_media       db      0               ; UF_MEDIA of any of its units
+dev_name        db      24 dup (' ')    ; vendor and product
+
+; Unit DI (the unit_count'th) belongs to the current device.
+note_unit proc near
+        mov     al, byte ptr [first_drive]
+        add     al, byte ptr [unit_count]
+        cmp     byte ptr [dev_units], 0
+        jne     note_unit_more
+        mov     byte ptr [dev_open], 1
+        mov     byte ptr [dev_first], al
+        mov     byte ptr [dev_media], 0
+        mov     ah, byte ptr [di+U_FLAGS]
+        and     ah, UF_REMOVABLE
+        mov     byte ptr [dev_flags], ah
+        call    save_dev_name
+note_unit_more:
+        mov     byte ptr [dev_last], al
+        mov     al, byte ptr [di+U_FLAGS]
+        and     al, UF_MEDIA
+        or      byte ptr [dev_media], al
+        ret
+note_unit endp
+
+; Vendor and product of inquiry_data into dev_name. Keeps all registers.
+save_dev_name proc near
+        push    si
         push    di
-        mov     dl, ' '
-        mov     ah, 02h
-        int     21h
-        int     21h
-        mov     dl, byte ptr [first_drive]
-        add     dl, byte ptr [unit_count]
-        add     dl, 'A'
-        int     21h
-        mov     dl, ':'
-        int     21h
-        mov     dl, ' '
-        int     21h
-        mov     al, byte ptr [scan_ha]
-        call    print_digit
-        mov     dl, ':'
-        mov     ah, 02h
-        int     21h
-        mov     al, byte ptr [scan_target]
-        call    print_digit
-        mov     dl, ':'
-        mov     ah, 02h
-        int     21h
-        mov     al, byte ptr [scan_lun]
-        call    print_digit
-        mov     dl, ' '
-        mov     ah, 02h
-        int     21h
-        call    print_inquiry_name
+        push    cx
+        push    es
+        push    ds
+        pop     es
+        mov     si, offset inquiry_data+8
+        mov     di, offset dev_name
+        mov     cx, 24
+        rep     movsb
+        pop     es
+        pop     cx
         pop     di
-        test    byte ptr [di+U_FLAGS], UF_MEDIA
-        jnz     print_unit_end
+        pop     si
+        ret
+save_dev_name endp
+
+; The line of the pending device, if any.
+close_device proc near
+        cmp     byte ptr [dev_open], 0
+        je      close_device_done
+        mov     byte ptr [dev_open], 0
+        xor     dx, dx
+        mov     bl, byte ptr [dev_flags]
+        test    bl, UF_REMOVABLE
+        jz      close_device_print
+        cmp     byte ptr [dev_media], 0
+        jne     close_device_print
         mov     dx, offset msg_no_media
+close_device_print:
+        mov     al, byte ptr [dev_first]
+        mov     ah, byte ptr [dev_last]
+        call    print_device_line
+close_device_done:
+        ret
+close_device endp
+
+; The scan_* device with dev_name: drives AL to AH (0 = A:), BL = U_FLAGS
+; (UF_REMOVABLE), DX = text after the letters or 0. Keeps SI and DI.
+print_device_line proc near
+        push    dx
+        push    ax
+        push    bx
+        call    print_ha_title
+        call    print_address
+        mov     dl, ' '
+        mov     ah, 02h
+        int     21h
+        push    si
+        mov     si, offset dev_name
+        call    print_vendor_product
+        pop     si
+        pop     bx
+        mov     dx, offset msg_fixed
+        test    bl, UF_REMOVABLE
+        jz      device_line_kind
+        mov     dx, offset msg_removable
+device_line_kind:
         mov     ah, 09h
         int     21h
-print_unit_end:
+        pop     ax
+        push    ax
+        call    print_letter
+        pop     ax
+        cmp     ah, al
+        je      device_line_tail
+        push    ax
+        mov     dl, '-'
+        mov     ah, 02h
+        int     21h                             ; AL = DL afterwards
+        pop     ax
+        mov     al, ah
+        call    print_letter
+device_line_tail:
+        pop     dx
+        or      dx, dx
+        jz      device_line_end
+        mov     ah, 09h
+        int     21h
+device_line_end:
         mov     dx, offset msg_crlf
         mov     ah, 09h
         int     21h
         ret
-print_unit endp
+print_device_line endp
+
+; "X:" for drive AL (0 = A:)
+print_letter proc near
+        mov     dl, al
+        add     dl, 'A'
+        mov     ah, 02h
+        int     21h
+        mov     dl, ':'
+        int     21h
+        ret
+print_letter endp
 
 print_digit proc near
         push    bx
@@ -3343,5 +3416,7 @@ fat32_probe_path db '[:\',0
 fat32_probe_buffer db 44 dup (0)
 
 msg_no_manager  db      'No ASPI manager (SCSIMGR$) - not installed', 13, 10, '$'
-msg_no_media    db      ' (no disk)$'
+msg_no_media    db      ' (empty)$'
+msg_fixed       db      ' Fixed Disk $'
+msg_removable   db      ' Removable Media $'
 msg_crlf        db      13, 10, '$'

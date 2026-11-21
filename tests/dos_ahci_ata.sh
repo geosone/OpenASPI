@@ -72,10 +72,10 @@ console=$(tr -d '\r\0' < "$OUT/console.log" | sed 's/\x1b\[[0-9;]*[A-Za-z]//g')
 grep -q 'SyQuest EZFlyer 230 (direct access, ATA' <<<"$console"
 if [ -z "$NOAHCI_BIOS" ]; then
     grep -q 'ATA, BIOS 80h' <<<"$console"
-    grep -q 'C: (BIOS drive taken over)' <<<"$console"
+    grep -q 'Removable Media C: (from BIOS)' <<<"$console"
 else
     ! grep -q 'ATA, BIOS' <<<"$console"
-    grep -q 'C: 0:.:0 ATA     SyQuest EZFlyer' <<<"$console"
+    grep -q 'HA 0:SCSI ID .:Lun 0: ATA SyQuest EZFlyer Removable Media C:' <<<"$console"
 fi
 grep -q 'OPENASPI AHCI ATA DONE' "$OUT/serial.log"
 [ "$(grep -c 'Hello from the SyQuest cartridge' "$OUT/serial.log")" -eq 2 ]

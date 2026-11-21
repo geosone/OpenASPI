@@ -2051,6 +2051,7 @@ resident_end label byte
 ;=============================================================================
 
         include common/aspi/aspi_init.inc
+        include common/aspi/aspi_print.inc
 
 options         db      0
 
@@ -2141,23 +2142,10 @@ print_name_done:
         mov     word ptr es:[bx+RH_STATUS], ST_DONE
         jmp     request_done
 
-; "  ha:target:lun  VENDOR PRODUCT"
+; "HA h:SCSI ID t:Lun l: VENDOR PRODUCT (analog, CD-DA)", at most 76 columns
 print_unit proc near
-        mov     dx, offset msg_unit
-        mov     ah, 09h
-        int     21h
-        mov     al, byte ptr [scan_ha]
-        call    print_digit
-        mov     dl, ':'
-        mov     ah, 02h
-        int     21h
-        mov     al, byte ptr [scan_target]
-        call    print_digit
-        mov     dl, ':'
-        mov     ah, 02h
-        int     21h
-        mov     al, byte ptr [scan_lun]
-        call    print_digit
+        call    print_ha_title
+        call    print_address
         mov     dl, ' '
         mov     ah, 02h
         int     21h
@@ -2263,18 +2251,22 @@ cd_caps_done:
         ret
 cd_capabilities endp
 
+; AL (0-99) in decimal
 print_digit proc near
-        cmp     al, 10
-        jb      print_digit_one
+        xor     ah, ah
+        mov     dl, 10
+        div     dl                              ; AL tens, AH ones
         push    ax
-        mov     dl, '1'
+        or      al, al
+        jz      print_digit_one
+        mov     dl, al
+        add     dl, '0'
         mov     ah, 02h
         int     21h
-        pop     ax
-        sub     al, 10
 print_digit_one:
-        add     al, '0'
-        mov     dl, al
+        pop     ax
+        mov     dl, ah
+        add     dl, '0'
         mov     ah, 02h
         int     21h
         ret
@@ -2360,14 +2352,13 @@ msg_banner      db      'ASPICDA 0.1 - OpenASPI CD/DVD driver', 13, 10, '$'
 msg_no_manager  db      'No ASPI manager (SCSIMGR$) - ASPICDA not installed', 13, 10, '$'
 msg_no_drive    db      'No CD/DVD drives found - ASPICDA not installed', 13, 10, '$'
 msg_installed   db      ' CD/DVD drive(s), device $'
-msg_unit        db      '  $'
 msg_crlf        db      13, 10, '$'
 msg_caps_unknown db     ' (audio capabilities unknown)$'
-msg_analog_yes  db      ' (analog audio$'
-msg_analog_no   db      ' (no analog audio$'
-msg_digital_yes db      ', digital audio)$'
-msg_digital_inexact db  ', digital audio inexact)$'
-msg_digital_no  db      ', no digital audio)$'
+msg_analog_yes  db      ' (analog$'
+msg_analog_no   db      ' (no analog$'
+msg_digital_yes db      ', CD-DA)$'
+msg_digital_inexact db  ', CD-DA inexact)$'
+msg_digital_no  db      ', no CD-DA)$'
 
 ifndef ASPICDA_TEST
 DRIVER_ENTRY textequ <driver_start>
