@@ -75,8 +75,8 @@ cases:
         dw 8105h,0
         db 1,2,20,6,0,0                ; invalid head addressing mode
         dw 8103h,0
-        db 12,0A5h,19,11,0,0           ; short request
-        dw 8105h,0
+        db 12,0A5h,0,11,13,0           ; header length 0 (CD-BENCH): taken
+        dw 0100h,1
         db 12,0A5h,20,0,0,0
         dw 8105h,0
         db 12,0A5h,20,11,0,1           ; null control block

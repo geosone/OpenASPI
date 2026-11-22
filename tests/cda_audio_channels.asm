@@ -209,12 +209,6 @@ fault_loop:
         mov al, 3
         call prepare_ioctl
         mov byte ptr [packet+RH_COMMAND], CMD_IOCTL_OUT
-        mov byte ptr [packet+RH_LENGTH], 19
-        SEND 8105h
-        call check_unchanged
-        mov al, 3
-        call prepare_ioctl
-        mov byte ptr [packet+RH_COMMAND], CMD_IOCTL_OUT
         mov word ptr [packet+RH_BUFFER], 0
         mov word ptr [packet+RH_BUFFER+2], 0
         SEND 8105h

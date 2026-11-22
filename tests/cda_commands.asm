@@ -83,10 +83,6 @@ cases:
         dd 0000014Ah,0
         dw 8108h,0
         dd 0
-        db 83h,0,23,0                  ; short request
-        dd 0,0
-        dw 8105h,0
-        dd 0
         db 83h,0,24,1                  ; NOT READY from capacity
         dd 12345678h,0
         dw 8102h,1
@@ -114,10 +110,6 @@ cases:
         db 84h,0,22,0                  ; outside CD MSF conversion range
         dd 449849,1
         dw 8108h,0
-        dd 0
-        db 84h,0,21,0
-        dd 0,75
-        dw 8105h,0
         dd 0
         db 80h,2,25,0                  ; READ LONG shares checked decoder
         dd 0,0

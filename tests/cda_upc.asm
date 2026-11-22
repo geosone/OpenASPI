@@ -68,7 +68,6 @@ cases:
         CASE 20,0,11,20,0,2,810Fh,1    ; medium replaced clears saved audio
         CASE 21,0,11,20,0,2,8102h,2    ; medium lost during CONTROL query
         CASE 0,0,10,20,0,0,8105h,0     ; short block
-        CASE 0,0,11,19,0,0,8105h,0     ; short header
         CASE 0,0,11,20,1,0,8105h,0     ; null pointer
         CASE 0,0,11,20,2,0,8105h,0     ; segment crossing
 cases_end:

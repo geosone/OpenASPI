@@ -377,8 +377,6 @@ decode_address endp
 ; Both requests are positioning hints: SEEK(10), without a data transfer.
 ; Check against the current medium, not a cached capacity from another disc.
 seek_request proc near
-        cmp     byte ptr es:[bx+RH_LENGTH], 18h
-        jb      seek_bad_length
         call    request_lba
         jc      seek_done
         push    dx
@@ -409,10 +407,6 @@ seek_in_range:
         mov     byte ptr [srb+SRB_CDB+5], al
         call    call_aspi
         jmp     scsi_failed
-seek_bad_length:
-        mov     al, 05h
-        stc
-        ret
 seek_capacity_failed:
         add     sp, 4
         stc
@@ -543,9 +537,10 @@ read_sectors endp
 ;-----------------------------------------------------------------------------
 
 ; Shared input/output IOCTL envelope. ES:DI -> control block, AL -> code.
+; The length byte of the request header is not checked: programs that send
+; requests through MSCDEX (INT 2Fh AX=1510h) often leave it 0 (CD-BENCH),
+; and the DOS CD-ROM drivers ignore it.
 ioctl_control_block proc near
-        cmp     byte ptr es:[bx+RH_LENGTH], 14h
-        jb      ioctl_bad_packet
         cmp     word ptr es:[bx+RH_COUNT], 1
         jb      ioctl_bad_packet
         mov     ax, word ptr es:[bx+RH_BUFFER]
@@ -1856,12 +1851,6 @@ reset_invalidate_target endp
 ; A successful command publishes the saved range and playing state; a rejected
 ; second PLAY must not overwrite the currently active range.
 play_audio proc near
-        cmp     byte ptr es:[bx+RH_LENGTH], 16h
-        jae     play_length_ok
-        mov     al, 05h
-        stc
-        ret
-play_length_ok:
         mov     cx, word ptr es:[bx+RH_CD_PLAYCOUNT]
         or      cx, word ptr es:[bx+RH_CD_PLAYCOUNT+2]
         jnz     play_nonempty
