@@ -207,7 +207,10 @@ int2f   endp
 ; INT 21h: the drive letters are taken when the first program is started
 ; (AH=4Bh), as the DOS drive table (CDS) exists only after CONFIG.SYS, or
 ; when a program ends (AH=00h, 31h, 4Ch): loaded by DEVLOAD, no program may
-; start before the shell's own commands use the drive.
+; start before the shell's own commands use the drive.  As MS-DOS 7.10 sets
+; LASTDRIVE only after the shell's EXEC, assign asks to be called again
+; then: the shell reads its first command line (AH=0Ah, 0Bh) before it
+; checks a drive letter, and a find (AH=4Eh, 4Fh) comes later.
 ; AH=71h (long file names) goes to the C function lfn, as INT 2Fh to redir,
 ; but on a stack of its own: lfn calls DOS, and DOS the redirector.
 int21   proc far
@@ -216,6 +219,14 @@ ifdef EXFAT_LFN
         je      lfn21
 endif
         cmp     ah, 4Bh
+        je      first21
+        cmp     ah, 0Ah
+        je      first21
+        cmp     ah, 0Bh
+        je      first21
+        cmp     ah, 4Eh
+        je      first21
+        cmp     ah, 4Fh
         je      first21
         cmp     ah, 4Ch
         je      first21
@@ -228,11 +239,14 @@ first21:
         jne     chain21
         cmp     cs:busy, 0
         jne     chain21
-        mov     cs:assigned, 1
         mov     cs:busy, 1
         push    ax
         mov     ax, offset DGROUP:_assign
         call    on_stack
+        or      ax, ax                  ; 1: again at the next trigger
+        jnz     first_again
+        mov     cs:assigned, 1
+first_again:
         pop     ax
         mov     cs:busy, 0
 chain21:

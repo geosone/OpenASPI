@@ -30,7 +30,10 @@ EXFAT.SYS finds exFAT volumes in two places:
   basic data partitions.  They get free drive letters, taken when the
   first program starts or ends, since DOS builds its drive table only
   after CONFIG.SYS (loaded by DEVLOAD, the letters are there when DEVLOAD
-  returns); LASTDRIVE must leave free letters.
+  returns); LASTDRIVE must leave free letters.  When LASTDRIVE is still
+  too low then (MS-DOS 7.10 can set it only after the shell has started),
+  the letters are taken again when the shell reads its first command line
+  or a file is searched for.
 - ASPIDSK and ASPIFDD units (USB sticks, card readers, ZIP): load
   `EXFAT.SYS` after them.  Such a unit keeps the drive letter of ASPIDSK or
   ASPIFDD; while an exFAT medium is in, EXFAT.SYS takes the letter over and

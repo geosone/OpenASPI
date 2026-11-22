@@ -19,7 +19,8 @@ NTFS.SYS reads the volumes through INT 13h: on the BIOS hard disks and on
 the USB, SCSI and other ASPI disks that `ASPIDSK.SYS /I13` makes BIOS disks
 (load NTFS.SYS after ASPIDSK).  It finds superfloppies, MBR partitions of
 type 07h (primary and logical) and GPT basic data partitions, up to eight
-volumes.  The letters are taken when the first program starts, as with
+volumes.  The letters are taken when the first program starts (or, while
+LASTDRIVE is still too low, at the shell's first command line), as with
 EXFAT.SYS; LASTDRIVE must leave free letters.  EXFAT.SYS and NTFS.SYS can be
 loaded together: type 07h is used by both, each takes its own volumes.
 

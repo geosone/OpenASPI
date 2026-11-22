@@ -970,11 +970,16 @@ static int on_aspi(struct drive *b)
     return 0;
 }
 
+/* 0: done; 1: call again at the next trigger (no CDS yet, or LASTDRIVE was
+   too low for all volumes: MS-DOS 7.10 has its final LASTDRIVE only after
+   the shell's EXEC, so it is tried again while that value changes). */
 int __cdecl assign(void __far *unused)
 {
+    static unsigned nbios, next, tried;     /* tried: LASTDRIVE + 1 */
+    static oa_u8 scanned;
     struct iregs q;
     oa_u8 __far *lol, __far *e;
-    unsigned i, l, last, nbios;
+    unsigned i, l, last;
     (void)unused;
     /* the SDA only now: DR-DOS and EDR-DOS move the DOS data segment
        after CONFIG.SYS */
@@ -992,11 +997,14 @@ int __cdecl assign(void __far *unused)
     sft_list = *(oa_u8 __far * __far *)(lol + 4);
 #endif
     last = lol[0x21];
-    if (!cds || FP_OFF(cds) == 0xFFFF) return 0;
-    nbios = ndrv;
-    find_aspi(lol);
+    if (!cds || FP_OFF(cds) == 0xFFFF) return 1;
+    if (!scanned) {
+        scanned = 1;
+        nbios = ndrv;
+        find_aspi(lol);
+    }
     l = first_letter;
-    for (i = 0; i < nbios; ++i) {
+    for (i = next; i < nbios; ++i) {
         if (on_aspi(&drv[i])) continue;
         for (; l < last; ++l) if (!(W(cds + 0x58 * l, 0x43) & 0xC000)) break;
         if (l >= last) break;
@@ -1008,7 +1016,10 @@ int __cdecl assign(void __far *unused)
         W(e, 0x4F) = 2;
         ++l;
     }
-    return 0;
+    next = i;
+    if (i >= nbios || tried == last + 1) return 0;
+    tried = last + 1;
+    return 1;
 }
 
 #ifdef EXFAT_LFN

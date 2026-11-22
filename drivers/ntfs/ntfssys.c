@@ -1021,9 +1021,13 @@ void __cdecl aspi_notify(unsigned unit, unsigned seg)
     (void)unit; (void)seg;
 }
 
-/* Called at the first program start: drive letters for the volumes. */
+/* Called at the first program start: drive letters for the volumes.
+   0: done; 1: call again at the next trigger (no CDS yet, or LASTDRIVE was
+   too low for all volumes: MS-DOS 7.10 has its final LASTDRIVE only after
+   the shell's EXEC, so it is tried again while that value changes). */
 int __cdecl assign(void __far *unused)
 {
+    static unsigned next, tried;            /* tried: LASTDRIVE + 1 */
     struct iregs q;
     oa_u8 __far *lol, __far *e;
     unsigned i, l, last;
@@ -1042,9 +1046,9 @@ int __cdecl assign(void __far *unused)
     sft_list = *(oa_u8 __far * __far *)(lol + 4);
 #endif
     last = lol[0x21];
-    if (!cds || FP_OFF(cds) == 0xFFFF) return 0;
+    if (!cds || FP_OFF(cds) == 0xFFFF) return 1;
     l = first_letter;
-    for (i = 0; i < ndrv; ++i) {
+    for (i = next; i < ndrv; ++i) {
         for (; l < last; ++l) if (!(W(cds + 0x58 * l, 0x43) & 0xC000)) break;
         if (l >= last) break;
         drv[i].pub.letter = (oa_u8)l;
@@ -1055,7 +1059,10 @@ int __cdecl assign(void __far *unused)
         W(e, 0x4F) = 2;
         ++l;
     }
-    return 0;
+    next = i;
+    if (i >= ndrv || tried == last + 1) return 0;
+    tried = last + 1;
+    return 1;
 }
 
 /* ---- INIT: after the resident part, freed when INIT returns ---- */
