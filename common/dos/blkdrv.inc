@@ -2823,6 +2823,9 @@ endif
         jmp     init_next_device
 init_scan_done:
         call    close_device
+ifndef FDD_DRIVER
+        call    i13_print_all
+endif
 ifdef FDD_DRIVER
         call    take_over_dpbs
 endif

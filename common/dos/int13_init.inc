@@ -2,14 +2,19 @@
 
 msg_i13         db      '  INT 13h $'
 msg_i13_size    db      ' (not 512-byte sectors: no INT 13h drive)', 13, 10, '$'
+i13_index       db      0               ; the drive i13_print shows
+i13_names       db      I13_MAX * 24 dup (0)    ; vendor and product of each
 
 ; The device just found (unit record DI, unit_ha/target/lun): an INT 13h
 ; drive when /I13 is given and there is room.  Keeps DI.
 i13_add proc near
         cmp     byte ptr [opt_i13], 0
-        je      i13_add_done
+        je      i13_add_none
         cmp     byte ptr [i13_count], I13_MAX
-        jae     i13_add_done
+        jb      i13_add_room
+i13_add_none:
+        jmp     i13_add_done
+i13_add_room:
         push    di
         mov     al, byte ptr [i13_count]
         mov     ah, I13_SIZE
@@ -37,16 +42,34 @@ i13_add proc near
 i13_add_refused:
         cmp     byte ptr [di+U_SHIFT], 0
         je      i13_add_out
+        mov     al, byte ptr [i13_count]
+        mov     byte ptr [i13_index], al
+        push    si
+        mov     si, offset inquiry_data+8
         call    i13_print
+        pop     si
         mov     dx, offset msg_i13_size
         mov     ah, 09h
         int     21h
         jmp     short i13_add_out
-i13_add_take:
-        call    i13_print
-        mov     dx, offset msg_crlf
-        mov     ah, 09h
-        int     21h
+i13_add_take:                           ; the name for i13_print_all
+        push    di
+        push    si
+        mov     al, byte ptr [i13_count]
+        mov     ah, 24
+        mul     ah
+        add     ax, offset i13_names
+        mov     di, ax
+        mov     si, offset inquiry_data+8
+        mov     cx, 24
+        push    es
+        push    ds
+        pop     es
+        cld
+        rep     movsb
+        pop     es
+        pop     si
+        pop     di
         inc     byte ptr [i13_count]
 i13_add_out:
         pop     di
@@ -55,7 +78,51 @@ i13_add_done:
         ret
 i13_add endp
 
-; "  INT 13h 82h: HA h:SCSI ID t:Lun l: VENDOR PRODUCT" without the line end
+; After the device list: one line per INT 13h drive (printed here, not as
+; each device is found, so that they do not split the device lines).
+i13_print_all proc near
+        mov     cl, byte ptr [scan_ha]
+        mov     ch, byte ptr [scan_target]
+        mov     bl, byte ptr [scan_lun]
+        push    cx
+        push    bx
+        mov     byte ptr [i13_index], 0
+i13_all_next:
+        mov     al, byte ptr [i13_index]
+        cmp     al, byte ptr [i13_count]
+        jae     i13_all_done
+        mov     ah, I13_SIZE
+        mul     ah
+        add     ax, offset i13_table
+        mov     si, ax
+        mov     al, byte ptr [si+I13_HA]
+        mov     byte ptr [scan_ha], al
+        mov     al, byte ptr [si+I13_TARGET]
+        mov     byte ptr [scan_target], al
+        mov     al, byte ptr [si+I13_LUN]
+        mov     byte ptr [scan_lun], al
+        mov     al, byte ptr [i13_index]
+        mov     ah, 24
+        mul     ah
+        add     ax, offset i13_names
+        mov     si, ax
+        call    i13_print
+        mov     dx, offset msg_crlf
+        mov     ah, 09h
+        int     21h
+        inc     byte ptr [i13_index]
+        jmp     i13_all_next
+i13_all_done:
+        pop     bx
+        pop     cx
+        mov     byte ptr [scan_ha], cl
+        mov     byte ptr [scan_target], ch
+        mov     byte ptr [scan_lun], bl
+        ret
+i13_print_all endp
+
+; "  INT 13h 82h: HA h:SCSI ID t:Lun l: VENDOR PRODUCT" (vendor and product
+; at SI) of drive i13_index without the line end
 i13_print proc near
         call    print_ha_title
         mov     dx, offset msg_i13
@@ -67,7 +134,7 @@ i13_print proc near
         mov     al, byte ptr es:[75h]
         pop     es
         add     al, 80h
-        add     al, byte ptr [i13_count]
+        add     al, byte ptr [i13_index]
         push    ax
         mov     cl, 4
         shr     al, cl
@@ -84,7 +151,7 @@ i13_print proc near
         mov     dl, ' '
         mov     ah, 02h
         int     21h
-        call    print_inquiry_name
+        call    print_vendor_product
         ret
 i13_print endp
 
