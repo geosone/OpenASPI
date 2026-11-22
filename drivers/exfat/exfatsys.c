@@ -13,7 +13,7 @@
 #include "openaspi/exfatsys.h"
 #include "openaspi/cptab.h"
 
-#define VERSION "0.6"
+#define VERSION "0.7"
 #define MAXVOL 8
 #define STACKSIZE 1024                  /* as in exfatsys.asm */
 
