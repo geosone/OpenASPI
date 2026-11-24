@@ -125,6 +125,33 @@ is_exfat_done:
         ret
 is_exfat_boot endp
 
+; sector_buf is an NTFS or exFAT boot sector: its name for the device line
+; of a disk without a unit (close_device).  Keeps all registers.
+note_fs proc near
+        cmp     word ptr [sector_buf+510], 0AA55h
+        jne     note_fs_done
+        cmp     word ptr [sector_buf+7], '  '
+        jne     note_fs_done
+        cmp     word ptr [sector_buf+9], '  '
+        jne     note_fs_done
+        cmp     word ptr [sector_buf+3], 'TN'
+        jne     note_fs_exfat
+        cmp     word ptr [sector_buf+5], 'SF'
+        jne     note_fs_done
+        mov     word ptr [dev_fs], offset msg_fs_ntfs
+        ret
+note_fs_exfat:
+        cmp     word ptr [sector_buf+3], 'XE'
+        jne     note_fs_done
+        cmp     word ptr [sector_buf+5], 'AF'
+        jne     note_fs_done
+        cmp     byte ptr [sector_buf+7], 'T'
+        jne     note_fs_done
+        mov     word ptr [dev_fs], offset msg_fs_exfat
+note_fs_done:
+        ret
+note_fs endp
+
 ; Finds an exFAT volume on DI's unit: CF clear, U_START and U_XLEN set.
 exfat_detect proc near
         cmp     byte ptr [di+U_SHIFT], 0        ; EXFAT.SYS: 512-byte sectors
@@ -142,6 +169,7 @@ exfat_sector_size:
 exfat_sector0:
         xor     ax, ax
         xor     dx, dx
+        call    note_fs
         call    is_exfat_boot
         jne     exfat_table
         cmp     byte ptr [di+U_PART], 0         ; a superfloppy: one volume
@@ -165,6 +193,7 @@ exfat_table:
         pop     dx
         pop     ax
         jc      exfat_none
+        call    note_fs
         call    is_exfat_boot
         jne     exfat_none
 exfat_found:

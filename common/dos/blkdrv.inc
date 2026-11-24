@@ -3214,6 +3214,7 @@ msg_ownership_unknown db '  GET DISK INFO unsupported; BIOS ownership unknown.',
 ; two letters and " (empty)" stay inside 80 columns.
 dev_open        db      0               ; a device line is pending
 dev_i13         db      0               ; an INT 13h drive, maybe no unit
+dev_fs          dw      0               ; NTFS/exFAT text of note_fs, or 0
 dev_first       db      0               ; its first and last drive (0 = A:)
 dev_last        db      0
 dev_flags       db      0               ; UF_REMOVABLE
@@ -3262,16 +3263,21 @@ save_dev_name endp
 
 ; The line of the pending device, if any.  A device with an INT 13h drive
 ; but no unit (an NTFS disk for NTFS.SYS) gets its line with "(no letter)",
-; so the device list and the INT 13h lines show the same devices
+; or "(NTFS, no letter)" when note_fs saw a file system with an OpenASPI
+; driver, so the device list and the INT 13h lines show the same devices
 ; (issue #5 by usbbios476).
 close_device proc near
         cmp     byte ptr [dev_open], 0
         jne     close_device_open
         cmp     byte ptr [dev_i13], 0
         je      close_device_done
-        mov     al, 0FFh
         mov     bl, byte ptr [dev_flags]
         mov     dx, offset msg_no_letter
+        cmp     word ptr [dev_fs], 0
+        je      close_device_nofs
+        mov     dx, offset msg_fs_open          ; "(" NTFS ", no letter)"
+close_device_nofs:
+        mov     al, 0FFh
         jmp     short close_device_line
 close_device_open:
         mov     byte ptr [dev_open], 0
@@ -3289,6 +3295,7 @@ close_device_line:
         call    print_device_line
 close_device_done:
         mov     byte ptr [dev_i13], 0
+        mov     word ptr [dev_fs], 0
         ret
 close_device endp
 
@@ -3336,6 +3343,12 @@ device_line_tail:
         or      dx, dx
         jz      device_line_end
         mov     ah, 09h
+        int     21h
+        cmp     dx, offset msg_fs_open
+        jne     device_line_end
+        mov     dx, word ptr [dev_fs]
+        int     21h
+        mov     dx, offset msg_fs_close
         int     21h
 device_line_end:
         mov     dx, offset msg_crlf
@@ -3437,6 +3450,10 @@ fat32_probe_buffer db 44 dup (0)
 msg_no_manager  db      'No ASPI manager (SCSIMGR$) - not installed', 13, 10, '$'
 msg_no_media    db      ' (empty)$'
 msg_no_letter   db      '(no letter)$'
+msg_fs_open     db      '($'
+msg_fs_close    db      ', no letter)$'
+msg_fs_ntfs     db      'NTFS$'
+msg_fs_exfat    db      'exFAT$'
 msg_fixed       db      ' Fixed Disk $'
 msg_removable   db      ' Removable Media $'
 msg_crlf        db      13, 10, '$'

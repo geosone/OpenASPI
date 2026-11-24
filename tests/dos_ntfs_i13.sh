@@ -135,7 +135,7 @@ fi
 need "I13 $NTFS_DRIVE ext 21 sectors $(printf '%08X' $SECTORS) chs .* type 07AA55"
 need 'I13 write ok'
 # the NTFS disk has no unit: its device line says so (issue #5)
-grep -a -q 'OPENASPI NTFS Fixed Disk (no letter)' "$OUT/console.log" ||
+grep -a -q 'OPENASPI NTFS Fixed Disk (NTFS, no letter)' "$OUT/console.log" ||
     { echo 'missing: device line of the NTFS disk with (no letter)'; fail=1; }
 need 'I13TEST PASSED'
 grep -q 'FAIL' "$OUT/serial.txt" && { echo 'a check failed'; fail=1; }
