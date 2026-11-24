@@ -108,6 +108,7 @@ feed() {
     done
     sleep "${TIMEOUT:-120}"
 }
+printf '\xf8\x02' > "$OUT/sercon-port"           # the screen on COM2 (SeaBIOS)
 set +e
 feed |
 timeout "${TIMEOUT:-120}" qemu-system-i386 "${accel[@]}" \
@@ -115,6 +116,7 @@ timeout "${TIMEOUT:-120}" qemu-system-i386 "${accel[@]}" \
     -drive if=floppy,format=raw,file="$OUT/boot.img" -boot a \
     -device pci-ohci,id=usbhc \
     -serial file:"$OUT/serial.log" \
+    -serial file:"$OUT/console.log" -fw_cfg name=etc/sercon-port,file="$OUT/sercon-port" \
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 > "$OUT/monitor.log" 2>&1
 rc=$?
 set -e
@@ -132,6 +134,9 @@ else
 fi
 need "I13 $NTFS_DRIVE ext 21 sectors $(printf '%08X' $SECTORS) chs .* type 07AA55"
 need 'I13 write ok'
+# the NTFS disk has no unit: its device line says so (issue #5)
+grep -a -q 'OPENASPI NTFS Fixed Disk (no letter)' "$OUT/console.log" ||
+    { echo 'missing: device line of the NTFS disk with (no letter)'; fail=1; }
 need 'I13TEST PASSED'
 grep -q 'FAIL' "$OUT/serial.txt" && { echo 'a check failed'; fail=1; }
 cmp -s "$OUT/ntfs.img" "$OUT/ntfs-before.img" || { echo 'the NTFS disk changed'; fail=1; }

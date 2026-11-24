@@ -70,6 +70,10 @@ i13_add_take:                           ; the name for i13_print_all
         pop     es
         pop     si
         pop     di
+        mov     byte ptr [dev_i13], 1           ; a device line without a unit
+        mov     al, byte ptr [si+I13_FLAGS]
+        mov     byte ptr [dev_flags], al
+        call    save_dev_name
         inc     byte ptr [i13_count]
 i13_add_out:
         pop     di

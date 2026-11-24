@@ -3213,6 +3213,7 @@ msg_ownership_unknown db '  GET DISK INFO unsupported; BIOS ownership unknown.',
 ; With the 49 columns of print_address and the name, "Removable Media",
 ; two letters and " (empty)" stay inside 80 columns.
 dev_open        db      0               ; a device line is pending
+dev_i13         db      0               ; an INT 13h drive, maybe no unit
 dev_first       db      0               ; its first and last drive (0 = A:)
 dev_last        db      0
 dev_flags       db      0               ; UF_REMOVABLE
@@ -3259,10 +3260,20 @@ save_dev_name proc near
         ret
 save_dev_name endp
 
-; The line of the pending device, if any.
+; The line of the pending device, if any.  A device with an INT 13h drive
+; but no unit (an NTFS disk for NTFS.SYS) gets its line with "(no letter)",
+; so the device list and the INT 13h lines show the same devices
+; (issue #5 by usbbios476).
 close_device proc near
         cmp     byte ptr [dev_open], 0
+        jne     close_device_open
+        cmp     byte ptr [dev_i13], 0
         je      close_device_done
+        mov     al, 0FFh
+        mov     bl, byte ptr [dev_flags]
+        mov     dx, offset msg_no_letter
+        jmp     short close_device_line
+close_device_open:
         mov     byte ptr [dev_open], 0
         xor     dx, dx
         mov     bl, byte ptr [dev_flags]
@@ -3274,13 +3285,16 @@ close_device proc near
 close_device_print:
         mov     al, byte ptr [dev_first]
         mov     ah, byte ptr [dev_last]
+close_device_line:
         call    print_device_line
 close_device_done:
+        mov     byte ptr [dev_i13], 0
         ret
 close_device endp
 
-; The scan_* device with dev_name: drives AL to AH (0 = A:), BL = U_FLAGS
-; (UF_REMOVABLE), DX = text after the letters or 0. Keeps SI and DI.
+; The scan_* device with dev_name: drives AL to AH (0 = A:; AL = 0FFh: no
+; letter), BL = U_FLAGS (UF_REMOVABLE), DX = text after the letters or 0.
+; Keeps SI and DI.
 print_device_line proc near
         push    dx
         push    ax
@@ -3303,6 +3317,8 @@ device_line_kind:
         mov     ah, 09h
         int     21h
         pop     ax
+        cmp     al, 0FFh
+        je      device_line_tail
         push    ax
         call    print_letter
         pop     ax
@@ -3420,6 +3436,7 @@ fat32_probe_buffer db 44 dup (0)
 
 msg_no_manager  db      'No ASPI manager (SCSIMGR$) - not installed', 13, 10, '$'
 msg_no_media    db      ' (empty)$'
+msg_no_letter   db      '(no letter)$'
 msg_fixed       db      ' Fixed Disk $'
 msg_removable   db      ' Removable Media $'
 msg_crlf        db      13, 10, '$'
