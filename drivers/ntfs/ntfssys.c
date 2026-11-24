@@ -27,6 +27,8 @@ struct dap { oa_u8 size, res; oa_u16 count; void __far *buf; oa_u32 lba, lba_hi;
 #pragma pack()
 
 extern int __cdecl int13(struct iregs *);
+extern oa_u8 __far * __far *lol_cds;   /* exfatsys.asm: LoL+16h, and the */
+extern oa_u8 __far *cds_seen;          /* CDS the letters were put in */
 extern int __cdecl int21(struct iregs *);
 extern void __cdecl hook(void);
 extern char bss_start[], resident_end[];
@@ -1046,7 +1048,10 @@ int __cdecl assign(void __far *unused)
     sft_list = *(oa_u8 __far * __far *)(lol + 4);
 #endif
     last = lol[0x21];
+    lol_cds = (oa_u8 __far * __far *)(lol + 0x16);
     if (!cds || FP_OFF(cds) == 0xFFFF) return 1;
+    if (cds_seen && cds != cds_seen) next = tried = 0;  /* a new drive table */
+    cds_seen = cds;
     l = first_letter;
     for (i = next; i < ndrv; ++i) {
         for (; l < last; ++l) if (!(W(cds + 0x58 * l, 0x43) & 0xC000)) break;

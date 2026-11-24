@@ -3218,7 +3218,7 @@ dev_fs          dw      0               ; NTFS/exFAT text of note_fs, or 0
 dev_first       db      0               ; its first and last drive (0 = A:)
 dev_last        db      0
 dev_flags       db      0               ; UF_REMOVABLE
-dev_media       db      0               ; UF_MEDIA of any of its units
+dev_media       db      0               ; UF_MEDIA, UF_EXFAT of any of its units
 dev_name        db      24 dup (' ')    ; vendor and product
 
 ; Unit DI (the unit_count'th) belongs to the current device.
@@ -3237,7 +3237,7 @@ note_unit proc near
 note_unit_more:
         mov     byte ptr [dev_last], al
         mov     al, byte ptr [di+U_FLAGS]
-        and     al, UF_MEDIA
+        and     al, UF_MEDIA or UF_EXFAT
         or      byte ptr [dev_media], al
         ret
 note_unit endp
@@ -3280,14 +3280,25 @@ close_device_nofs:
         mov     al, 0FFh
         jmp     short close_device_line
 close_device_open:
+        ; "(exFAT)": EXFAT.SYS serves the letter; "(NTFS, empty)": a
+        ; removable device whose medium only NTFS.SYS reads, under a
+        ; letter of its own
         mov     byte ptr [dev_open], 0
         xor     dx, dx
         mov     bl, byte ptr [dev_flags]
+        test    byte ptr [dev_media], UF_EXFAT
+        jz      close_device_notex
+        mov     dx, offset msg_exfat_unit
+        jmp     short close_device_print
+close_device_notex:
         test    bl, UF_REMOVABLE
         jz      close_device_print
-        cmp     byte ptr [dev_media], 0
-        jne     close_device_print
+        test    byte ptr [dev_media], UF_MEDIA
+        jnz     close_device_print
         mov     dx, offset msg_no_media
+        cmp     word ptr [dev_fs], 0
+        je      close_device_print
+        mov     dx, offset msg_fs_empty_open
 close_device_print:
         mov     al, byte ptr [dev_first]
         mov     ah, byte ptr [dev_last]
@@ -3344,12 +3355,20 @@ device_line_tail:
         jz      device_line_end
         mov     ah, 09h
         int     21h
+        push    cx
+        mov     cx, offset msg_fs_close
         cmp     dx, offset msg_fs_open
-        jne     device_line_end
+        je      device_line_fs
+        mov     cx, offset msg_fs_empty
+        cmp     dx, offset msg_fs_empty_open
+        jne     device_line_nofs
+device_line_fs:
         mov     dx, word ptr [dev_fs]
         int     21h
-        mov     dx, offset msg_fs_close
+        mov     dx, cx
         int     21h
+device_line_nofs:
+        pop     cx
 device_line_end:
         mov     dx, offset msg_crlf
         mov     ah, 09h
@@ -3452,6 +3471,9 @@ msg_no_media    db      ' (empty)$'
 msg_no_letter   db      '(no letter)$'
 msg_fs_open     db      '($'
 msg_fs_close    db      ', no letter)$'
+msg_fs_empty_open db    ' ($'
+msg_fs_empty    db      ', empty)$'
+msg_exfat_unit  db      ' (exFAT)$'
 msg_fs_ntfs     db      'NTFS$'
 msg_fs_exfat    db      'exFAT$'
 msg_fixed       db      ' Fixed Disk $'

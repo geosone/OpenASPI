@@ -10,6 +10,10 @@
 #   through the WRITE function of the exFAT service
 # COPY and MD on D: write through that function too; the files must be
 # there after the swaps, and fsck.exfat must find the stick clean
+# NEXTDEV=1: NTFS.SYS after EXFAT.SYS ("not installed", no NTFS disk):
+#   SYSINIT loads it with INT 21h AX=4B03h while DOS still has a temporary
+#   drive table, EXFAT.SYS takes D: there and must take it again in the
+#   final one (issue #5)
 
 set -euo pipefail
 
@@ -21,9 +25,11 @@ MSDOS_IMG=${MSDOS_IMG:-$ROOT/../msdosinst/out/DISK1.IMG}
 BLK=ASPIDSK; PRODUCT=STICK
 if test -n "${FDD:-}"; then BLK=ASPIFDD; PRODUCT='ZIP 100'; fi
 DAMAGE=${DAMAGE:-}
+NEXTDEV=${NEXTDEV:-}
 FIX=; test -z "$DAMAGE" || FIX=' /F'
 
 make -C "$ROOT" build/dos/EXFAT.SYS build/dos/EXCHK.EXE build/dos/$BLK.SYS build/host/test_exfat >/dev/null
+test -z "$NEXTDEV" || make -C "$ROOT" build/dos/NTFS.SYS >/dev/null
 rm -rf "$OUT"
 mkdir -p "$OUT"
 nasm -f bin -o "$OUT/QEXIT.COM" "$AHCIASPI_DIR/tools/qexit.asm"
@@ -40,6 +46,10 @@ while IFS= read -r file; do
 done < <(mdir -b -i "$OUT/boot.img" ::/)
 printf '%s\r\n' 'FILES=30' 'LASTDRIVE=Z' 'DEVICE=A:\EUSBASPI.SYS' \
     "DEVICE=A:\\$BLK.SYS" 'DEVICE=A:\EXFAT.SYS' > "$OUT/CONFIG.SYS"
+if test -n "$NEXTDEV"; then
+    printf '%s\r\n' 'DEVICE=A:\NTFS.SYS' >> "$OUT/CONFIG.SYS"
+    mcopy -o -i "$OUT/boot.img" "$ROOT/build/dos/NTFS.SYS" ::/
+fi
 printf '%s > AUX\r\n' \
     'ECHO === EXFAT1' 'DIR D:' 'TYPE D:\EINLA~1P.TXT' 'MD C:\OUT' 'COPY D:\*.* C:\OUT' \
     "EXCHK D:$FIX" 'EXCHK D:' 'COPY A:\QEXIT.COM D:\NEU.COM' 'MD D:\NEU' 'COPY C:\OUT\FRAG.BIN D:\NEU' \
@@ -82,6 +92,7 @@ wait_for() {
     return 1
 }
 
+printf '\xf8\x02' > "$OUT/sercon-port"           # the screen on COM2 (SeaBIOS)
 set +e
 timeout "${TIMEOUT:-180}" qemu-system-i386 \
     -machine pc -m 32 -display none -vga std \
@@ -92,6 +103,7 @@ timeout "${TIMEOUT:-180}" qemu-system-i386 \
     -drive id=stick,if=none,format=raw,file="$OUT/exstick.img" \
     -device scsi-hd,bus=bot1.0,drive=stick,removable=on,vendor=OPENASPI,product="$PRODUCT" \
     -serial file:"$OUT/serial.log" \
+    -serial file:"$OUT/console.log" -fw_cfg name=etc/sercon-port,file="$OUT/sercon-port" \
     -monitor unix:"$OUT/mon.sock",server,nowait \
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 &
 qemu=$!
@@ -114,6 +126,11 @@ if test -n "$DAMAGE"; then
     fsck.exfat -n "$OUT/fixed.img" >/dev/null 2>&1 || { echo "fsck.exfat finds errors after EXCHK /F"; fail=1; }
 fi
 need EXFAT1 SWAP1 'ASPI unit 0'
+# the device line: EXFAT.SYS serves its letter
+if test -z "${FDD:-}"; then
+    grep -a -q "OPENASPI $PRODUCT Removable Media D: (exFAT)" "$OUT/console.log" ||
+        { echo 'missing: device line with D: (exFAT)'; fail=1; }
+fi
 need FAT SWAP2 'FAT stick read by'
 need FAT SWAP2 'FATSTICK'
 need EXFAT2 END 'OPENASPI'

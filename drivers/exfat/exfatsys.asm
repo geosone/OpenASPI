@@ -34,7 +34,7 @@ INIT_DATA ends
 DGROUP  group _HDR, _TEXT, CONST, CONST2, _DATA, _BSS, _STK, INIT_TEXT, INIT_DATA
 
         public  _int13, _int21, _int1a, _old2f, _old21, _bss_start, _resident_end
-        public  _svc_call, _aspi_callback_off
+        public  _svc_call, _aspi_callback_off, _lol_cds, _cds_seen
 
         extern  _redir:near, _drv_init:near, _assign:near, _aspi_notify:near
 ifdef EXFAT_LFN
@@ -210,13 +210,19 @@ int2f   endp
 ; start before the shell's own commands use the drive.  As MS-DOS 7.10 sets
 ; LASTDRIVE only after the shell's EXEC, assign asks to be called again
 ; then: the shell reads its first command line (AH=0Ah, 0Bh) before it
-; checks a drive letter, and a find (AH=4Eh, 4Fh) comes later.
+; checks a drive letter, and a find (AH=4Eh, 4Fh) comes later.  SYSINIT
+; loads every further DEVICE= driver with AX=4B03h, so a trigger may come
+; while DOS still has a temporary drive table: after the letters are taken,
+; each trigger checks whether the table has moved (LoL+16h no longer the one
+; assign saw), and assign enters them in the new one.
 ; AH=71h (long file names) goes to the C function lfn, as INT 2Fh to redir,
 ; but on a stack of its own: lfn calls DOS, and DOS the redirector.
 int21   proc far
 ifdef EXFAT_LFN
         cmp     ah, 71h
-        je      lfn21
+        jne     not_lfn21
+        jmp     lfn21
+not_lfn21:
 endif
         cmp     ah, 4Bh
         je      first21
@@ -236,7 +242,22 @@ endif
         jne     chain21
 first21:
         cmp     cs:assigned, 0
-        jne     chain21
+        je      first_call
+        push    bx
+        push    es
+        push    ax
+        les     bx, cs:_lol_cds
+        mov     ax, es:[bx]
+        cmp     ax, word ptr cs:_cds_seen
+        jne     first_moved
+        mov     ax, es:[bx+2]
+        cmp     ax, word ptr cs:_cds_seen+2
+first_moved:
+        pop     ax
+        pop     es
+        pop     bx
+        je      chain21
+first_call:
         cmp     cs:busy, 0
         jne     chain21
         mov     cs:busy, 1
@@ -244,8 +265,9 @@ first21:
         mov     ax, offset DGROUP:_assign
         call    on_stack
         or      ax, ax                  ; 1: again at the next trigger
-        jnz     first_again
         mov     cs:assigned, 1
+        jz      first_again
+        mov     cs:assigned, 0
 first_again:
         pop     ax
         mov     cs:busy, 0
@@ -319,6 +341,8 @@ lfn_ax  dw      0
 lfn_result dw   0
 endif
 assigned db     0
+_lol_cds dd     0                       ; LoL+16h: the pointer to the CDS
+_cds_seen dd    0                       ; the CDS the letters are in
 int21   endp
 
 ; int __cdecl int13(struct iregs *), int21(struct iregs *) and

@@ -37,6 +37,8 @@ extern int __cdecl int1a(struct iregs *);
 extern void __cdecl hook(void);
 extern int __cdecl svc_call(oa_u16 off, oa_u16 seg, struct packet *);
 extern oa_u16 aspi_callback_off;      /* far procedure in exfatsys.asm */
+extern oa_u8 __far * __far *lol_cds;   /* exfatsys.asm: LoL+16h, and the */
+extern oa_u8 __far *cds_seen;          /* CDS the letters were put in */
 extern char bss_start[], resident_end[];
 
 struct drive {
@@ -978,6 +980,7 @@ int __cdecl assign(void __far *unused)
     static unsigned nbios, next, tried;     /* tried: LASTDRIVE + 1 */
     static oa_u8 scanned;
     struct iregs q;
+    struct drive *d;
     oa_u8 __far *lol, __far *e;
     unsigned i, l, last;
     (void)unused;
@@ -997,7 +1000,20 @@ int __cdecl assign(void __far *unused)
     sft_list = *(oa_u8 __far * __far *)(lol + 4);
 #endif
     last = lol[0x21];
+    lol_cds = (oa_u8 __far * __far *)(lol + 0x16);
     if (!cds || FP_OFF(cds) == 0xFFFF) return 1;
+    if (cds_seen && cds != cds_seen) {
+        /* a new drive table (the letters were taken while SYSINIT loaded
+           a later DEVICE= driver): all letters again */
+        next = 0; tried = 0;
+        for (d = drv; d < drv + ndrv; ++d)
+            if (d->pub.aspi && d->pub.state == ST_OURS) {
+                d->pub.state = ST_DOS;
+                take_letter(d);
+                d->pub.state = ST_OURS;
+            }
+    }
+    cds_seen = cds;
     if (!scanned) {
         scanned = 1;
         nbios = ndrv;
