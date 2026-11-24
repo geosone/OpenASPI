@@ -1,4 +1,4 @@
-OpenASPI exFAT 0.7 - exFAT drives for DOS
+OpenASPI exFAT 0.8 - exFAT drives for DOS
 ==========================================
 
   EXFAT.SYS  exFAT volumes as DOS drives
