@@ -161,6 +161,30 @@ static void rw(struct oa_blockemu *emu, struct oa_srb *srb, oa_u64 lba, oa_u32 c
     }
 }
 
+/* Commands that need the medium: those the medium state is checked for. */
+static int needs_medium(oa_u8 op)
+{
+    switch (op) {
+    case OA_SCSI_TEST_UNIT_READY:
+    case OA_SCSI_READ_CAPACITY_10:
+    case OA_SCSI_SERVICE_ACTION_IN:
+    case OA_SCSI_MODE_SENSE_6:
+    case OA_SCSI_MODE_SENSE_10:
+    case OA_SCSI_READ_6:
+    case OA_SCSI_WRITE_6:
+    case OA_SCSI_READ_10:
+    case OA_SCSI_WRITE_10:
+    case OA_SCSI_READ_12:
+    case OA_SCSI_WRITE_12:
+    case OA_SCSI_READ_16:
+    case OA_SCSI_WRITE_16:
+    case OA_SCSI_SYNC_CACHE_10:
+    case OA_SCSI_SYNC_CACHE_16:
+        return 1;
+    }
+    return 0;
+}
+
 void oa_blockemu_execute(struct oa_blockemu *emu, struct oa_srb *srb)
 {
     const oa_u8 *c = srb->cdb;
@@ -172,9 +196,20 @@ void oa_blockemu_execute(struct oa_blockemu *emu, struct oa_srb *srb)
         srb->host_status = OA_HOST_NO_DEVICE;
         return;
     }
+    if (emu->media != 0 && needs_medium(c[0])) {
+        switch (emu->media(emu->ctx, emu)) {
+        case OA_BLK_MEDIUM_CHANGED:
+            set_sense(emu, srb, OA_SENSE_UNIT_ATTENTION, OA_ASC_MEDIUM_CHANGED, 0);
+            return;
+        case OA_BLK_MEDIUM_NONE:
+            set_sense(emu, srb, OA_SENSE_NOT_READY, OA_ASC_MEDIUM_NOT_PRESENT, 0);
+            return;
+        }
+    }
     switch (c[0]) {
     case OA_SCSI_TEST_UNIT_READY:
     case OA_SCSI_START_STOP_UNIT:
+    case OA_SCSI_PREVENT_ALLOW: /* nothing locks the medium in */
         break;
     case OA_SCSI_REQUEST_SENSE:
         memset(buf, 0, sizeof(buf));

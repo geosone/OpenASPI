@@ -11,6 +11,7 @@
 #include "openaspi/native/disk.h"
 #include "openaspi/native/sat.h"
 #include "openaspi/native/atapi.h"
+#include "openaspi/native/blockemu.h"
 
 static int failures;
 #define CHECK(c)                                                              \
@@ -118,6 +119,54 @@ static void hba_execute(struct oa_hba *hba, struct oa_srb *srb)
 }
 
 static const struct oa_hba_ops hba_ops = { .execute = hba_execute };
+
+/* --- a removable drive (a floppy) behind blockemu ---------------------- */
+
+struct fake_floppy {
+	uint8_t *media;     /* NULL: the drive is empty */
+	uint64_t blocks;
+	int changed;        /* the change line */
+	struct oa_blockemu emu;
+};
+
+static struct fake_floppy fd;
+
+static int fd_rw(void *ctx, oa_u64 lba, oa_u32 count, int write, void *buf, oa_u32 timeout_ms,
+		 struct oa_blk_sense *sense)
+{
+	struct fake_floppy *f = ctx;
+	(void)timeout_ms;
+	memset(sense, 0, sizeof(*sense));
+	if (write)
+		memcpy(f->media + lba * 512, buf, count * 512);
+	else
+		memcpy(buf, f->media + lba * 512, count * 512);
+	return OA_HOST_OK;
+}
+
+static int fd_media(void *ctx, struct oa_blockemu *emu)
+{
+	struct fake_floppy *f = ctx;
+	if (!f->media)
+		return OA_BLK_MEDIUM_NONE;
+	if (!f->changed)
+		return OA_BLK_MEDIUM_PRESENT;
+	f->changed = 0;
+	emu->blocks = f->blocks;
+	return OA_BLK_MEDIUM_CHANGED;
+}
+
+static void fd_execute(struct oa_hba *hba, struct oa_srb *srb)
+{
+	(void)hba;
+	if (srb->target != 0) {
+		srb->host_status = OA_HOST_NO_DEVICE;
+		return;
+	}
+	oa_blockemu_execute(&fd.emu, srb);
+}
+
+static const struct oa_hba_ops fd_ops = { .execute = fd_execute };
 
 int main(void)
 {
@@ -273,6 +322,61 @@ int main(void)
 		uint8_t s[18];
 		oa_atapi_sense_from_error(s, 0x54);
 		CHECK(s[0] == 0x70 && s[2] == 5);
+	}
+
+	/* a removable drive: empty, a disk put in, changed, taken out */
+	{
+		static struct oa_hba fdhba = { .name = "floppy", .ops = &fd_ops, .max_target = 0, .max_lun = 0 };
+		struct oa_device fdpool[1];
+		struct oa_disk fdisk;
+		uint8_t *a = calloc(2880, 512), *b = calloc(1440, 512), sec[512];
+		a[0] = 0xAA;
+		b[0] = 0xBB;
+		fd.emu.rw = fd_rw;
+		fd.emu.media = fd_media;
+		fd.emu.ctx = &fd;
+		fd.emu.block_size = 512;
+		fd.emu.removable = 1;
+		memcpy(fd.emu.vendor, "TEST", 5);
+		CHECK(oa_hba_register(&fdhba) >= 0);
+		CHECK(oa_scan_more(fdpool, 1) == 1);
+		CHECK(fdpool[0].inquiry.removable);
+		/* empty: open says so, the disk stays for the check */
+		CHECK(oa_disk_open(&fdisk, &fdpool[0]) == OA_ENOMEDIUM);
+		CHECK(fdisk.blocks == 0 && fdisk.generation == 0);
+		CHECK(oa_disk_read(&fdisk, 0, 1, sec) == OA_ENOMEDIUM);
+		CHECK(oa_disk_check(&fdisk) == OA_ENOMEDIUM && fdisk.generation == 0);
+		/* a 1.44 MB disk */
+		fd.media = a, fd.blocks = 2880, fd.changed = 1;
+		CHECK(oa_disk_check(&fdisk) == OA_ECHANGED);
+		CHECK(fdisk.blocks == 2880 && fdisk.generation == 1);
+		CHECK(oa_disk_check(&fdisk) == OA_OK);
+		CHECK(oa_disk_read(&fdisk, 0, 1, sec) == OA_OK && sec[0] == 0xAA);
+		/* a 720 KB one: the next read meets the change, moves nothing */
+		fd.media = b, fd.blocks = 1440, fd.changed = 1;
+		sec[0] = 0;
+		CHECK(oa_disk_read(&fdisk, 0, 1, sec) == OA_ECHANGED && sec[0] == 0);
+		CHECK(fdisk.blocks == 1440 && fdisk.generation == 2);
+		CHECK(oa_disk_read(&fdisk, 0, 1, sec) == OA_OK && sec[0] == 0xBB);
+		CHECK(oa_disk_read(&fdisk, 1440, 1, sec) == OA_EINVAL);
+		/* taken out */
+		fd.media = NULL;
+		CHECK(oa_disk_write(&fdisk, 0, 1, sec) == OA_ENOMEDIUM);
+		CHECK(fdisk.blocks == 0 && fdisk.generation == 3);
+		CHECK(oa_disk_check(&fdisk) == OA_ENOMEDIUM && fdisk.generation == 3);
+		/* PREVENT ALLOW MEDIUM REMOVAL is taken, INQUIRY needs no medium */
+		{
+			struct oa_srb srb;
+			memset(&srb, 0, sizeof(srb));
+			srb.cdb_len = 6;
+			srb.cdb[0] = OA_SCSI_PREVENT_ALLOW;
+			oa_execute(&fdhba, &srb);
+			CHECK(srb.target_status == OA_STATUS_GOOD);
+			CHECK(fdpool[0].inquiry.device_type == OA_ASPI_DEVICE_DISK);
+		}
+		oa_device_remove(&fdpool[0]);
+		free(a);
+		free(b);
 	}
 
 	free(out);

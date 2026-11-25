@@ -25,11 +25,21 @@ struct oa_disk {
 	oa_u8 use16;            /* READ/WRITE (16) needed */
 	oa_u8 write_protected;
 	oa_u8 reserved[2];
+	oa_u32 generation;      /* media changes seen (removal and insertion) */
 };
 
 /* Wait for the unit to become ready (spin-up, unit attention after reset or
- * medium change) and read its capacity. */
+ * medium change) and read its capacity. OA_ENOMEDIUM: an empty removable
+ * drive; the disk stays usable for oa_disk_check (blocks 0). */
 int oa_disk_open(struct oa_disk *disk, struct oa_device *dev);
+
+/* Whether the medium is still the one read: OA_OK, OA_ECHANGED (another
+ * one, inserted since; capacity and write protection are read again and
+ * the generation counts up), OA_ENOMEDIUM (the drive is empty: blocks 0),
+ * or a transport error. A transfer that meets a changed medium does the
+ * same and returns OA_ECHANGED without moving data: whatever the caller
+ * knew about the old medium is void. */
+int oa_disk_check(struct oa_disk *disk);
 
 int oa_disk_read(struct oa_disk *disk, oa_u64 lba, oa_u32 count, void *buf);
 int oa_disk_write(struct oa_disk *disk, oa_u64 lba, oa_u32 count, const void *buf);

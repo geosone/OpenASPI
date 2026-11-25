@@ -124,6 +124,61 @@ static void check_write_protect(struct oa_disk *disk)
     }
 }
 
+/* The capacity, the transfer limit and the write protection, from the
+ * medium in the drive. */
+static int refresh(struct oa_disk *disk)
+{
+    int r = read_capacity(disk);
+
+    if (r != OA_OK) {
+        return r;
+    }
+    /* 64 KiB per command keeps every transport within its limits
+     * (IDE PIO, single-PRD bounce buffers, USB BOT). */
+    disk->max_blocks = 65536ul / disk->block_size;
+    if (disk->max_blocks == 0u) {
+        disk->max_blocks = 1;
+    }
+    disk->write_protected = 0;
+    check_write_protect(disk);
+    return OA_OK;
+}
+
+/* A transfer or check met another medium (r OA_ECHANGED) or none
+ * (OA_ENOMEDIUM): forget the old one. */
+static int medium_gone(struct oa_disk *disk, int r)
+{
+    if (r == OA_ECHANGED) {
+        disk->generation++;
+        if (refresh(disk) != OA_OK) {
+            disk->blocks = 0; /* not readable: as if empty */
+        }
+    } else if (r == OA_ENOMEDIUM && disk->blocks != 0u) {
+        disk->generation++;
+        disk->blocks = 0;
+    }
+    return r;
+}
+
+int oa_disk_check(struct oa_disk *disk)
+{
+    struct oa_srb srb;
+    int r;
+
+    srb_init(&srb, disk, 6);
+    srb.cdb[0] = OA_SCSI_TEST_UNIT_READY;
+    run(disk, &srb);
+    r = result(&srb);
+    if (r == OA_ECHANGED || r == OA_ENOMEDIUM) {
+        return medium_gone(disk, r);
+    }
+    if (r == OA_OK && disk->blocks == 0u) {
+        /* a medium where there was none, without a unit attention */
+        return medium_gone(disk, OA_ECHANGED);
+    }
+    return r;
+}
+
 int oa_disk_open(struct oa_disk *disk, struct oa_device *dev)
 {
     struct oa_srb srb;
@@ -166,18 +221,7 @@ int oa_disk_open(struct oa_disk *disk, struct oa_device *dev)
             oa_host_delay_us(100000ul);
         }
     }
-    r = read_capacity(disk);
-    if (r != OA_OK) {
-        return r;
-    }
-    /* 64 KiB per command keeps every transport within its limits
-     * (IDE PIO, single-PRD bounce buffers, USB BOT). */
-    disk->max_blocks = 65536ul / disk->block_size;
-    if (disk->max_blocks == 0u) {
-        disk->max_blocks = 1;
-    }
-    check_write_protect(disk);
-    return OA_OK;
+    return refresh(disk);
 }
 
 static int transfer(struct oa_disk *disk, oa_u64 lba, oa_u32 count, void *buf, int write)
@@ -187,6 +231,9 @@ static int transfer(struct oa_disk *disk, oa_u64 lba, oa_u32 count, void *buf, i
     oa_u32 n;
     int r, tries;
 
+    if (disk->blocks == 0u && disk->dev != 0) {
+        return OA_ENOMEDIUM; /* an empty drive (or one not checked since) */
+    }
     if (disk->block_size == 0u || count == 0u || lba >= disk->blocks ||
         count > disk->blocks - lba) {
         return OA_EINVAL;
@@ -214,6 +261,9 @@ static int transfer(struct oa_disk *disk, oa_u64 lba, oa_u32 count, void *buf, i
             if (r != OA_EIO || srb.host_status == OA_HOST_NO_DEVICE) {
                 break;
             }
+        }
+        if (r == OA_ECHANGED || r == OA_ENOMEDIUM) {
+            return medium_gone(disk, r);
         }
         if (r != OA_OK) {
             return r;
