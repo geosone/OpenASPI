@@ -4,7 +4,9 @@
 DOSNTFS := $(BUILD)/dos/NTFS.SYS
 # the same driver with the long file names (INT 21h AX=71xxh)
 DOSNTFSL := $(BUILD)/dos/NTFSL.SYS
-NTFSHDR := $(OPENFILESYSTEM)/include/openfat/ntfs.h include/openaspi/exfatsys.h include/openaspi/types.h
+# sectors up to 4096 bytes (4Kn disks) in every object of the driver
+NTFSWCC = $(EXFATWCC) -dOFS_NTFS_MAXSECT=4096
+NTFSHDR := $(OPENFILESYSTEM)/include/ofs/ntfs.h include/openaspi/exfatsys.h include/openaspi/types.h
 NTFSOBJ := $(BUILD)/dos/ntfssys_a.obj $(BUILD)/dos/ntfssys.obj $(BUILD)/dos/ntfs.obj $(BUILD)/dos/name83.obj $(BUILD)/dos/latin.obj $(BUILD)/dos/cpinit.obj
 NTFSLOBJ := $(BUILD)/dos/ntfssysl_a.obj $(BUILD)/dos/ntfssysl.obj $(BUILD)/dos/ntfs.obj $(BUILD)/dos/name83.obj $(BUILD)/dos/latin.obj $(BUILD)/dos/cpinit.obj
 
@@ -14,7 +16,7 @@ $(BUILD)/dos/ntfssys_a.obj: drivers/exfat/exfatsys.asm | $(JWASM)
 
 $(BUILD)/dos/ntfssys.obj: drivers/ntfs/ntfssys.c $(NTFSHDR)
 	mkdir -p $(@D)
-	$(EXFATWCC) -fo=$@ $<
+	$(NTFSWCC) -fo=$@ $<
 
 $(BUILD)/dos/ntfssysl_a.obj: drivers/exfat/exfatsys.asm | $(JWASM)
 	mkdir -p $(@D)
@@ -22,11 +24,11 @@ $(BUILD)/dos/ntfssysl_a.obj: drivers/exfat/exfatsys.asm | $(JWASM)
 
 $(BUILD)/dos/ntfssysl.obj: drivers/ntfs/ntfssys.c $(NTFSHDR)
 	mkdir -p $(@D)
-	$(EXFATWCC) -dNTFS_LFN -fo=$@ $<
+	$(NTFSWCC) -dNTFS_LFN -fo=$@ $<
 
 $(BUILD)/dos/ntfs.obj: $(OPENFILESYSTEM)/src/ntfs/ntfs.c $(NTFSHDR)
 	mkdir -p $(@D)
-	$(EXFATWCC) -fo=$@ $<
+	$(NTFSWCC) -fo=$@ $<
 
 $(DOSNTFS): $(NTFSOBJ) drivers/ntfs/ntfs.mk
 	$(WLINK) format raw bin option offset=0,quiet,nodefaultlibs,map=$(BUILD)/dos/NTFS.map disable 1014,1023 \

@@ -261,11 +261,11 @@ $(BUILD)/dos/raw_client.obj: common/dos/raw_client.c include/openaspi/raw_media.
 	mkdir -p $(@D)
 	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFILESYSTEM)/include -i=$(WATCOM)/h -fo=$@ $<
 
-$(BUILD)/dos/fat_format.obj: $(OPENFILESYSTEM)/src/fat/fat_format.c $(OPENFILESYSTEM)/include/openfat/fat_format.h include/openaspi/types.h
+$(BUILD)/dos/fat_format.obj: $(OPENFILESYSTEM)/src/fat/fat_format.c $(OPENFILESYSTEM)/include/ofs/fat_format.h include/openaspi/types.h
 	mkdir -p $(@D)
 	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFILESYSTEM)/include -i=$(WATCOM)/h -fo=$@ $<
 
-$(BUILD)/dos/aspifmt.obj: tools/aspifmt/aspifmt.c include/openaspi/raw_media.h $(OPENFILESYSTEM)/include/openfat/fat_format.h include/openaspi/rescue.h include/openaspi/types.h
+$(BUILD)/dos/aspifmt.obj: tools/aspifmt/aspifmt.c include/openaspi/raw_media.h $(OPENFILESYSTEM)/include/ofs/fat_format.h include/openaspi/rescue.h include/openaspi/types.h
 	mkdir -p $(@D)
 	WATCOM=$(WATCOM) $(WCC) -q -bt=dos -ms -0 -w4 -we -zq -os -s -i=include -i=$(OPENFILESYSTEM)/include -i=$(WATCOM)/h -fo=$@ $<
 

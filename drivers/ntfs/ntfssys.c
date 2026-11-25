@@ -12,7 +12,7 @@
    Copyright (C) 2026 GeosOne.  GNU General Public License version 2 or later. */
 #include <string.h>
 #include <i86.h>
-#include "openfat/ntfs.h"
+#include "ofs/ntfs.h"
 #include "openaspi/exfatsys.h"
 #include "openaspi/cptab.h"
 
@@ -35,7 +35,7 @@ extern char bss_start[], resident_end[];
 
 struct drive {
     struct oa_exfatsys_vol pub; /* as EXFAT.SYS's table (BIOS disks only) */
-    struct ofat_ntfs v;
+    struct ofs_ntfs v;
 };
 
 static struct drive drv[MAXVOL];
@@ -49,12 +49,12 @@ static oa_u8 __far *nul_dev;          /* the DOS device chain */
 static oa_u8 __far *sft_list;         /* the first SFT block, for 71A6h */
 #endif
 static oa_u8 first_letter;
-static const struct ofat_cp *cp;
-static struct ofat_cp cptab;           /* the active one, copied at INIT */
-static struct ofat_ntfs_ent ent;
-typedef char ent_bounces[sizeof(struct ofat_ntfs_ent) >= 512 ? 1 : -1];
+static const struct ofs_cp *cp;
+static struct ofs_cp cptab;           /* the active one, copied at INIT */
+static struct ofs_ntfs_ent ent;
+typedef char ent_bounces[sizeof(struct ofs_ntfs_ent) >= 512 ? 1 : -1];
 /* the buffers of all volumes: two MFT records, an index block, a sector */
-static oa_u8 nbuf[OFAT_NTFS_MAXREC * 3 + 512];
+static oa_u8 nbuf[OFS_NTFS_BUF];
 static struct drive *buf_owner;
 static oa_u8 __far *cds;
 
@@ -62,7 +62,7 @@ static oa_u8 __far *cds;
 static struct { struct drive *d; oa_u32 first, idx, clu, rlen; } walks[4];
 static unsigned next_walk;
 
-static struct ofat_ntfs_file pdir;      /* the directory of the last part of a path */
+static struct ofs_ntfs_file pdir;      /* the directory of the last part of a path */
 
 #define NONE 0xFFFFFFFFUL
 #define DS_SEG() FP_SEG((void __far *)&ndrv)
@@ -173,16 +173,16 @@ static const char __far *to_fcb(const char __far *p, char fcb[11])
 
 /* The directory of a path and its last part; E_PATH when a directory
    on the way is missing. */
-static int split_path(struct drive *d, const char __far *p, struct ofat_ntfs_file *dir, char fcb[11])
+static int split_path(struct drive *d, const char __far *p, struct ofs_ntfs_file *dir, char fcb[11])
 {
-    ofat_ntfs_rootdir(&d->v, dir);
+    ofs_ntfs_rootdir(&d->v, dir);
     p += 3;                                     /* "X:\" */
     memset(fcb, ' ', 11);
     while (*p) {
         p = to_fcb(p, fcb);
         if (!*p) return 0;
         ++p;
-        if (ofat_ntfs_lookup(&d->v, dir, fcb, &ent) || !(ent.attr & OFAT_NTFS_DIR)) return E_PATH;
+        if (ofs_ntfs_lookup(&d->v, dir, fcb, &ent) || !(ent.attr & OFS_NTFS_DIR)) return E_PATH;
         *dir = ent.file;
         memset(fcb, ' ', 11);
     }
@@ -209,8 +209,8 @@ static int find_path(struct drive *d, const char __far *p)
     if (r) return r;
     if (fcb[0] == ' ') return -1;
     if (dev_name(fcb)) return E_ACCESS;
-    r = ofat_ntfs_lookup(&d->v, &pdir, fcb, &ent);
-    if (r == OFAT_NTFS_END) return E_NOTFOUND;
+    r = ofs_ntfs_lookup(&d->v, &pdir, fcb, &ent);
+    if (r == OFS_NTFS_END) return E_NOTFOUND;
     return r ? E_NOTREADY : 0;
 }
 
@@ -243,7 +243,7 @@ static void fill_sft(oa_u8 __far *sft, struct drive *d)
     _fmemcpy(sft + 0x20, last_fcb, 11);
 }
 
-static void sft_file(struct drive *d, const oa_u8 __far *sft, struct ofat_ntfs_file *f)
+static void sft_file(struct drive *d, const oa_u8 __far *sft, struct ofs_ntfs_file *f)
 {
     unsigned i;
     memset(f, 0, sizeof(*f));
@@ -255,7 +255,7 @@ static void sft_file(struct drive *d, const oa_u8 __far *sft, struct ofat_ntfs_f
         }
 }
 
-static void sft_walk(struct drive *d, const struct ofat_ntfs_file *f)
+static void sft_walk(struct drive *d, const struct ofs_ntfs_file *f)
 {
     unsigned i;
     for (i = 0; i < 4 && (walks[i].d != d || walks[i].first != f->first); ++i) ;
@@ -278,14 +278,14 @@ static int match(const char *name, const oa_u8 __far *tpl)
 #define DOTS 0xFFF0
 static int find(struct regs *r, struct drive *d, oa_u8 __far *sdb)
 {
-    struct ofat_ntfs_file dir;
+    struct ofs_ntfs_file dir;
     oa_u8 __far *fdb = *(oa_u8 __far * __far *)(sda + SDA_DTA) + 21;
     oa_u8 attr = sdb[12];
     oa_u16 hi = W(sdb, 19);
     oa_u32 pos;
     int rc;
     char name[11];
-    ofat_ntfs_rootdir(&d->v, &dir);
+    ofs_ntfs_rootdir(&d->v, &dir);
     dir.first = D(sdb, 15);
     if (hi == 0xFFFF && W(sdb, 13) == 0xFFFF) return error(r, E_NOMORE);
     _fmemset(fdb, 0, 32);
@@ -293,18 +293,18 @@ static int find(struct regs *r, struct drive *d, oa_u8 __far *sdb)
         memset(name, ' ', 11); name[0] = '.';
         if (hi++ != DOTS) name[1] = '.';
         W(sdb, 19) = hi;
-        if ((attr & OFAT_NTFS_DIR) && match(name, sdb + 1)) {
-            _fmemcpy(fdb, name, 11); fdb[11] = OFAT_NTFS_DIR;
+        if ((attr & OFS_NTFS_DIR) && match(name, sdb + 1)) {
+            _fmemcpy(fdb, name, 11); fdb[11] = OFS_NTFS_DIR;
             return ok(r);
         }
     }
     pos = hi >= DOTS ? 0 : (oa_u32)hi << 16 | W(sdb, 13);
     for (;;) {
-        rc = ofat_ntfs_dir_next(&d->v, &dir, &pos, &ent);
-        if (rc == OFAT_NTFS_END) break;
+        rc = ofs_ntfs_dir_next(&d->v, &dir, &pos, &ent);
+        if (rc == OFS_NTFS_END) break;
         if (rc) return error(r, E_NOTREADY);
-        if ((ent.attr & ~attr) & (OFAT_NTFS_HIDDEN | OFAT_NTFS_SYSTEM | OFAT_NTFS_DIR)) continue;
-        if (ofat_ntfs_short(&d->v, &dir, &ent, name)) return error(r, E_NOTREADY);
+        if ((ent.attr & ~attr) & (OFS_NTFS_HIDDEN | OFS_NTFS_SYSTEM | OFS_NTFS_DIR)) continue;
+        if (ofs_ntfs_short(&d->v, &dir, &ent, name)) return error(r, E_NOTREADY);
         if (!match(name, sdb + 1)) continue;
         _fmemcpy(fdb, name, 11);
         fdb[11] = (oa_u8)ent.attr;
@@ -319,7 +319,7 @@ static int find(struct regs *r, struct drive *d, oa_u8 __far *sdb)
 
 static int find_first(struct regs *r, struct drive *d)
 {
-    struct ofat_ntfs_file dir;
+    struct ofs_ntfs_file dir;
     oa_u8 __far *sdb = sda + SDA_SDB;
     oa_u8 __far *fdb = *(oa_u8 __far * __far *)(sda + SDA_DTA) + 21;
     char fcb[11];
@@ -331,7 +331,7 @@ static int find_first(struct regs *r, struct drive *d)
     _fmemcpy(sdb + 1, fcb, 11);
     sdb[12] = sda[SDA_SATTR];
     W(sdb, 13) = 0;
-    W(sdb, 19) = dir.first == OFAT_NTFS_ROOT ? 0 : DOTS;
+    W(sdb, 19) = dir.first == OFS_NTFS_ROOT ? 0 : DOTS;
     D(sdb, 15) = dir.first;
     if (sdb[12] == 0x08) {                      /* the volume label */
         _fmemset(fdb, 0, 32);
@@ -351,7 +351,7 @@ static int disk_space(struct regs *r, struct drive *d)
 {
     oa_u32 total = d->v.clusters, avail, bytes = 512UL << d->v.cshift;
     oa_u16 bps = 512;
-    if (d->v.free == NONE && ofat_ntfs_free(&d->v, &avail)) return error(r, E_NOTREADY);
+    if (d->v.free == NONE && ofs_ntfs_free(&d->v, &avail)) return error(r, E_NOTREADY);
     avail = d->v.free;
     while (total > 0xFFFF) { total >>= 1; avail >>= 1; bytes <<= 1; }
     /* one sector per cluster where it fits: EDR-DOS's INT 21h AH=36h
@@ -368,7 +368,7 @@ static int do_open(struct regs *r, struct drive *d, oa_u16 mode)
 {
     oa_u8 __far *sft = (oa_u8 __far *)MK_FP(r->es, r->di);
     int rc = find_path(d, (const char __far *)(sda + SDA_FN1));
-    if (rc < 0 || (!rc && (ent.attr & OFAT_NTFS_DIR))) return error(r, E_ACCESS);
+    if (rc < 0 || (!rc && (ent.attr & OFS_NTFS_DIR))) return error(r, E_ACCESS);
     if (rc) return error(r, (oa_u16)rc);
     if (mode & 3) return error(r, E_ACCESS);     /* read-only */
     fill_sft(sft, d);
@@ -397,7 +397,7 @@ int __cdecl redir(struct regs *r)
     oa_u8 fn = (oa_u8)r->ax;
     oa_u8 __far *sft = (oa_u8 __far *)MK_FP(r->es, r->di);
     const char __far *fn1 = (const char __far *)(sda + SDA_FN1);
-    struct ofat_ntfs_file f;
+    struct ofs_ntfs_file f;
     struct drive *d;
     oa_u16 done;
     oa_u32 pos;
@@ -414,7 +414,7 @@ int __cdecl redir(struct regs *r)
     case 0x05:                                  /* change directory */
         if (!(d = drive_of_path(fn1))) return 1;
         rc = find_path(d, fn1);
-        if (rc > 0 || (!rc && !(ent.attr & OFAT_NTFS_DIR))) return error(r, E_PATH);
+        if (rc > 0 || (!rc && !(ent.attr & OFS_NTFS_DIR))) return error(r, E_PATH);
         return ok(r);
     case 0x06:                                  /* close */
         if (!(d = sft_drive(sft))) return 1;
@@ -427,9 +427,9 @@ int __cdecl redir(struct regs *r)
         if (!(d = sft_drive(sft))) return 1;
         sft_file(d, sft, &f);
         pos = D(sft, 0x15);
-        rc = ofat_ntfs_read(&d->v, &f, pos, *(void __far * __far *)(sda + SDA_DTA), r->cx, &done);
+        rc = ofs_ntfs_read(&d->v, &f, pos, *(void __far * __far *)(sda + SDA_DTA), r->cx, &done);
         sft_walk(d, &f);
-        if (rc == OFAT_NTFS_ECOMP) return error(r, E_ACCESS);
+        if (rc == OFS_NTFS_ECOMP) return error(r, E_ACCESS);
         if (rc) return error(r, E_NOTREADY);
         D(sft, 0x15) = pos + done;
         r->cx = done;
@@ -443,7 +443,7 @@ int __cdecl redir(struct regs *r)
     case 0x0F:                                  /* attributes */
         if (!(d = drive_of_path(fn1))) return 1;
         rc = find_path(d, fn1);
-        if (rc < 0) { r->ax = OFAT_NTFS_DIR; r->bx = r->di = r->cx = r->dx = 0; return ok(r); }
+        if (rc < 0) { r->ax = OFS_NTFS_DIR; r->bx = r->di = r->cx = r->dx = 0; return ok(r); }
         if (rc) return error(r, (oa_u16)rc);
         r->ax = ent.attr; r->cx = ent.time; r->dx = ent.date;
         r->bx = (oa_u16)(ent.file.size >> 16); r->di = (oa_u16)ent.file.size;
@@ -494,7 +494,7 @@ int __cdecl redir(struct regs *r)
 struct lfind {
     struct drive *d;            /* 0: free */
     oa_u16 handle;
-    struct ofat_ntfs_file dir;
+    struct ofs_ntfs_file dir;
     oa_u32 pos;
     oa_u8 dots;                 /* "." and ".." of a subdirectory given */
     oa_u8 allow, need, dosdate;
@@ -630,36 +630,36 @@ static struct drive *full_path(const char __far *p)
 
 /* ent: the entry of comp in dir (long name, or 8.3 name); the names
    first without their MFT records, which only the one found is read for */
-static int find_comp(struct drive *d, struct ofat_ntfs_file *dir)
+static int find_comp(struct drive *d, struct ofs_ntfs_file *dir)
 {
     char fcb[11];
     oa_u32 pos = 0;
     unsigned n = strlen(comp);
     int rc;
     for (;;) {
-        rc = ofat_ntfs_dir_name(&d->v, dir, &pos, &ent);
-        if (rc == OFAT_NTFS_END) break;
+        rc = ofs_ntfs_dir_name(&d->v, dir, &pos, &ent);
+        if (rc == OFS_NTFS_END) break;
         if (rc) return E_NOTREADY;
         ent_name();
-        if (same(comp, lname)) return ofat_ntfs_stat(&d->v, &ent) ? E_NOTREADY : 0;
+        if (same(comp, lname)) return ofs_ntfs_stat(&d->v, &ent) ? E_NOTREADY : 0;
     }
     if (n > 12 || strchr(comp, ' ') || strchr(comp, '*') || strchr(comp, '?')) return E_NOTFOUND;
     to_fcb((const char __far *)comp, fcb);
-    rc = ofat_ntfs_lookup(&d->v, dir, fcb, &ent);
-    return rc == OFAT_NTFS_END ? E_NOTFOUND : rc ? E_NOTREADY : 0;
+    rc = ofs_ntfs_lookup(&d->v, dir, fcb, &ent);
+    return rc == OFS_NTFS_END ? E_NOTFOUND : rc ? E_NOTREADY : 0;
 }
 
 /* lpath on d: spath and lout of the parts found, the last in ent and
    lname/sname.  0, -1 the root, E_NOTFOUND (the last part is missing;
    dir is its directory), E_PATH, E_NOTREADY. */
-static int resolve(struct drive *d, struct ofat_ntfs_file *dir)
+static int resolve(struct drive *d, struct ofs_ntfs_file *dir)
 {
     char *p = lpath + 3, *q, *s = spath + 3, *l = lout + 3, fcb[11];
     unsigned n;
     int rc;
     memcpy(spath, lpath, 3); memcpy(lout, lpath, 3);
     *s = *l = 0;
-    ofat_ntfs_rootdir(&d->v, dir);
+    ofs_ntfs_rootdir(&d->v, dir);
     if (!*p) return -1;
     for (;;) {
         for (q = p; *q && *q != '\\'; ++q) ;
@@ -668,7 +668,7 @@ static int resolve(struct drive *d, struct ofat_ntfs_file *dir)
         memcpy(comp, p, n); comp[n] = 0;
         if ((rc = find_comp(d, dir)) != 0) return *q ? (rc == E_NOTFOUND ? E_PATH : rc) : rc;
         ent_name();
-        if (ofat_ntfs_short(&d->v, dir, &ent, fcb)) return E_NOTREADY;
+        if (ofs_ntfs_short(&d->v, dir, &ent, fcb)) return E_NOTREADY;
         fcb_name(fcb, sname);
         if (s > spath + 3) *s++ = '\\';
         if (l > lout + 3) *l++ = '\\';
@@ -676,7 +676,7 @@ static int resolve(struct drive *d, struct ofat_ntfs_file *dir)
         if (l - lout + strlen(lname) > LFN_MAX) return E_PATH;
         strcpy(l, lname); l += strlen(lname);
         if (!*q) return 0;
-        if (!(ent.attr & OFAT_NTFS_DIR)) return E_PATH;
+        if (!(ent.attr & OFS_NTFS_DIR)) return E_PATH;
         *dir = ent.file;
         p = q + 1;
     }
@@ -764,22 +764,22 @@ static int find_next(struct lfind *f, oa_u8 __far *fd)
     int rc;
     while (f->dots < 2) {
         memset(&ent, 0, sizeof(ent));
-        ent.attr = OFAT_NTFS_DIR;
+        ent.attr = OFS_NTFS_DIR;
         strcpy(lname, f->dots++ ? ".." : ".");
         strcpy(sname, lname);
-        if ((f->allow & OFAT_NTFS_DIR) && !(f->need & ~OFAT_NTFS_DIR) && glob(f->pat, lname)) {
+        if ((f->allow & OFS_NTFS_DIR) && !(f->need & ~OFS_NTFS_DIR) && glob(f->pat, lname)) {
             fill_find(fd, f->dosdate);
             return 0;
         }
     }
     for (;;) {
-        rc = ofat_ntfs_dir_next(&f->d->v, &f->dir, &f->pos, &ent);
-        if (rc == OFAT_NTFS_END) return E_NOMORE;
+        rc = ofs_ntfs_dir_next(&f->d->v, &f->dir, &f->pos, &ent);
+        if (rc == OFS_NTFS_END) return E_NOMORE;
         if (rc) return E_NOTREADY;
-        if ((ent.attr & ~f->allow) & (OFAT_NTFS_HIDDEN | OFAT_NTFS_SYSTEM | OFAT_NTFS_DIR)) continue;
+        if ((ent.attr & ~f->allow) & (OFS_NTFS_HIDDEN | OFS_NTFS_SYSTEM | OFS_NTFS_DIR)) continue;
         if ((ent.attr & f->need) != f->need) continue;
         ent_name();
-        if (ofat_ntfs_short(&f->d->v, &f->dir, &ent, fcb)) return E_NOTREADY;
+        if (ofs_ntfs_short(&f->d->v, &f->dir, &ent, fcb)) return E_NOTREADY;
         fcb_name(fcb, sname);
         if (glob(f->pat, lname) || glob(f->pat, sname)) {
             fill_find(fd, f->dosdate);
@@ -831,7 +831,7 @@ static int lfn_find_first(struct regs *r, struct drive *d)
     rc = resolve(d, &f->dir);
     if (rc > 0) return error(r, rc == E_NOTFOUND ? E_PATH : (oa_u16)rc);
     if (!rc) {
-        if (!(ent.attr & OFAT_NTFS_DIR)) return error(r, E_PATH);
+        if (!(ent.attr & OFS_NTFS_DIR)) return error(r, E_PATH);
         f->dir = ent.file;
     }
     f->dots = (oa_u8)(rc < 0 ? 2 : 0);
@@ -922,7 +922,7 @@ int __cdecl lfn(struct regs *r)
 
 static int lfn_call(struct regs *r)
 {
-    struct ofat_ntfs_file dir;
+    struct ofs_ntfs_file dir;
     struct lfind *f;
     struct drive *d;
     const char __far *dx = (const char __far *)MK_FP(r->ds, r->dx);
@@ -946,13 +946,13 @@ static int lfn_call(struct regs *r)
     case 0x3B:                                  /* change directory */
         if (!(d = full_path(dx))) return 1;
         rc = resolve(d, &dir);
-        if (rc > 0 || (!rc && !(ent.attr & OFAT_NTFS_DIR))) return error(r, E_PATH);
+        if (rc > 0 || (!rc && !(ent.attr & OFS_NTFS_DIR))) return error(r, E_PATH);
         return dos_path(r, 0x3B00);
     case 0x43:                                  /* attributes and times */
         if (!(d = full_path(dx))) return device && !(oa_u8)r->bx ? dos_device(r, 0x4300) : 1;
         rc = resolve(d, &dir);
         if (rc > 0) return error(r, (oa_u16)rc);
-        if (rc < 0) { memset(&ent, 0, sizeof(ent)); ent.attr = OFAT_NTFS_DIR; }
+        if (rc < 0) { memset(&ent, 0, sizeof(ent)); ent.attr = OFS_NTFS_DIR; }
         switch ((oa_u8)r->bx) {
         case 0: r->cx = ent.attr; break;
         case 4: r->cx = ent.time; r->di = ent.date; break;
@@ -1000,7 +1000,7 @@ static int lfn_call(struct regs *r)
         rc = resolve(d, &dir);
         if (rc == E_NOTFOUND) return error(r, (r->dx & 0x10) ? E_ACCESS : E_NOTFOUND);
         if (rc) return error(r, (oa_u16)(rc < 0 ? E_ACCESS : rc));
-        if (ent.attr & OFAT_NTFS_DIR) return error(r, E_ACCESS);
+        if (ent.attr & OFS_NTFS_DIR) return error(r, E_ACCESS);
         return dos_path(r, 0x6C00);             /* DOS with the 8.3 path */
     case 0xA6:                                  /* file information by handle */
         return lfn_handle_info(r);
@@ -1085,7 +1085,7 @@ static char msg_dirty[] = "h (not cleanly unmounted)\r\n$";
 static char msg_size[] = "  NTFS volume not supported (sector or record size) on $";
 
 static struct drive *probe_disk;
-static oa_u8 sec[512];
+static oa_u8 sec[OFS_NTFS_MAXSECT];
 static unsigned quiet_init;               /* /Q */
 static oa_s16 tz;                         /* /Z: minutes */
 
@@ -1109,11 +1109,14 @@ static int read_sec(oa_u32 lba) { return bios_read(probe_disk, lba, sec); }
 static void add_volume(oa_u32 start)
 {
     struct drive *d = &drv[ndrv];
+    unsigned sh = 9;
     int rc;
-    if (ndrv >= MAXVOL || read_sec(start) || !ofat_ntfs_probe(sec)) return;
+    if (ndrv >= MAXVOL || read_sec(start) || !ofs_ntfs_probe(sec)) return;
     *d = *probe_disk;
-    rc = ofat_ntfs_mount(&d->v, bios_read, d, start, cp, nbuf);
-    if (rc == OFAT_NTFS_ESIZE && !quiet_init) { print(msg_size); print_hex(d->pub.bios); print(msg_h + 1); }
+    /* the disk's sectors are the volume's (as EXFAT.SYS takes them) */
+    while (sh < 12 && (1u << sh) < (unsigned)(sec[0x0B] | sec[0x0C] << 8)) ++sh;
+    rc = ofs_ntfs_mount(&d->v, bios_read, d, start, sh, cp, nbuf);
+    if (rc == OFS_NTFS_ESIZE && !quiet_init) { print(msg_size); print_hex(d->pub.bios); print(msg_h + 1); }
     if (rc) return;
     d->v.tz = tz;
     d->pub.letter = 0xFF; d->pub.start = start;
@@ -1142,7 +1145,7 @@ static void scan_disk(void)
     oa_u32 ext, ebr, start;
     unsigned i, n;
     if (read_sec(0)) return;
-    if (ofat_ntfs_probe(sec)) { add_volume(0); return; }
+    if (ofs_ntfs_probe(sec)) { add_volume(0); return; }
     if (sec[510] != 0x55 || sec[511] != 0xAA) return;
     memcpy(part, sec + 446, 64);
     for (i = 0; i < 4; ++i) if (part[16*i+4] == 0xEE) { scan_gpt(); return; }
@@ -1188,7 +1191,7 @@ int __cdecl drv_init(void __far *req)
     }
     memset(&q, 0, sizeof(q));
     q.ax = 0x6601;
-    cptab = !int21(&q) && q.bx == 850 ? ofat_cp850 : ofat_cp437;
+    cptab = !int21(&q) && q.bx == 850 ? ofs_cp850 : ofs_cp437;
     cp = &cptab;
     if (!quiet_init) print(msg_hello);
     disks = *(oa_u8 __far *)MK_FP(0x40, 0x75);

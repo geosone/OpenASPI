@@ -2,7 +2,7 @@
 
 DOSASPICHK := $(BUILD)/dos/ASPICHK.EXE
 ASPICHKOBJ := $(addprefix $(BUILD)/dos/aspichk/,aspichk.obj drive.obj fat_check.obj cptab.obj)
-ASPICHKHDR := $(OPENFILESYSTEM)/include/openfat/fat_check.h include/openaspi/types.h $(EXFATHDR)
+ASPICHKHDR := $(OPENFILESYSTEM)/include/ofs/fat_check.h include/openaspi/types.h $(EXFATHDR)
 
 $(BUILD)/dos/aspichk/%.obj: tools/aspichk/%.c tools/aspichk/drive.h $(ASPICHKHDR)
 	mkdir -p $(@D)

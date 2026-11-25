@@ -11,7 +11,7 @@
 #include <i86.h>
 #include <malloc.h>
 #include <stddef.h>
-#include "openfat/exfat_check.h"
+#include "ofs/exfat_check.h"
 #include "openaspi/exfatsys.h"
 #include "openaspi/cptab.h"
 
@@ -140,8 +140,8 @@ static void oa_flush(void)
 static void msg(void *ctx, int level, const char *text)
 {
     (void)ctx;
-    printf("%s%s\n", level == OFAT_EXCHK_ERROR ? "Error: " : level == OFAT_EXCHK_WARN ? "Warning: " :
-           level == OFAT_EXCHK_FIXED ? "    Corrected: " : "", text);
+    printf("%s%s\n", level == OFS_EXCHK_ERROR ? "Error: " : level == OFS_EXCHK_WARN ? "Warning: " :
+           level == OFS_EXCHK_FIXED ? "    Corrected: " : "", text);
 }
 
 static int mark(void *ctx, oa_u32 bit)
@@ -164,7 +164,7 @@ static void clear(void *ctx)
 int main(int argc, char **argv)
 {
     static oa_u8 boot[512];
-    struct ofat_exchk c;
+    struct ofs_exchk c;
     union REGS r;
     oa_u32 need;
     unsigned letter;
@@ -194,7 +194,7 @@ int main(int argc, char **argv)
     memset(&r, 0, sizeof(r));
     r.x.ax = 0x6601;
     intdos(&r, &r);
-    c.cp = !r.x.cflag && r.x.bx == 850 ? &ofat_cp850 : &ofat_cp437;
+    c.cp = !r.x.cflag && r.x.bx == 850 ? &ofs_cp850 : &ofs_cp437;
     c.msg = msg; c.mark = mark; c.clear = clear;
     /* the cluster map: as much of it as there is memory for */
     if (c.read(0, c.start, boot)) { printf("Read error in the boot sector.\n"); return 3; }
@@ -203,14 +203,14 @@ int main(int argc, char **argv)
     if (!nchunks) { printf("Not enough memory.\n"); return 2; }
     c.window = nchunks * CHUNK * 8UL;
     if (c.window / 8 < need) printf("(%lu passes)\n", (unsigned long)((need + c.window / 8 - 1) / (c.window / 8)));
-    rc = ofat_exchk_run(&c);
+    rc = ofs_exchk_run(&c);
     if (fix) {                                  /* EXFAT.SYS reads the volume again */
         vol_in_driver[(unsigned)offsetof(struct oa_exfatsys_vol, changed)] = 1;
         oa_flush();
     }
     if (rc) {
-        printf(rc == OFAT_EXFAT_EIO ? "Read error in the boot region.\n" : "%c: has no valid exFAT boot sector.\n", 'A' + letter);
-        return rc == OFAT_EXFAT_EIO ? 3 : 2;
+        printf(rc == OFS_EXFAT_EIO ? "Read error in the boot region.\n" : "%c: has no valid exFAT boot sector.\n", 'A' + letter);
+        return rc == OFS_EXFAT_EIO ? 3 : 2;
     }
     printf("Serial number %04lX-%04lX\n", (unsigned long)(c.serial >> 16), (unsigned long)(c.serial & 0xFFFF));
     printf("%10lu files\n%10lu directories\n", (unsigned long)c.files, (unsigned long)c.dirs);

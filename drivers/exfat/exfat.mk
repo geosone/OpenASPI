@@ -9,7 +9,7 @@ EXFATWRITETESTBIN := $(BUILD)/host/test_exfat_write
 EXCHKTESTBIN := $(BUILD)/host/test_exchk
 EXFMTTESTBIN := $(BUILD)/host/test_exfmt
 FATCHKTESTBIN := $(BUILD)/host/test_fatchk
-EXFATHDR := $(OPENFILESYSTEM)/include/openfat/exfat.h include/openaspi/exfatsys.h $(OPENFILESYSTEM)/include/openfat/exfat_check.h $(OPENFILESYSTEM)/include/openfat/exfat_format.h include/openaspi/types.h
+EXFATHDR := $(OPENFILESYSTEM)/include/ofs/exfat.h include/openaspi/exfatsys.h $(OPENFILESYSTEM)/include/ofs/exfat_check.h $(OPENFILESYSTEM)/include/ofs/exfat_format.h include/openaspi/types.h
 EXFATOBJ := $(BUILD)/dos/exfatsys_a.obj $(BUILD)/dos/exfatsys.obj $(BUILD)/dos/exfat.obj $(BUILD)/dos/name83.obj $(BUILD)/dos/latin.obj $(BUILD)/dos/cpinit.obj
 EXFATLOBJ := $(BUILD)/dos/exfatsysl_a.obj $(BUILD)/dos/exfatsysl.obj $(BUILD)/dos/exfat.obj $(BUILD)/dos/name83.obj $(BUILD)/dos/latin.obj $(BUILD)/dos/cpinit.obj
 # small model, no stack checks, no C runtime start-up: CS = DS = SS

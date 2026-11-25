@@ -6,11 +6,11 @@ DOSDEFRAG := $(BUILD)/dos/DEFRAG.EXE
 DEFRAGOBJ := $(addprefix $(BUILD)/dos/defrag/,defrag.obj fat_defrag.obj) \
 	$(addprefix $(BUILD)/dos/aspichk/,drive.obj fat_check.obj cptab.obj)
 
-$(BUILD)/dos/defrag/defrag.obj: tools/defrag/defrag.c tools/aspichk/drive.h $(OPENFILESYSTEM)/include/openfat/fat_defrag.h $(ASPICHKHDR)
+$(BUILD)/dos/defrag/defrag.obj: tools/defrag/defrag.c tools/aspichk/drive.h $(OPENFILESYSTEM)/include/ofs/fat_defrag.h $(ASPICHKHDR)
 	mkdir -p $(@D)
 	WATCOM=$(WATCOM) $(EXCHKWCC) -fo=$@ $<
 
-$(BUILD)/dos/defrag/fat_defrag.obj: $(OPENFILESYSTEM)/src/fat/fat_defrag.c $(OPENFILESYSTEM)/include/openfat/fat_defrag.h include/openaspi/types.h
+$(BUILD)/dos/defrag/fat_defrag.obj: $(OPENFILESYSTEM)/src/fat/fat_defrag.c $(OPENFILESYSTEM)/include/ofs/fat_defrag.h include/openaspi/types.h
 	mkdir -p $(@D)
 	WATCOM=$(WATCOM) $(EXCHKWCC) -fo=$@ $<
 
